@@ -13,17 +13,17 @@ import asyncio
 import logging
 
 import pytest
-from tai_contract.access_control import OWNER_USER_ID_CLAIM, registry
-from tai_contract.access_control.identity import ApiKeyIdentityProvider, AuthIdentity
-from tai_kit.utils.data.string_util import hash_api_key
+from tai42_contract.access_control import OWNER_USER_ID_CLAIM, registry
+from tai42_contract.access_control.identity import ApiKeyIdentityProvider, AuthIdentity
+from tai42_kit.utils.data.string_util import hash_api_key
 
-from tai_skeleton.access_control import claim_links
-from tai_skeleton.access_control.claim_links import (
+from tai42_skeleton.access_control import claim_links
+from tai42_skeleton.access_control.claim_links import (
     ClaimLinkError,
     create_claim_link,
     exchange_claim_token,
 )
-from tai_skeleton.access_control.settings import access_control_settings
+from tai42_skeleton.access_control.settings import access_control_settings
 
 from .conftest import FakeRedis, make_client_ctx
 
@@ -290,7 +290,7 @@ async def test_mint_raises_loudly_when_both_tokens_collide(
 
 
 async def test_no_token_or_key_in_logs(redis: FakeRedis, provider: _FakeProvider, caplog) -> None:
-    with caplog.at_level(logging.INFO, logger="tai_skeleton.access_control.claim_links"):
+    with caplog.at_level(logging.INFO, logger="tai42_skeleton.access_control.claim_links"):
         result = await create_claim_link(
             api_key="sk-alice", caller_id="alice", caller_is_admin=True, caller_owner_claim=None, ttl_seconds=None
         )

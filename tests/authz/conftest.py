@@ -5,9 +5,9 @@ from __future__ import annotations
 
 import pytest
 
-from tai_skeleton.access_control import policy as policy_module
-from tai_skeleton.access_control import store as store_module
-from tai_skeleton.access_control import verifier as verifier_module
+from tai42_skeleton.access_control import policy as policy_module
+from tai42_skeleton.access_control import store as store_module
+from tai42_skeleton.access_control import verifier as verifier_module
 from tests.access_control.conftest import FakeAccessControlPg, FakeRedis, make_client_ctx, make_pg_ctx
 
 
@@ -28,16 +28,16 @@ class _FakeApp:
 
 @pytest.fixture
 def bound_app():
-    """Bind a minimal fake app onto ``tai_app`` (the condition renderer the authz
+    """Bind a minimal fake app onto ``tai42_app`` (the condition renderer the authz
     check reaches through), then restore the unbound state."""
-    from tai_contract.app import tai_app
+    from tai42_contract.app import tai42_app
 
     app = _FakeApp()
-    tai_app.bind(app)
+    tai42_app.bind(app)
     try:
         yield app
     finally:
-        tai_app.bind(None)
+        tai42_app.bind(None)
 
 
 @pytest.fixture

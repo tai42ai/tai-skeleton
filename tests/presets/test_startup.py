@@ -16,10 +16,10 @@ from __future__ import annotations
 import asyncio
 
 import pytest
-from tai_contract.presets import PresetBody
+from tai42_contract.presets import PresetBody
 
-from tai_skeleton.app.instance import app
-from tai_skeleton.manifest import Manifest
+from tai42_skeleton.app.instance import app
+from tai42_skeleton.manifest import Manifest
 from tests.versioning.conftest import FakeVersioningPg
 
 _MANIFEST = {

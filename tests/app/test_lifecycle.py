@@ -21,15 +21,15 @@ from typing import TYPE_CHECKING, Any, ClassVar, cast
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from tai_contract.app import tai_app
-from tai_contract.manifest import MCPConfig, TaiMCPConfig
+from tai42_contract.app import tai42_app
+from tai42_contract.manifest import MCPConfig, TaiMCPConfig
 
-from tai_skeleton.app import kind_status as ks
-from tai_skeleton.app.instance import app
-from tai_skeleton.app.lifecycle import TaiMCPLifecycleMixin
-from tai_skeleton.manifest import Manifest
-from tai_skeleton.monitoring.registry import reset_monitoring
-from tai_skeleton.template import ResourceManager
+from tai42_skeleton.app import kind_status as ks
+from tai42_skeleton.app.instance import app
+from tai42_skeleton.app.lifecycle import TaiMCPLifecycleMixin
+from tai42_skeleton.manifest import Manifest
+from tai42_skeleton.monitoring.registry import reset_monitoring
+from tai42_skeleton.template import ResourceManager
 
 if TYPE_CHECKING:
     from fastmcp import FastMCP
@@ -292,7 +292,7 @@ def test_reload_closes_llm_registries_on_the_serving_loop():
     such resources on the serving loop, so the reload path closes them there first —
     marshalled onto the serving loop from the reload worker thread — so a reload
     after an agent run does not crash. Without this close, ``reset`` raises."""
-    from tai_kit.llm.checkpoint.checkpoint_registry import checkpoint_registry
+    from tai42_kit.llm.checkpoint.checkpoint_registry import checkpoint_registry
 
     m = _Mixin()
 
@@ -348,7 +348,7 @@ def test_reload_config_closes_live_registries_before_resetting_settings(monkeypa
     ``reset_all_settings`` runs underneath, so removing the close call — or moving
     it after the reset — makes this reload raise the "still hold live resources"
     error and fail the test."""
-    from tai_kit.llm.checkpoint.checkpoint_registry import checkpoint_registry
+    from tai42_kit.llm.checkpoint.checkpoint_registry import checkpoint_registry
 
     class _StubConfig:
         """Minimal config source so ``_reload_config`` refreshes an empty env and
@@ -461,7 +461,7 @@ def test_run_blocking_shuts_down_pooled_clients(monkeypatch):
     async def fake_shutdown():
         calls.append("shutdown")
 
-    monkeypatch.setattr("tai_skeleton.app.lifecycle.shutdown_all_clients", fake_shutdown)
+    monkeypatch.setattr("tai42_skeleton.app.lifecycle.shutdown_all_clients", fake_shutdown)
 
     async def coro():
         calls.append("body")
@@ -479,7 +479,7 @@ def test_run_blocking_cleanup_failure_does_not_mask_result(monkeypatch):
     async def boom_shutdown():
         raise RuntimeError("shutdown failed")
 
-    monkeypatch.setattr("tai_skeleton.app.lifecycle.shutdown_all_clients", boom_shutdown)
+    monkeypatch.setattr("tai42_skeleton.app.lifecycle.shutdown_all_clients", boom_shutdown)
 
     async def coro():
         return 7
@@ -521,9 +521,9 @@ def _teardown_mixin(monkeypatch):
     checkpoint = MagicMock(close_all=AsyncMock())
     store = MagicMock(close_all=AsyncMock())
     writer = MagicMock()
-    monkeypatch.setattr("tai_skeleton.app.lifecycle.checkpoint_registry", lambda: checkpoint)
-    monkeypatch.setattr("tai_skeleton.app.lifecycle.store_registry", lambda: store)
-    monkeypatch.setattr("tai_skeleton.app.lifecycle.get_monitoring", lambda: MagicMock(writer=writer))
+    monkeypatch.setattr("tai42_skeleton.app.lifecycle.checkpoint_registry", lambda: checkpoint)
+    monkeypatch.setattr("tai42_skeleton.app.lifecycle.store_registry", lambda: store)
+    monkeypatch.setattr("tai42_skeleton.app.lifecycle.get_monitoring", lambda: MagicMock(writer=writer))
     return m, clients, checkpoint, store, writer
 
 
@@ -592,7 +592,7 @@ def test_start_binds_global_handle_and_loads_tools():
     async def run():
         async with app.app_context(manifest):
             # start() claims the global handle, binding it to this app impl.
-            assert object.__getattribute__(tai_app, "_impl") is app
+            assert object.__getattribute__(tai42_app, "_impl") is app
             tools = await app.tools.get_tools()
             assert "greet" in tools
 
@@ -793,7 +793,7 @@ def test_reload_with_connector_plugin_is_reload_safe():
     # A manifest carrying a connector plugin module: start() imports it, running
     # register_connector(...). update() re-imports the same module — without the
     # start()-time registry reset the duplicate guard would crash the reload.
-    from tai_skeleton.connectors.providers import registry as conn_registry
+    from tai42_skeleton.connectors.providers import registry as conn_registry
 
     provider_id = "fixture_conn"
     manifest = Manifest.model_validate({"lifecycle_modules": ["tests.app._fixtures.connector_plugin"]})
@@ -994,10 +994,10 @@ def test_start_logs_kind_summary_and_warns_once_on_noop_monitoring(monkeypatch, 
         async with app.app_context(Manifest.model_validate({})):
             pass
 
-    with caplog.at_level(logging.INFO, logger="tai_skeleton.app.lifecycle"):
+    with caplog.at_level(logging.INFO, logger="tai42_skeleton.app.lifecycle"):
         asyncio.run(run())
 
-    messages = [r.getMessage() for r in caplog.records if r.name == "tai_skeleton.app.lifecycle"]
+    messages = [r.getMessage() for r in caplog.records if r.name == "tai42_skeleton.app.lifecycle"]
     assert "[kinds]" in messages
     assert any("monitoring: default" in m for m in messages)
     noop_warnings = [r for r in caplog.records if "monitoring: OFF" in r.getMessage()]
@@ -1010,7 +1010,7 @@ def test_start_fails_when_kind_status_collector_raises(monkeypatch):
     def _boom():
         raise RuntimeError("collector exploded")
 
-    monkeypatch.setattr("tai_skeleton.app.lifecycle.collect_kind_status", _boom)
+    monkeypatch.setattr("tai42_skeleton.app.lifecycle.collect_kind_status", _boom)
 
     async def run():
         async with app.app_context(Manifest.model_validate({})):

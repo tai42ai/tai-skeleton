@@ -11,11 +11,11 @@ from __future__ import annotations
 
 import functools
 
-from tai_contract.app import tai_app
-from tai_contract.extensions import ExtensionKind
+from tai42_contract.app import tai42_app
+from tai42_contract.extensions import ExtensionKind
 
 
-@tai_app.extensions.extension(kind=ExtensionKind.WRAPPER, name="exta")
+@tai42_app.extensions.extension(kind=ExtensionKind.WRAPPER, name="exta")
 def exta(func, name, desc, config=None):
     """Independent order-marker wrapper: append ``|a`` to a string result;
     schema-preserving so it branches any base cleanly."""
@@ -30,7 +30,7 @@ def exta(func, name, desc, config=None):
     return variant
 
 
-@tai_app.extensions.extension(kind=ExtensionKind.WRAPPER, name="extb")
+@tai42_app.extensions.extension(kind=ExtensionKind.WRAPPER, name="extb")
 def extb(func, name, desc, config=None):
     """Independent order-marker wrapper: append ``|b`` to a string result."""
 

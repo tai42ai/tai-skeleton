@@ -9,7 +9,7 @@ import base64
 import pytest
 from starlette.requests import Request
 
-from tai_skeleton.hooks.payload_parser import parse_any_payload
+from tai42_skeleton.hooks.payload_parser import parse_any_payload
 
 
 def _request(body: bytes = b"", content_type: str | None = None, query: str = "") -> Request:

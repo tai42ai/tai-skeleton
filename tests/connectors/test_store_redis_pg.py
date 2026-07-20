@@ -11,13 +11,13 @@ from typing import Any
 
 import pytest
 from psycopg.errors import UniqueViolation
-from tai_contract.connectors.errors import ConnectorError
-from tai_contract.connectors.service import AliasInUseError
-from tai_kit.clients.impl.postgres import PostgresClient
-from tai_kit.clients.impl.redis import RedisClient
+from tai42_contract.connectors.errors import ConnectorError
+from tai42_contract.connectors.service import AliasInUseError
+from tai42_kit.clients.impl.postgres import PostgresClient
+from tai42_kit.clients.impl.redis import RedisClient
 
-import tai_skeleton.connectors.store.redis_pg as redis_pg
-from tai_skeleton.connectors.store.redis_pg import (
+import tai42_skeleton.connectors.store.redis_pg as redis_pg
+from tai42_skeleton.connectors.store.redis_pg import (
     _ALIAS_UNIQUE_CONSTRAINT,
     RedisPgConnectorTokenStore,
     _expireat_arg,
@@ -680,6 +680,6 @@ async def test_list_empty(store_fakes):
 
 def test_token_store_builds_concrete_store():
     """The engine's store accessor returns the concrete redis-pg store."""
-    from tai_skeleton.connectors.store import token_store
+    from tai42_skeleton.connectors.store import token_store
 
     assert isinstance(token_store(), RedisPgConnectorTokenStore)

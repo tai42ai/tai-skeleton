@@ -4,11 +4,11 @@ hash + pipeline seam.
 
 from __future__ import annotations
 
-from tai_contract.hooks import HookParams
+from tai42_contract.hooks import HookParams
 
-from tai_skeleton.hooks.managers import redis_hooks_manager as redis_module
-from tai_skeleton.hooks.managers.redis_hooks_manager import RedisHooksManager
-from tai_skeleton.hooks.settings import HooksSettings
+from tai42_skeleton.hooks.managers import redis_hooks_manager as redis_module
+from tai42_skeleton.hooks.managers.redis_hooks_manager import RedisHooksManager
+from tai42_skeleton.hooks.settings import HooksSettings
 
 from .conftest import make_client_ctx
 

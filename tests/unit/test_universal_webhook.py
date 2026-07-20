@@ -1,6 +1,6 @@
 """Webhook fire path through the hooks package: POST
 /universal_webhook/{topic} parses the payload, looks up registered hooks via
-``tai_skeleton.hooks`` and runs each hook's tool through ``tai_app``.
+``tai42_skeleton.hooks`` and runs each hook's tool through ``tai42_app``.
 """
 
 import asyncio
@@ -10,16 +10,16 @@ from unittest.mock import AsyncMock
 
 import pytest
 from starlette.requests import Request
-from tai_contract.hooks.models import HookParams
+from tai42_contract.hooks.models import HookParams
 
-# The unit-suite conftest bound this singleton as the global ``tai_app`` handle
+# The unit-suite conftest bound this singleton as the global ``tai42_app`` handle
 # (the routers module below registers its route through the handle at import);
 # entering ``app.app_context`` below re-binds the same singleton, which the
 # routers/hooks chain resolves against at request time.
-from tai_skeleton.app.instance import app
-from tai_skeleton.hooks.cache import get_hooks_manager
-from tai_skeleton.manifest import Manifest
-from tai_skeleton.routers.hooks import universal_webhook
+from tai42_skeleton.app.instance import app
+from tai42_skeleton.hooks.cache import get_hooks_manager
+from tai42_skeleton.manifest import Manifest
+from tai42_skeleton.routers.hooks import universal_webhook
 
 _MANIFEST = {}
 

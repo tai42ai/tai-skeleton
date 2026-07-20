@@ -12,16 +12,16 @@ from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
-from tai_contract.interactions import InteractionResponse
+from tai42_contract.interactions import InteractionResponse
 
-from tai_skeleton.exceptions.exceptions import TaiValidationError
-from tai_skeleton.extensions.builtin.ask_external import ask_external
-from tai_skeleton.interactions import InteractionStore
-from tai_skeleton.interactions import helper as helper_module
-from tai_skeleton.interactions.settings import InteractionsSettings
+from tai42_skeleton.exceptions.exceptions import TaiValidationError
+from tai42_skeleton.extensions.builtin.ask_external import ask_external
+from tai42_skeleton.interactions import InteractionStore
+from tai42_skeleton.interactions import helper as helper_module
+from tai42_skeleton.interactions.settings import InteractionsSettings
 from tests._helpers import await_add_event
 
-_BUILTIN_MODULE = "tai_skeleton.extensions.builtin.ask_external"
+_BUILTIN_MODULE = "tai42_skeleton.extensions.builtin.ask_external"
 
 
 @pytest.fixture(autouse=True)
@@ -29,7 +29,7 @@ def _clean_server():
     """Clear the singleton FastMCP server's tools around each test — it outlives
     one ``app_context``, so a tool a prior apply-site test bound would collide
     with this test's bind under ``on_duplicate="error"``."""
-    from tai_skeleton.app.instance import app
+    from tai42_skeleton.app.instance import app
 
     async def _clear() -> None:
         provider = app._fast_mcp.local_provider
@@ -141,8 +141,8 @@ def test_composed_signature_is_concrete_without_callback_url():
 
 
 def test_binds_as_transformer_branch_at_apply_site():
-    from tai_skeleton.app.instance import app
-    from tai_skeleton.manifest import Manifest
+    from tai42_skeleton.app.instance import app
+    from tai42_skeleton.manifest import Manifest
 
     manifest = Manifest.model_validate(
         {
@@ -170,8 +170,8 @@ def test_binds_with_author_bound_config_at_apply_site():
     # The manifest dict combo element ``{"name", "config"}`` binds the verifier as
     # author config; it must thread through tool_extensions -> binding -> the
     # ask_external factory and produce the branch tool, with NO verifier param.
-    from tai_skeleton.app.instance import app
-    from tai_skeleton.manifest import Manifest
+    from tai42_skeleton.app.instance import app
+    from tai42_skeleton.manifest import Manifest
 
     manifest = Manifest.model_validate(
         {
@@ -202,7 +202,7 @@ def test_binds_with_author_bound_config_at_apply_site():
 
 
 def test_factory_accepts_config_detects_config_param():
-    from tai_skeleton.extensions.registry import factory_accepts_config
+    from tai42_skeleton.extensions.registry import factory_accepts_config
 
     def three(func, name, desc): ...
     def positional_config(func, name, desc, config=None): ...
@@ -221,8 +221,8 @@ def test_config_on_config_agnostic_extension_rejected_at_apply_site():
     # A three-argument (config-agnostic) factory is called without config; binding a
     # non-empty config to it would silently drop the author's intent, so the apply
     # site raises loudly.
-    from tai_skeleton.app.instance import app
-    from tai_skeleton.manifest import Manifest
+    from tai42_skeleton.app.instance import app
+    from tai42_skeleton.manifest import Manifest
 
     manifest = Manifest.model_validate(
         {
@@ -304,7 +304,7 @@ async def test_author_bound_verifier_lands_in_format_payload(monkeypatch, fake_r
                 return object()
             raise KeyError(name)
 
-    monkeypatch.setattr(helper_module, "tai_app", SimpleNamespace(webhook_verifiers=_Registry()))
+    monkeypatch.setattr(helper_module, "tai42_app", SimpleNamespace(webhook_verifiers=_Registry()))
 
     async def make_url(*, callback_url: str) -> str:
         return f"https://ext.example/go?cb={callback_url}"
@@ -360,7 +360,7 @@ async def test_verifier_rejected_at_ask_time_when_malformed_or_unknown(monkeypat
     # A non-dict verifier, or a name that does not resolve in the registry, is
     # rejected LOUDLY at ask time — never stashed to silently degrade the question
     # into an open, unverified one at the callback door.
-    from tai_skeleton.interactions.helper import ask_user
+    from tai42_skeleton.interactions.helper import ask_user
 
     settings = InteractionsSettings(public_base_url="https://cb.example")
     monkeypatch.setattr(helper_module, "client_ctx", fake_client_ctx)
@@ -370,7 +370,7 @@ async def test_verifier_rejected_at_ask_time_when_malformed_or_unknown(monkeypat
         def get(self, name: str) -> object:
             raise KeyError(name)
 
-    monkeypatch.setattr(helper_module, "tai_app", SimpleNamespace(webhook_verifiers=_Empty()))
+    monkeypatch.setattr(helper_module, "tai42_app", SimpleNamespace(webhook_verifiers=_Empty()))
 
     with pytest.raises(ValueError, match="verifier must be a dict"):
         await ask_user(

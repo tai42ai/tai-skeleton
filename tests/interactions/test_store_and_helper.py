@@ -9,7 +9,7 @@ from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from tai_contract.interactions import (
+from tai42_contract.interactions import (
     AnswerFormat,
     InteractionRequest,
     InteractionResponse,
@@ -17,8 +17,8 @@ from tai_contract.interactions import (
     MediaKind,
 )
 
-from tai_skeleton.interactions import InteractionStore, ask_user
-from tai_skeleton.interactions import helper as helper_module
+from tai42_skeleton.interactions import InteractionStore, ask_user
+from tai42_skeleton.interactions import helper as helper_module
 from tests._helpers import await_add_event
 
 

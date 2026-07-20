@@ -12,15 +12,15 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 import pytest
-from tai_contract.access_control import registry
-from tai_contract.access_control.identity import AuthIdentity, IdentityProvider
-from tai_contract.accounts import registry as accounts_registry
-from tai_contract.accounts.models import LoginMethod
-from tai_contract.accounts.provider import AccountsProvider
-from tai_kit.settings import reset_all_settings
+from tai42_contract.access_control import registry
+from tai42_contract.access_control.identity import AuthIdentity, IdentityProvider
+from tai42_contract.accounts import registry as accounts_registry
+from tai42_contract.accounts.models import LoginMethod
+from tai42_contract.accounts.provider import AccountsProvider
+from tai42_kit.settings import reset_all_settings
 
-import tai_skeleton.access_control.startup as startup
-from tai_skeleton.access_control.startup import (
+import tai42_skeleton.access_control.startup as startup
+from tai42_skeleton.access_control.startup import (
     check_accounts_providers_configured,
     check_always_public_routes,
     probe_identity_provider,
@@ -135,8 +135,8 @@ async def test_configured_accounts_provider_passes(monkeypatch: pytest.MonkeyPat
 async def test_seed_roles_seeds_when_versioned_store_configured(monkeypatch: pytest.MonkeyPatch) -> None:
     # Access control is enabled and a versioned store is wired, so the boot seeds the
     # default role templates into it.
-    import tai_skeleton.access_control.roles as roles
-    import tai_skeleton.versioning as versioning
+    import tai42_skeleton.access_control.roles as roles
+    import tai42_skeleton.versioning as versioning
 
     seeded = False
 
@@ -153,8 +153,8 @@ async def test_seed_roles_seeds_when_versioned_store_configured(monkeypatch: pyt
 async def test_seed_roles_skips_when_no_versioned_store(monkeypatch: pytest.MonkeyPatch) -> None:
     # Roles live in the versioned document store, so a deployment without one seeds
     # nothing and never opens a Postgres connection at boot.
-    import tai_skeleton.access_control.roles as roles
-    import tai_skeleton.versioning as versioning
+    import tai42_skeleton.access_control.roles as roles
+    import tai42_skeleton.versioning as versioning
 
     async def _seed() -> None:
         raise AssertionError("seed_default_roles must not run without a versioned store")
@@ -171,7 +171,7 @@ def _bind_public_check(monkeypatch: pytest.MonkeyPatch, routes: list, prefixes=(
     """Point the always-public check at fixed route metadata and prefixes. The check
     reads only ``.path``/``.methods``/``.authed`` off each entry, so lightweight
     stand-ins suffice."""
-    from tai_skeleton.app import route_registry as rr
+    from tai42_skeleton.app import route_registry as rr
 
     monkeypatch.setattr(rr.route_registry, "routes", lambda: routes)
     monkeypatch.setattr(

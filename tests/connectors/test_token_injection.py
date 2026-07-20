@@ -12,13 +12,13 @@ from typing import cast
 
 import mcp.types
 import pytest
-from tai_contract.connectors.models import ConnectorRef
-from tai_contract.manifest import MCPConfig, TaiMCPConfig
-from tai_kit.clients.impl.mcp import FastMCPClient
+from tai42_contract.connectors.models import ConnectorRef
+from tai42_contract.manifest import MCPConfig, TaiMCPConfig
+from tai42_kit.clients.impl.mcp import FastMCPClient
 
-import tai_skeleton.connectors.token_injection as ti
-from tai_skeleton.connectors.runtime.resolver import ConnectorAuthExpiredError, ManagedAuth
-from tai_skeleton.connectors.token_injection import (
+import tai42_skeleton.connectors.token_injection as ti
+from tai42_skeleton.connectors.runtime.resolver import ConnectorAuthExpiredError, ManagedAuth
+from tai42_skeleton.connectors.token_injection import (
     CONNECTOR_ERROR_PREFIX,
     CONNECTOR_META_TOKEN_KEY,
     check_managed_transport,
@@ -271,7 +271,7 @@ async def test_call_with_auth_passes_meta():
 async def test_call_with_auth_passes_call_timeout():
     # The dispatch hands fastmcp the settings-backed call-time budget so a
     # downstream that accepts the request then stalls cannot hang the caller.
-    from tai_skeleton.settings.mcp_settings import mcp_dispatch_settings
+    from tai42_skeleton.settings.mcp_settings import mcp_dispatch_settings
 
     ok = _result(is_error=False, texts=["done"])
     client = _FakeMcpClient(ok)
@@ -519,8 +519,8 @@ async def test_eviction_never_before_retry(monkeypatch):
 @pytest.mark.parametrize(
     "module",
     [
-        "tai_skeleton.connectors.token_injection",
-        "tai_skeleton.tools.adapters.mcp_tool_to_func",
+        "tai42_skeleton.connectors.token_injection",
+        "tai42_skeleton.tools.adapters.mcp_tool_to_func",
     ],
 )
 def test_module_imports_alone_in_fresh_interpreter(module: str) -> None:

@@ -11,11 +11,11 @@ import asyncio
 import logging
 
 import pytest
-from tai_contract.hooks import HookParams
+from tai42_contract.hooks import HookParams
 
-from tai_skeleton.hooks.managers.base_hooks_manager import BaseHooksManager
-from tai_skeleton.hooks.managers.in_memory_hooks_manager import InMemoryHooksManager
-from tai_skeleton.hooks.settings import HooksSettings
+from tai42_skeleton.hooks.managers.base_hooks_manager import BaseHooksManager
+from tai42_skeleton.hooks.managers.in_memory_hooks_manager import InMemoryHooksManager
+from tai42_skeleton.hooks.settings import HooksSettings
 
 
 def _settings(**kw) -> HooksSettings:

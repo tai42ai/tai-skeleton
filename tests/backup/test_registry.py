@@ -8,9 +8,9 @@ exporter/importer run through verbatim.
 from __future__ import annotations
 
 import pytest
-from tai_contract.backup import BackupSectionInfo
+from tai42_contract.backup import BackupSectionInfo
 
-from tai_skeleton.backup.registry import BackupRegistry
+from tai42_skeleton.backup.registry import BackupRegistry
 
 
 def test_sections_reports_registration_order_and_secret_flag():

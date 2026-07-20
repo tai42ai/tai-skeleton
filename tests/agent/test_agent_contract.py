@@ -1,4 +1,4 @@
-"""Agent seam tests: a concrete agent imported through ``tai_skeleton.agent``
+"""Agent seam tests: a concrete agent imported through ``tai42_skeleton.agent``
 satisfies the contract ``Agent`` base, the default ``astream``/``_drain`` bodies
 behave per the terminal rule, and the typed events are shaped correctly.
 
@@ -13,9 +13,9 @@ from typing import Any
 import pytest
 from pydantic import BaseModel
 
-from tai_skeleton import agent as _agent
+from tai42_skeleton import agent as _agent
 
-# These are re-exported through the ``tai_skeleton.agent`` namespace that
+# These are re-exported through the ``tai42_skeleton.agent`` namespace that
 # consumers use; reference them via the module so the tests exercise that seam.
 Agent = _agent.Agent
 AgentInterruptedError = _agent.AgentInterruptedError

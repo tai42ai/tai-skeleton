@@ -17,11 +17,11 @@ from starlette.applications import Starlette
 from starlette.routing import Route
 from starlette.testclient import TestClient
 
-from tai_skeleton.access_control import verifier as verifier_module
-from tai_skeleton.access_control.adapter import AuthAdapter
-from tai_skeleton.access_control.settings import AccessControlSettings
-from tai_skeleton.interactions.settings import InteractionsSettings
-from tai_skeleton.routers import interactions as router
+from tai42_skeleton.access_control import verifier as verifier_module
+from tai42_skeleton.access_control.adapter import AuthAdapter
+from tai42_skeleton.access_control.settings import AccessControlSettings
+from tai42_skeleton.interactions.settings import InteractionsSettings
+from tai42_skeleton.routers import interactions as router
 from tests._fakes.interactions_redis import FakeRedis as InteractionsFake
 from tests.routers._auth_boundary import wire_store_from_route_strings
 
@@ -123,9 +123,9 @@ class _PostOnlyVerifier:
 async def _seed_bound_question(fake, settings, ticket: str, verifier: dict) -> str:
     from datetime import UTC, datetime, timedelta
 
-    from tai_contract.interactions import AnswerFormat, InteractionRequest
+    from tai42_contract.interactions import AnswerFormat, InteractionRequest
 
-    from tai_skeleton.interactions.store import InteractionStore
+    from tai42_skeleton.interactions.store import InteractionStore
 
     store = InteractionStore(settings.key_prefix)
     now = datetime.now(UTC)
@@ -149,12 +149,12 @@ def test_post_only_empty_body_query_answer_denied_unauthenticated(boundary_clien
     # answer never injected — proving the public door still reaches the handler.
     import asyncio
 
-    from tai_contract.app import tai_app
+    from tai42_contract.app import tai42_app
 
-    from tai_skeleton.app.instance import build_app
+    from tai42_skeleton.app.instance import build_app
 
     app = build_app()
-    tai_app.bind(app)
+    tai42_app.bind(app)
     reg = app._webhook_verifier_registry
     reg.register("prov", _PostOnlyVerifier())
     try:

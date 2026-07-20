@@ -26,9 +26,9 @@ from typing import Any
 
 import pytest
 from psycopg.errors import UniqueViolation
-from tai_kit.clients.impl.postgres import Json, PostgresClient
+from tai42_kit.clients.impl.postgres import Json, PostgresClient
 
-import tai_skeleton.versioning.store as store_module
+import tai42_skeleton.versioning.store as store_module
 
 _ACTIVE_NAME_UNIQUE_INDEX = "versioned_documents_active_name_unique"
 _BASE_TIME = datetime(2024, 1, 1, tzinfo=UTC)

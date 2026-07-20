@@ -5,15 +5,15 @@
 from __future__ import annotations
 
 import pytest
-from tai_contract.access_control import registry
-from tai_contract.access_control.identity import ApiKeyIdentityProvider, AuthIdentity, IdentityProvider
-from tai_contract.accounts import AccountsAdminServices
-from tai_kit.settings import reset_all_settings
-from tai_kit.utils.data import run_jq_first
+from tai42_contract.access_control import registry
+from tai42_contract.access_control.identity import ApiKeyIdentityProvider, AuthIdentity, IdentityProvider
+from tai42_contract.accounts import AccountsAdminServices
+from tai42_kit.settings import reset_all_settings
+from tai42_kit.utils.data import run_jq_first
 
-import tai_skeleton.versioning as versioning_module
-from tai_skeleton.access_control import management
-from tai_skeleton.access_control.roles import (
+import tai42_skeleton.versioning as versioning_module
+from tai42_skeleton.access_control import management
+from tai42_skeleton.access_control.roles import (
     EDITOR_JQ,
     VIEWER_JQ,
     SkeletonAccountsAdminServices,
@@ -21,7 +21,7 @@ from tai_skeleton.access_control.roles import (
     role_store,
     seed_default_roles,
 )
-from tai_skeleton.access_control.store import access_control_store
+from tai42_skeleton.access_control.store import access_control_store
 
 from .conftest import FakeAccessControlPg, FakeRedis, make_client_ctx
 from .test_policy_store import _MemStore

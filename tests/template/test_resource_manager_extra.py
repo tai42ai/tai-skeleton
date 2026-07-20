@@ -10,12 +10,12 @@ from typing import Protocol, cast
 
 import pytest
 from jinja2.exceptions import SecurityError
-from tai_contract.storage import Storage
+from tai42_contract.storage import Storage
 
-from tai_skeleton.storage import StorageRegistry
-from tai_skeleton.template import ResourceManager, TemplateNotFoundError
-from tai_skeleton.template import resource_manager as rm_mod
-from tai_skeleton.template.settings import TemplateCacheSettings
+from tai42_skeleton.storage import StorageRegistry
+from tai42_skeleton.template import ResourceManager, TemplateNotFoundError
+from tai42_skeleton.template import resource_manager as rm_mod
+from tai42_skeleton.template.settings import TemplateCacheSettings
 
 
 class _SupportsCacheInvalidate(Protocol):

@@ -18,10 +18,10 @@ from starlette.applications import Starlette
 from starlette.routing import Route
 from starlette.testclient import TestClient
 
-from tai_skeleton.access_control import store as store_module
-from tai_skeleton.access_control import verifier as verifier_module
-from tai_skeleton.access_control.adapter import AuthAdapter
-from tai_skeleton.access_control.settings import AccessControlSettings
+from tai42_skeleton.access_control import store as store_module
+from tai42_skeleton.access_control import verifier as verifier_module
+from tai42_skeleton.access_control.adapter import AuthAdapter
+from tai42_skeleton.access_control.settings import AccessControlSettings
 from tests.access_control.conftest import FakeAccessControlPg, make_pg_ctx
 
 AUTHED = "authed"

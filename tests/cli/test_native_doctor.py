@@ -15,10 +15,10 @@ import pytest
 from click.testing import CliRunner
 from redis.exceptions import ConnectionError as RedisConnectionError
 
-from tai_skeleton.cli import app as app_module
-from tai_skeleton.cli.native import doctor
-from tai_skeleton.cli.native.db import SchemaAdminSettings
-from tai_skeleton.cli.native.doctor import Check
+from tai42_skeleton.cli import app as app_module
+from tai42_skeleton.cli.native import doctor
+from tai42_skeleton.cli.native.db import SchemaAdminSettings
+from tai42_skeleton.cli.native.doctor import Check
 
 
 def test_redact_url_masks_password() -> None:
@@ -71,7 +71,7 @@ def test_doctor_json_parses(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_probe_redis_fails_and_redacts_password(monkeypatch: pytest.MonkeyPatch) -> None:
     fake_settings = SimpleNamespace(redis=SimpleNamespace(redis_url="redis://:supersecret@cache:6379/0"))
     monkeypatch.setattr(
-        "tai_skeleton.connectors.settings.connector_store_settings",
+        "tai42_skeleton.connectors.settings.connector_store_settings",
         lambda: fake_settings,
     )
 
@@ -162,7 +162,7 @@ def test_probe_postgres_fail_reports_target(monkeypatch: pytest.MonkeyPatch) -> 
 
 
 def test_probe_schema_all_present(monkeypatch: pytest.MonkeyPatch) -> None:
-    from tai_skeleton.cli.native import doctor as doctor_mod
+    from tai42_skeleton.cli.native import doctor as doctor_mod
 
     expected = doctor_mod.expected_tables()
     rows = [(table,) for table in expected]
@@ -173,7 +173,7 @@ def test_probe_schema_all_present(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_probe_schema_reports_missing_tables(monkeypatch: pytest.MonkeyPatch) -> None:
-    from tai_skeleton.cli.native import doctor as doctor_mod
+    from tai42_skeleton.cli.native import doctor as doctor_mod
 
     expected = doctor_mod.expected_tables()
     # Report every table but the first as present, so the first is flagged missing.
@@ -195,7 +195,7 @@ def test_probe_schema_connection_failure(monkeypatch: pytest.MonkeyPatch) -> Non
 def test_probe_redis_ok(monkeypatch: pytest.MonkeyPatch) -> None:
     fake_settings = SimpleNamespace(redis=SimpleNamespace(redis_url="redis://cache:6379/0"))
     monkeypatch.setattr(
-        "tai_skeleton.connectors.settings.connector_store_settings",
+        "tai42_skeleton.connectors.settings.connector_store_settings",
         lambda: fake_settings,
     )
 

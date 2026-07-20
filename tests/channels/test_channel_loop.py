@@ -19,15 +19,15 @@ from typing import Any
 
 import pytest
 from starlette.requests import Request
-from tai_contract.app import tai_app
-from tai_contract.channels import ChannelDelivery, ChannelDeliveryError
-from tai_contract.interactions import MediaItem
+from tai42_contract.app import tai42_app
+from tai42_contract.channels import ChannelDelivery, ChannelDeliveryError
+from tai42_contract.interactions import MediaItem
 
-from tai_skeleton.app.instance import app
-from tai_skeleton.interactions import InteractionStore, ask_user
-from tai_skeleton.interactions import helper as helper_module
-from tai_skeleton.interactions.settings import InteractionsSettings
-from tai_skeleton.routers import interactions as router
+from tai42_skeleton.app.instance import app
+from tai42_skeleton.interactions import InteractionStore, ask_user
+from tai42_skeleton.interactions import helper as helper_module
+from tai42_skeleton.interactions.settings import InteractionsSettings
+from tai42_skeleton.routers import interactions as router
 from tests._helpers import DeliverOnlyChannel, await_add_event
 
 
@@ -67,7 +67,7 @@ def wired(monkeypatch, fake_redis, fake_client_ctx):
 def fake_channel():
     channel = FakeChannel()
     app._channel_registry.reset()
-    tai_app.channels.register("fake", channel)
+    tai42_app.channels.register("fake", channel)
     yield channel
     app._channel_registry.reset()
 
@@ -188,7 +188,7 @@ async def test_delivery_runs_after_persist(wired, fake_channel):
             seen["delivery"] = delivery
 
     app._channel_registry.reset()
-    tai_app.channels.register("probe", ProbingChannel())
+    tai42_app.channels.register("probe", ProbingChannel())
     try:
         task = asyncio.create_task(ask_user("q", channel="probe", timeout=5))
         _iid, _gid = await await_add_event(wired.fake, wired.store)
@@ -357,7 +357,7 @@ async def test_channel_requires_public_base_url(monkeypatch, fake_redis, fake_cl
 
 async def test_delivery_failure_prunes_and_raises(wired):
     app._channel_registry.reset()
-    tai_app.channels.register("boom", FailingChannel())
+    tai42_app.channels.register("boom", FailingChannel())
     try:
         with pytest.raises(ChannelDeliveryError, match="provider unreachable"):
             await ask_user("q", channel="boom", timeout=5)
@@ -370,7 +370,7 @@ async def test_delivery_failure_prunes_and_raises(wired):
 
 async def test_delivery_bug_prunes_and_raises(wired):
     app._channel_registry.reset()
-    tai_app.channels.register("buggy", BuggyChannel())
+    tai42_app.channels.register("buggy", BuggyChannel())
     try:
         with pytest.raises(RuntimeError, match="plugin bug"):
             await ask_user("q", channel="buggy", timeout=5)
@@ -391,7 +391,7 @@ async def test_failed_delivery_ticket_unclaimable(wired):
             raise ChannelDeliveryError("send failed")
 
     app._channel_registry.reset()
-    tai_app.channels.register("capfail", CapturingFailer())
+    tai42_app.channels.register("capfail", CapturingFailer())
     try:
         with pytest.raises(ChannelDeliveryError):
             await ask_user("q", channel="capfail", timeout=5)
@@ -418,7 +418,7 @@ async def test_delivery_failure_after_recorded_answer_falls_through(wired):
             raise ChannelDeliveryError("send failed after the reply landed")
 
     app._channel_registry.reset()
-    tai_app.channels.register("racy", AnswerThenFail())
+    tai42_app.channels.register("racy", AnswerThenFail())
     try:
         assert await ask_user("q", channel="racy", timeout=5) == "fast"
     finally:
@@ -434,7 +434,7 @@ async def test_hung_delivery_times_out_prunes_and_raises(wired):
             await asyncio.sleep(60)
 
     app._channel_registry.reset()
-    tai_app.channels.register("hung", HungChannel())
+    tai42_app.channels.register("hung", HungChannel())
     try:
         with pytest.raises(ChannelDeliveryError, match=r"delivery timed out after 0\.05s"):
             await ask_user("q", channel="hung", timeout=0.05)
@@ -458,7 +458,7 @@ async def test_hung_delivery_after_recorded_answer_falls_through(wired):
             await asyncio.sleep(60)
 
     app._channel_registry.reset()
-    tai_app.channels.register("hang", AnswerThenHang())
+    tai42_app.channels.register("hang", AnswerThenHang())
     try:
         assert await ask_user("q", channel="hang", timeout=0.3) == "fast"
     finally:

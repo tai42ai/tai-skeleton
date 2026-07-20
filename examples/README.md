@@ -1,11 +1,11 @@
 # Examples
 
-Runnable/reference examples for tai-skeleton.
+Runnable/reference examples for tai42-skeleton.
 
 - [`hello/`](hello/) — the smallest runnable app: one local tool, no agents, no
   external services. Walkthrough below.
 - [`toolbox/`](toolbox/) — batteries: wires composition tool extensions (`chain`,
-  `batch`) and generic tools from the [`tai-toolbox`](../../tai-toolbox) contrib
+  `batch`) and generic tools from the [`tai42-toolbox`](../../tai-toolbox) contrib
   package, all from the manifest. Needs the `toolbox` extra (`uv sync --extra
   toolbox` in the checkout).
 - [`manifest.yml`](manifest.yml) — a fully-commented reference **manifest** showing
@@ -27,13 +27,13 @@ hello/
 ```
 
 **The tool** (`hello/myapp/tools.py`): a plain function registered with the
-`@tai_app.tools.tool` decorator from `tai-contract`. The function's signature
+`@tai42_app.tools.tool` decorator from `tai42-contract`. The function's signature
 becomes the tool's input schema and its docstring becomes the tool's description:
 
 ```python
-from tai_contract.app import tai_app
+from tai42_contract.app import tai42_app
 
-@tai_app.tools.tool
+@tai42_app.tools.tool
 def greet(name: str) -> str:
     """Greet a person by name."""
     return f"Hello, {name}!"

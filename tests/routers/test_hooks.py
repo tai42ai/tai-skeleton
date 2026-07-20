@@ -11,10 +11,10 @@ from typing import cast
 import pytest
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
-from tai_contract.hooks import HookParams
+from tai42_contract.hooks import HookParams
 
-from tai_skeleton.operations import hooks as hooks_ops
-from tai_skeleton.routers import hooks
+from tai42_skeleton.operations import hooks as hooks_ops
+from tai42_skeleton.routers import hooks
 
 
 class _FakeRequest:
@@ -287,14 +287,14 @@ class _FakeVerifier:
 
 @pytest.fixture
 def registry():
-    """The process app's webhook-verifier registry, with ``tai_app`` bound to that
+    """The process app's webhook-verifier registry, with ``tai42_app`` bound to that
     same app so the route resolves verifiers from it; cleared after the test."""
-    from tai_contract.app import tai_app
+    from tai42_contract.app import tai42_app
 
-    from tai_skeleton.app.instance import build_app
+    from tai42_skeleton.app.instance import build_app
 
     app = build_app()
-    tai_app.bind(app)
+    tai42_app.bind(app)
     reg = app._webhook_verifier_registry
     try:
         yield reg
@@ -414,7 +414,7 @@ async def test_bound_topic_verifies_before_parse(monkeypatch: pytest.MonkeyPatch
 
 
 async def test_bound_topic_verify_failure_401_nothing_dispatched(monkeypatch: pytest.MonkeyPatch, registry) -> None:
-    from tai_contract.webhooks import WebhookVerificationError
+    from tai42_contract.webhooks import WebhookVerificationError
 
     registry.register("prov", _FakeVerifier(raise_exc=WebhookVerificationError("bad sig")))
     manager = _FakeManager(verifier_binding={"verifier": "prov", "config": {}})

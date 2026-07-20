@@ -15,15 +15,15 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
-from tai_contract.app import tai_app
-from tai_contract.manifest import ApiToolsConfig
-from tai_kit.settings import reset_all_settings
+from tai42_contract.app import tai42_app
+from tai42_contract.manifest import ApiToolsConfig
+from tai42_kit.settings import reset_all_settings
 
-from tai_skeleton.app import instance
-from tai_skeleton.app.bus import LocalApplyResult, OpOutcome
-from tai_skeleton.operations import BadRequestError, NotFoundError, OperationRegistry, operation_metadata_of
-from tai_skeleton.operations import manifest as manifest_ops
-from tai_skeleton.operations.projection import is_tier2, project_operations
+from tai42_skeleton.app import instance
+from tai42_skeleton.app.bus import LocalApplyResult, OpOutcome
+from tai42_skeleton.operations import BadRequestError, NotFoundError, OperationRegistry, operation_metadata_of
+from tai42_skeleton.operations import manifest as manifest_ops
+from tai42_skeleton.operations.projection import is_tier2, project_operations
 from tests._fakes.bus import FakeBus
 
 
@@ -63,7 +63,7 @@ def _install(
     monkeypatch: pytest.MonkeyPatch, *, admin: _Admin, backend: object = None, bus: FakeBus | None = None
 ) -> FakeBus:
     impl = SimpleNamespace(admin=admin, backends=SimpleNamespace(backend=backend))
-    monkeypatch.setattr(tai_app, "_impl", impl)
+    monkeypatch.setattr(tai42_app, "_impl", impl)
     bus = bus or FakeBus()
     monkeypatch.setattr(instance.app, "_bus", bus)
     return bus
@@ -131,7 +131,7 @@ def _install_pipeline(
         admin=admin,
         backends=SimpleNamespace(backend=backend),
     )
-    monkeypatch.setattr(tai_app, "_impl", impl)
+    monkeypatch.setattr(tai42_app, "_impl", impl)
     bus = FakeBus()
     monkeypatch.setattr(instance.app, "_bus", bus)
     return bus
@@ -205,7 +205,7 @@ def _install_mutate_pipeline(monkeypatch: pytest.MonkeyPatch, *, store: _MutateS
         admin=admin,
         backends=SimpleNamespace(backend=None),
     )
-    monkeypatch.setattr(tai_app, "_impl", impl)
+    monkeypatch.setattr(tai42_app, "_impl", impl)
     bus = FakeBus()
     monkeypatch.setattr(instance.app, "_bus", bus)
     return bus

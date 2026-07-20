@@ -12,7 +12,7 @@ import pytest
 from click.testing import CliRunner
 from fastapi.responses import Response
 
-import tai_skeleton.cli.metrics as metrics
+import tai42_skeleton.cli.metrics as metrics
 
 
 def test_main_launches_uvicorn_with_default_bind(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -45,7 +45,7 @@ def test_main_publishes_multiproc_dir_before_serving(monkeypatch: pytest.MonkeyP
     import os
     import tempfile
 
-    from tai_kit.settings import reset_all_settings
+    from tai42_kit.settings import reset_all_settings
 
     captured: dict[str, str | None] = {}
 
@@ -65,7 +65,7 @@ def test_main_publishes_multiproc_dir_before_serving(monkeypatch: pytest.MonkeyP
         published = captured["dir"]
         # ``main``'s ``activate_multiproc_env()`` must publish the coded default: the
         # host-tempdir absolute path the settings field resolves to with the env unset.
-        assert published == os.path.join(tempfile.gettempdir(), "tai_prometheus")
+        assert published == os.path.join(tempfile.gettempdir(), "tai42_prometheus")
         assert published is not None
         assert os.path.isabs(published)
     finally:

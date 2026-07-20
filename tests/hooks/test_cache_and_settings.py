@@ -8,13 +8,13 @@ import logging
 
 import pytest
 from pydantic import ValidationError
-from tai_contract.hooks.models import HookParams
-from tai_kit.settings import reset_all_settings
+from tai42_contract.hooks.models import HookParams
+from tai42_kit.settings import reset_all_settings
 
-from tai_skeleton.hooks.cache import get_hooks_manager
-from tai_skeleton.hooks.managers.in_memory_hooks_manager import InMemoryHooksManager
-from tai_skeleton.hooks.managers.redis_hooks_manager import RedisHooksManager
-from tai_skeleton.hooks.settings import HooksRedisSettings, HooksSettings
+from tai42_skeleton.hooks.cache import get_hooks_manager
+from tai42_skeleton.hooks.managers.in_memory_hooks_manager import InMemoryHooksManager
+from tai42_skeleton.hooks.managers.redis_hooks_manager import RedisHooksManager
+from tai42_skeleton.hooks.settings import HooksRedisSettings, HooksSettings
 
 
 def _clear_singleton() -> None:
@@ -45,7 +45,7 @@ def test_in_memory_selection_warns_loudly(monkeypatch, caplog):
     monkeypatch.delenv("HOOKS_REDIS_URL", raising=False)
     _clear_singleton()
     try:
-        with caplog.at_level(logging.WARNING, logger="tai_skeleton.hooks.cache"):
+        with caplog.at_level(logging.WARNING, logger="tai42_skeleton.hooks.cache"):
             manager = get_hooks_manager()
         assert isinstance(manager, InMemoryHooksManager)
         assert "IN-MEMORY" in caplog.text
@@ -58,7 +58,7 @@ def test_redis_selection_does_not_warn(monkeypatch, caplog):
     monkeypatch.setenv("HOOKS_REDIS_URL", "redis://localhost:6379/0")
     _clear_singleton()
     try:
-        with caplog.at_level(logging.WARNING, logger="tai_skeleton.hooks.cache"):
+        with caplog.at_level(logging.WARNING, logger="tai42_skeleton.hooks.cache"):
             manager = get_hooks_manager()
         assert isinstance(manager, RedisHooksManager)
         assert "IN-MEMORY" not in caplog.text
@@ -110,7 +110,7 @@ async def test_reset_warns_naming_count_and_drops_in_memory_hooks(monkeypatch, c
         await manager.register(HookParams(name="h1", topic="orders", tool="ship"))
         assert manager.hook_count == 1
 
-        with caplog.at_level(logging.WARNING, logger="tai_skeleton.hooks.cache"):
+        with caplog.at_level(logging.WARNING, logger="tai42_skeleton.hooks.cache"):
             reset_all_settings()
 
         assert "discarding the in-memory hooks manager with 1 registered hook(s)" in caplog.text
@@ -128,7 +128,7 @@ async def test_reset_empty_in_memory_manager_emits_no_warning(monkeypatch, caplo
     _clear_singleton()
     try:
         assert isinstance(get_hooks_manager(), InMemoryHooksManager)  # no hooks registered
-        with caplog.at_level(logging.WARNING, logger="tai_skeleton.hooks.cache"):
+        with caplog.at_level(logging.WARNING, logger="tai42_skeleton.hooks.cache"):
             reset_all_settings()
         assert "discarding the in-memory hooks manager" not in caplog.text
     finally:
@@ -142,7 +142,7 @@ def test_reset_redis_mode_emits_no_warning(monkeypatch, caplog):
     _clear_singleton()
     try:
         assert isinstance(get_hooks_manager(), RedisHooksManager)
-        with caplog.at_level(logging.WARNING, logger="tai_skeleton.hooks.cache"):
+        with caplog.at_level(logging.WARNING, logger="tai42_skeleton.hooks.cache"):
             reset_all_settings()
         assert "discarding the in-memory hooks manager" not in caplog.text
     finally:

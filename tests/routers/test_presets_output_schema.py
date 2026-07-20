@@ -19,16 +19,16 @@ from typing import Any
 
 import pytest
 from starlette.requests import Request
-from tai_kit.clients.impl.postgres import PostgresClient
+from tai42_kit.clients.impl.postgres import PostgresClient
 
-import tai_skeleton.versioning.store as store_module
-from tai_skeleton.app import instance
-from tai_skeleton.manifest import Manifest
-from tai_skeleton.routers import presets as router
+import tai42_skeleton.versioning.store as store_module
+from tai42_skeleton.app import instance
+from tai42_skeleton.manifest import Manifest
+from tai42_skeleton.routers import presets as router
 from tests.versioning.conftest import FakeVersioningPg
 
 _MANIFEST = {
-    "extensions_modules": ["tests.presets._ext_fixtures", "tai_toolbox.extensions.output_schema"],
+    "extensions_modules": ["tests.presets._ext_fixtures", "tai42_toolbox.extensions.output_schema"],
     "tools": [{"title": "fx", "module": "tests.presets._fixtures", "include": ["weather", "echo"]}],
     "agents": [
         {
@@ -163,7 +163,7 @@ def test_plain_tool_preset_validate_raises_on_constraint_violation(pg):
             }
             resp = await _create("wbad", "weather", output_schema=schema)
             assert resp.status_code == 200, _err(resp)
-            from tai_kit.utils.data.json_schema_util import JsonSchemaValidationError
+            from tai42_kit.utils.data.json_schema_util import JsonSchemaValidationError
 
             with pytest.raises(JsonSchemaValidationError):
                 await instance.app.tools.run_tool("wbad", {"city": "paris"})

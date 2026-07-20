@@ -12,12 +12,12 @@ from __future__ import annotations
 from contextlib import asynccontextmanager
 
 import pytest
-from tai_contract.app import tai_app
-from tai_contract.channels import ChannelDeliveryError, ChannelNotification
+from tai42_contract.app import tai42_app
+from tai42_contract.channels import ChannelDeliveryError, ChannelNotification
 
-from tai_skeleton.app.instance import app
-from tai_skeleton.channels import notifications_sink
-from tai_skeleton.channels.notify import notify_user
+from tai42_skeleton.app.instance import app
+from tai42_skeleton.channels import notifications_sink
+from tai42_skeleton.channels.notify import notify_user
 
 
 class RecordingChannel:
@@ -50,7 +50,7 @@ def register_channel():
     app._channel_registry.reset()
 
     def _register(name, channel):
-        tai_app.channels.register(name, channel)
+        tai42_app.channels.register(name, channel)
         return channel
 
     yield _register

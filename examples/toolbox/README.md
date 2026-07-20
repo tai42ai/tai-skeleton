@@ -1,10 +1,10 @@
 # Toolbox starter
 
 Batteries-included: this example wires content from the
-[`tai-toolbox`](../../../tai-toolbox) contrib package — composition **tool
+[`tai42-toolbox`](../../../tai-toolbox) contrib package — composition **tool
 extensions** (`batch`, `chain`) and two generic **tools** (`generate_uuid`,
 `current_time_info`) — entirely from the manifest. The skeleton never imports
-tai-toolbox; the manifest loader pulls it in.
+tai42-toolbox; the manifest loader pulls it in.
 
 ```
 toolbox/
@@ -12,22 +12,22 @@ toolbox/
 ```
 
 There is no `myapp/` here: every module is an installed-package import path
-(tai-toolbox ships them), so no `PYTHONPATH` is needed — but tai-toolbox must be
+(tai42-toolbox ships them), so no `PYTHONPATH` is needed — but tai42-toolbox must be
 installed.
 
 ## Install
 
-tai-toolbox rides along on the `toolbox` extra:
+tai42-toolbox rides along on the `toolbox` extra:
 
 ```bash
-pip install tai-skeleton[toolbox]     # or, from a source checkout: uv sync --extra dev
+pip install tai42-skeleton[toolbox]     # or, from a source checkout: uv sync --extra dev
 ```
 
 Toolbox keeps its base install light and gates heavier modules behind their own
-extras. The `chain` extension needs jq (`tai-toolbox[chain]`); the skeleton
-already ships `tai-kit[jq]`, so `chain` imports cleanly here. A module whose
+extras. The `chain` extension needs jq (`tai42-toolbox[chain]`); the skeleton
+already ships `tai42-kit[jq]`, so `chain` imports cleanly here. A module whose
 required extra is missing fails **loudly** at import with a
-`pip install 'tai-toolbox[extra]'` hint — never a silent skip.
+`pip install 'tai42-toolbox[extra]'` hint — never a silent skip.
 
 ## Run it
 
@@ -86,5 +86,5 @@ generate_uuid -> <a random uuid>
 ```
 
 From here, browse the full toolbox catalog (the `http`, `files`, `proxy`, `vpn`,
-`prometheus` tools and extensions, each behind its own extra) in the tai-toolbox
+`prometheus` tools and extensions, each behind its own extra) in the tai42-toolbox
 package, and add the modules you want the same way.

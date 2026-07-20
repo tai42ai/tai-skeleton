@@ -8,10 +8,10 @@ as the ``extensions_modules`` entry)."""
 
 from __future__ import annotations
 
-from tai_contract.app import tai_app
+from tai42_contract.app import tai42_app
 
 
-@tai_app.tools.tool
+@tai42_app.tools.tool
 def spare(text: str) -> str:
     """A standalone tool owned by the second config."""
     return text

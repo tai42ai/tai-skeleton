@@ -1,4 +1,4 @@
-"""The skeleton interactions impl conforms to the ``tai_contract.interactions``
+"""The skeleton interactions impl conforms to the ``tai42_contract.interactions``
 surface: the ``ask_user`` helper satisfies the ``AskUser`` protocol with the
 exact call signature, and the models round-trip through JSON.
 """
@@ -8,7 +8,7 @@ from __future__ import annotations
 import inspect
 from datetime import UTC, datetime
 
-from tai_contract.interactions import (
+from tai42_contract.interactions import (
     AnswerFormat,
     AskUser,
     InteractionRequest,
@@ -16,8 +16,8 @@ from tai_contract.interactions import (
     InteractionState,
 )
 
-from tai_skeleton import interactions as _skeleton_interactions
-from tai_skeleton.interactions import ask_user
+from tai42_skeleton import interactions as _skeleton_interactions
+from tai42_skeleton.interactions import ask_user
 
 # Re-exported through the skeleton namespace; reference via the module so the
 # re-export identity assertion below stays meaningful.

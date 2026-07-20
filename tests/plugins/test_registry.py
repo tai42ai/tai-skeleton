@@ -8,8 +8,8 @@ from pathlib import Path
 
 import pytest
 
-import tai_skeleton.plugins.registry as reg
-from tai_skeleton.plugins.registry import (
+import tai42_skeleton.plugins.registry as reg
+from tai42_skeleton.plugins.registry import (
     Contributions,
     StudioPluginError,
     StudioPluginManifest,
@@ -299,9 +299,9 @@ async def test_rebuild_pass_reflects_reload(tmp_path, monkeypatch):
     class _FakeApp:
         admin = _FakeAdmin()
 
-    monkeypatch.setattr("tai_contract.app.tai_app", _FakeApp())
+    monkeypatch.setattr("tai42_contract.app.tai42_app", _FakeApp())
     monkeypatch.setattr(
-        "tai_skeleton.plugins.settings.plugins_settings", lambda: type("S", (), {"studio_dist_path": None})()
+        "tai42_skeleton.plugins.settings.plugins_settings", lambda: type("S", (), {"studio_dist_path": None})()
     )
 
     await reg.rebuild_studio_plugin_registry()

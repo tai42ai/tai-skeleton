@@ -27,19 +27,19 @@ from unittest.mock import AsyncMock
 
 import pytest
 from starlette.requests import Request
-from tai_contract.app import tai_app
-from tai_contract.manifest import MCPConfig, TaiMCPConfig
+from tai42_contract.app import tai42_app
+from tai42_contract.manifest import MCPConfig, TaiMCPConfig
 
-from tai_skeleton.app.instance import app
-from tai_skeleton.app.lifecycle import TaiMCPLifecycleMixin
-from tai_skeleton.app.reload_gate import reload_gate
-from tai_skeleton.manifest import Manifest
+from tai42_skeleton.app.instance import app
+from tai42_skeleton.app.lifecycle import TaiMCPLifecycleMixin
+from tai42_skeleton.app.reload_gate import reload_gate
+from tai42_skeleton.manifest import Manifest
 
 # The router modules bind their routes onto the global handle at import, exactly
 # as external plugins do — so bind the process app singleton before importing
 # one, mirroring the router-suite conftest.
-tai_app.bind(app)
-from tai_skeleton.routers import tools as tools_router  # noqa: E402
+tai42_app.bind(app)
+from tai42_skeleton.routers import tools as tools_router  # noqa: E402
 
 
 class _FakeMcpTool:
@@ -107,7 +107,7 @@ async def test_recovering_title_binds_tools_and_leaves_failed_set(monkeypatch):
     m._manifest = Manifest.model_validate({"mcp": [_cfg("svc").model_dump()]})
     m._failed_mcps = {"svc": "unavailable"}
     m._probe_mcp = AsyncMock(return_value=[_FakeMcpTool()])
-    monkeypatch.setattr("tai_skeleton.app.lifecycle.CoreSettings", _settings(1.0, 8.0))
+    monkeypatch.setattr("tai42_skeleton.app.lifecycle.CoreSettings", _settings(1.0, 8.0))
 
     sleeps = {"n": 0}
 
@@ -134,7 +134,7 @@ async def test_backoff_doubles_caps_and_resets_on_recovery(monkeypatch):
     m = _Mixin()
     m._manifest = Manifest.model_validate({})
     m._failed_mcps = {"a": "unavailable"}
-    monkeypatch.setattr("tai_skeleton.app.lifecycle.CoreSettings", _settings(1.0, 8.0))
+    monkeypatch.setattr("tai42_skeleton.app.lifecycle.CoreSettings", _settings(1.0, 8.0))
 
     pass_index = {"n": 0}
 
@@ -173,7 +173,7 @@ async def test_new_failed_title_resets_backoff(monkeypatch):
     m = _Mixin()
     m._manifest = Manifest.model_validate({})
     m._failed_mcps = {"a": "unavailable"}
-    monkeypatch.setattr("tai_skeleton.app.lifecycle.CoreSettings", _settings(1.0, 8.0))
+    monkeypatch.setattr("tai42_skeleton.app.lifecycle.CoreSettings", _settings(1.0, 8.0))
 
     async def fake_reload():
         return [{"title": t, "status": "unavailable"} for t in m._failed_mcps]
@@ -216,7 +216,7 @@ async def test_reprobe_snapshots_failed_set_under_the_gate_lock(monkeypatch, cap
     m = _Mixin()
     m._manifest = Manifest.model_validate({})
     m._failed_mcps = {"a": "unavailable"}
-    monkeypatch.setattr("tai_skeleton.app.lifecycle.CoreSettings", _settings(1.0, 8.0))
+    monkeypatch.setattr("tai42_skeleton.app.lifecycle.CoreSettings", _settings(1.0, 8.0))
 
     reload_ran = asyncio.Event()
 
@@ -268,7 +268,7 @@ async def test_empty_failed_set_probes_nothing(monkeypatch):
     m = _Mixin()
     m._manifest = Manifest.model_validate({})
     m._failed_mcps = {}
-    monkeypatch.setattr("tai_skeleton.app.lifecycle.CoreSettings", _settings(1.0, 8.0))
+    monkeypatch.setattr("tai42_skeleton.app.lifecycle.CoreSettings", _settings(1.0, 8.0))
 
     reload = AsyncMock()
     m._reload_failed_mcps_async = reload  # type: ignore[method-assign]
@@ -344,7 +344,7 @@ async def test_pass_error_is_logged_and_loop_survives(monkeypatch, caplog):
     m = _Mixin()
     m._manifest = Manifest.model_validate({})
     m._failed_mcps = {"a": "unavailable"}
-    monkeypatch.setattr("tai_skeleton.app.lifecycle.CoreSettings", _settings(1.0, 8.0))
+    monkeypatch.setattr("tai42_skeleton.app.lifecycle.CoreSettings", _settings(1.0, 8.0))
 
     calls = {"n": 0}
 

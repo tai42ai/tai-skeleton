@@ -11,12 +11,12 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 import pytest
-from tai_contract.manifest import ApiToolsConfig
+from tai42_contract.manifest import ApiToolsConfig
 
-import tai_skeleton.operations.templates as templates_ops
-from tai_skeleton.operations import BadRequestError, NotFoundError, OperationRegistry, operation_metadata_of
-from tai_skeleton.operations.projection import project_operations
-from tai_skeleton.operations.templates import (
+import tai42_skeleton.operations.templates as templates_ops
+from tai42_skeleton.operations import BadRequestError, NotFoundError, OperationRegistry, operation_metadata_of
+from tai42_skeleton.operations.projection import project_operations
+from tai42_skeleton.operations.templates import (
     clear_templates_cache,
     delete_template,
     get_template,
@@ -24,7 +24,7 @@ from tai_skeleton.operations.templates import (
     render_template,
     upload_template,
 )
-from tai_skeleton.template import TemplateNotFoundError
+from tai42_skeleton.template import TemplateNotFoundError
 
 
 class _ResourceManager:
@@ -60,7 +60,7 @@ class _ResourceManager:
 def manager(monkeypatch: pytest.MonkeyPatch) -> _ResourceManager:
     tm = _ResourceManager()
     fake_app = SimpleNamespace(storage=SimpleNamespace(resource_manager=tm))
-    monkeypatch.setattr(templates_ops, "tai_app", fake_app)
+    monkeypatch.setattr(templates_ops, "tai42_app", fake_app)
     return tm
 
 
@@ -163,7 +163,7 @@ async def test_render_template_missing_is_not_found(manager: _ResourceManager, m
 
 async def test_list_templates_returns_ids(monkeypatch: pytest.MonkeyPatch) -> None:
     tm = _ResourceManager(listed=["a.j2", "b.j2"])
-    monkeypatch.setattr(templates_ops, "tai_app", SimpleNamespace(storage=SimpleNamespace(resource_manager=tm)))
+    monkeypatch.setattr(templates_ops, "tai42_app", SimpleNamespace(storage=SimpleNamespace(resource_manager=tm)))
     assert await list_templates() == ["a.j2", "b.j2"]
 
 

@@ -14,10 +14,10 @@ from typing import Any, cast
 
 import pytest
 from fastmcp.tools import Tool
-from tai_contract.app import TaiApp
-from tai_kit.utils.data.json_schema_util import JsonSchemaValidationError
+from tai42_contract.app import TaiApp
+from tai42_kit.utils.data.json_schema_util import JsonSchemaValidationError
 
-from tai_skeleton.presets.bind import preset_bind
+from tai42_skeleton.presets.bind import preset_bind
 
 
 def _base_tool() -> Tool:
@@ -116,7 +116,7 @@ async def test_baked_partial_binds_positional_through_presented_signature():
     # signature (1->a, 3->c), never onto the hidden baked slot.
     from fastmcp.tools.tool_transform import TransformedTool
 
-    from tai_skeleton.tools.binding import _baked_partial
+    from tai42_skeleton.tools.binding import _baked_partial
 
     def base(a: int, b: int = 0, c: int = 0) -> dict:
         """base"""

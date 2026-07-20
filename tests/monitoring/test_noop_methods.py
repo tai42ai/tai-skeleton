@@ -7,14 +7,14 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from tai_contract.monitoring import (
+from tai42_contract.monitoring import (
     MetricsFilter,
     ProjectConfig,
     SpanKind,
     TraceContext,
 )
 
-from tai_skeleton.monitoring import NoOpMonitoring, NoOpReader, NoOpSpan, NoOpWriter
+from tai42_skeleton.monitoring import NoOpMonitoring, NoOpReader, NoOpSpan, NoOpWriter
 
 
 def _ctx() -> TraceContext:
@@ -77,7 +77,7 @@ def test_noop_writer_lifecycle_calls_are_inert() -> None:
 async def test_noop_reader_returns_empty_results() -> None:
     reader = NoOpReader()
     now = datetime.now()
-    from tai_contract.monitoring import MetricsResult
+    from tai42_contract.monitoring import MetricsResult
 
     result = await reader.query_metrics(MetricsFilter(metrics=[], from_timestamp=now, to_timestamp=now))
     assert isinstance(result, MetricsResult)

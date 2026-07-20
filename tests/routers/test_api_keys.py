@@ -27,25 +27,25 @@ from starlette.requests import Request
 from starlette.responses import Response
 from starlette.routing import Route
 from starlette.testclient import TestClient
-from tai_identity_redis import redis_api_key_provider as provider_module
-from tai_identity_redis.redis_api_key_provider import RedisApiKeyProvider
+from tai42_identity_redis import redis_api_key_provider as provider_module
+from tai42_identity_redis.redis_api_key_provider import RedisApiKeyProvider
 
-from tai_skeleton.access_control import claim_links as claim_links_module
-from tai_skeleton.access_control import management
-from tai_skeleton.access_control import policy as policy_module
-from tai_skeleton.access_control import store as store_module
-from tai_skeleton.access_control import verifier as verifier_module
-from tai_skeleton.access_control.policy import PolicyEnforcer
-from tai_skeleton.access_control.policy_store import AcPolicyStore
-from tai_skeleton.access_control.settings import access_control_settings
-from tai_skeleton.operations import api_keys as operations_api_keys
-from tai_skeleton.routers import api_keys
+from tai42_skeleton.access_control import claim_links as claim_links_module
+from tai42_skeleton.access_control import management
+from tai42_skeleton.access_control import policy as policy_module
+from tai42_skeleton.access_control import store as store_module
+from tai42_skeleton.access_control import verifier as verifier_module
+from tai42_skeleton.access_control.policy import PolicyEnforcer
+from tai42_skeleton.access_control.policy_store import AcPolicyStore
+from tai42_skeleton.access_control.settings import access_control_settings
+from tai42_skeleton.operations import api_keys as operations_api_keys
+from tai42_skeleton.routers import api_keys
 
 # Registered for its import side effect: the route-table probe (test_probe_request_app_is_route_bearing)
 # needs every router's custom routes present on the built app, and a custom route registers only when
-# its module is imported. Importing here (after the conftest binds ``tai_app``) makes that probe
+# its module is imported. Importing here (after the conftest binds ``tai42_app``) makes that probe
 # deterministic in isolation instead of relying on another test module's collection order.
-from tai_skeleton.routers import hooks as _hooks  # noqa: F401
+from tai42_skeleton.routers import hooks as _hooks  # noqa: F401
 from tests.access_control.conftest import (
     FakeAccessControlPg,
     FakeRedis,
@@ -249,9 +249,9 @@ async def test_create_claim_link_invalid_key_is_400(store: _Fakes) -> None:
 
 
 async def test_create_claim_link_non_owner_is_403(store: _Fakes, monkeypatch: pytest.MonkeyPatch) -> None:
-    from tai_contract.access_control.models import AccessPolicy
+    from tai42_contract.access_control.models import AccessPolicy
 
-    from tai_skeleton.operations.api_keys import _Caller
+    from tai42_skeleton.operations.api_keys import _Caller
 
     raw = await _mint_key(store)
 
@@ -482,7 +482,7 @@ async def test_tokens_payload_carries_no_key_material(store: _Fakes) -> None:
     payload = _body(resp)["data"]
     assert payload[0]["user_id"] == "u1"
     # No raw key and no sha256 hash of it anywhere in the enumerated payload.
-    from tai_kit.utils.data.string_util import hash_api_key
+    from tai42_kit.utils.data.string_util import hash_api_key
 
     blob = json.dumps(payload)
     assert raw not in blob
@@ -560,9 +560,9 @@ def _admin_caller(monkeypatch: pytest.MonkeyPatch) -> None:
     matrix is covered in ``test_api_keys_ownership``), so short-circuit the caller
     resolution to a condition-free ``"*"`` admin instead of binding a request contextvar
     and seeding a caller policy per test."""
-    from tai_contract.access_control.models import AccessPolicy
+    from tai42_contract.access_control.models import AccessPolicy
 
-    from tai_skeleton.operations.api_keys import _Caller
+    from tai42_skeleton.operations.api_keys import _Caller
 
     async def _admin() -> _Caller:
         return _Caller(caller_id="test-admin", policy=AccessPolicy(scopes=["*"]), is_admin=True, owner_claim=None)
@@ -582,22 +582,22 @@ def pg_store(monkeypatch: pytest.MonkeyPatch) -> _MemStore:
     rather than the store-less short-circuit."""
     mem = _MemStore()
     monkeypatch.setattr(operations_api_keys, "ac_policy_store", lambda: AcPolicyStore(mem))
-    monkeypatch.setattr("tai_skeleton.versioning.versioned_store_configured", lambda: True)
+    monkeypatch.setattr("tai42_skeleton.versioning.versioned_store_configured", lambda: True)
     return mem
 
 
 @pytest.fixture
 def bound_app():
-    """Bind a fake ``tai_app`` exposing the template manager the validate route
+    """Bind a fake ``tai42_app`` exposing the template manager the validate route
     renders through, then restore the unbound state."""
-    from tai_contract.app import tai_app
+    from tai42_contract.app import tai42_app
 
     app = _FakeApp()
-    tai_app.bind(app)
+    tai42_app.bind(app)
     try:
         yield app
     finally:
-        tai_app.bind(None)
+        tai42_app.bind(None)
 
 
 async def _seed_key(store: _Fakes, *, condition: str) -> None:
@@ -1121,7 +1121,7 @@ async def test_probe_request_app_is_route_bearing(monkeypatch: pytest.MonkeyPatc
     # order (this check is deterministic in isolation, not reliant on sibling collection).
     from starlette.routing import Mount
 
-    from tai_skeleton.app.instance import build_app
+    from tai42_skeleton.app.instance import build_app
 
     star = build_app().http_app()
     routing_app = getattr(star, "mcp_lifespan_app", star)
@@ -1233,7 +1233,7 @@ def _authed_me_request(user_id: str, scopes: list[str], claims: dict) -> Request
     from starlette.authentication import AuthCredentials
     from starlette.requests import Request as StarletteRequest
 
-    from tai_skeleton.access_control.user import TaiUser
+    from tai42_skeleton.access_control.user import TaiUser
 
     user = TaiUser(AccessToken(token="t", client_id=user_id, scopes=list(scopes), claims=claims))
     scope = {
@@ -1251,7 +1251,7 @@ def _authed_me_request(user_id: str, scopes: list[str], claims: dict) -> Request
 async def test_get_me_gate_off_returns_synthetic_total(store: _Fakes, monkeypatch: pytest.MonkeyPatch) -> None:
     # With the gate OFF the edge passes no identity, so the route answers a synthetic
     # TOTAL projection: admin, ["*"], the __no_auth__ identity, and empty list fields.
-    from tai_skeleton.access_control.settings import AccessControlSettings
+    from tai42_skeleton.access_control.settings import AccessControlSettings
 
     disabled = AccessControlSettings(enable=False, auth_providers=["redis"])
     monkeypatch.setattr(api_keys, "access_control_settings", lambda: disabled)
@@ -1274,7 +1274,7 @@ async def test_get_me_gate_on_wraps_projection(store: _Fakes, monkeypatch: pytes
     # Gate ON: the extractor derives the caller's identity/scopes/claims from the authed
     # request and the operation wraps ``build_projection`` in the ``{"data": ...}``
     # envelope. The projection itself is exercised in tests/access_control/test_projection.
-    from tai_skeleton.access_control.projection import ProjectionResult
+    from tai42_skeleton.access_control.projection import ProjectionResult
 
     captured: dict = {}
 

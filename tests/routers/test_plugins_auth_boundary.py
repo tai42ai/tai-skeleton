@@ -17,12 +17,12 @@ from starlette.applications import Starlette
 from starlette.routing import Route
 from starlette.testclient import TestClient
 
-import tai_skeleton.plugins.registry as reg
-import tai_skeleton.routers.plugins as router
-from tai_skeleton.access_control import verifier as verifier_module
-from tai_skeleton.access_control.adapter import AuthAdapter
-from tai_skeleton.access_control.settings import AccessControlSettings
-from tai_skeleton.plugins.registry import build_registry, set_current_registry
+import tai42_skeleton.plugins.registry as reg
+import tai42_skeleton.routers.plugins as router
+from tai42_skeleton.access_control import verifier as verifier_module
+from tai42_skeleton.access_control.adapter import AuthAdapter
+from tai42_skeleton.access_control.settings import AccessControlSettings
+from tai42_skeleton.plugins.registry import build_registry, set_current_registry
 from tests.routers._auth_boundary import wire_store_from_route_strings
 
 # tier 1: path -> template key. The SPA matcher is deliberately BROAD (``/.*``) —

@@ -9,13 +9,13 @@ from __future__ import annotations
 import logging
 from contextlib import asynccontextmanager
 
-from tai_contract.connectors.models import ConnectorRef
-from tai_contract.manifest import MCPConfig, TaiMCPConfig
-from tai_kit.settings import reset_all_settings
+from tai42_contract.connectors.models import ConnectorRef
+from tai42_contract.manifest import MCPConfig, TaiMCPConfig
+from tai42_kit.settings import reset_all_settings
 
-import tai_skeleton.app.instance as instance
-from tai_skeleton.app.server import TaiMCP
-from tai_skeleton.manifest import Manifest
+import tai42_skeleton.app.instance as instance
+from tai42_skeleton.app.server import TaiMCP
+from tai42_skeleton.manifest import Manifest
 
 
 def test_app_singleton_is_taimcp():
@@ -46,7 +46,7 @@ def test_access_control_probe_wired_as_startup_when_enabled():
     # handler: it is THE boot probe. Dropping it silently re-opens the boot trap (a
     # broken backend boots clean and dies on the first authenticated request), so this
     # pins the wiring, not just the probe function.
-    from tai_skeleton.access_control.startup import probe_identity_provider
+    from tai42_skeleton.access_control.startup import probe_identity_provider
 
     startup_handlers = instance.app._startup_handlers.values()
     assert probe_identity_provider in startup_handlers
@@ -205,7 +205,7 @@ def test_build_app_installs_redactor_at_tai_scope(monkeypatch):
     # restored so this test neither depends on nor leaks redactor state; the
     # singleton is reset so the first-build branch (where the install lives)
     # actually runs.
-    from tai_skeleton.connectors import meta_log_redactor
+    from tai42_skeleton.connectors import meta_log_redactor
 
     saved_factory = logging.getLogRecordFactory()
     saved_scope = meta_log_redactor._SCOPE
@@ -216,10 +216,10 @@ def test_build_app_installs_redactor_at_tai_scope(monkeypatch):
         instance.build_app()
 
         factory = logging.getLogRecordFactory()
-        secret = '{"_meta": {"tai_hub.access_token": "WIRE-SECRET"}}'
-        tai_rec = factory("tai_skeleton.connectors", logging.INFO, __file__, 1, secret, None, None)
+        secret = '{"_meta": {"tai42_hub.access_token": "WIRE-SECRET"}}'
+        tai42_rec = factory("tai42_skeleton.connectors", logging.INFO, __file__, 1, secret, None, None)
         host_rec = factory("myhost.app", logging.INFO, __file__, 1, secret, None, None)
-        assert "WIRE-SECRET" not in tai_rec.getMessage()
+        assert "WIRE-SECRET" not in tai42_rec.getMessage()
         assert "WIRE-SECRET" in host_rec.getMessage()
     finally:
         logging.setLogRecordFactory(saved_factory)

@@ -7,7 +7,7 @@ from typing import cast
 from starlette.requests import Request
 from starlette.responses import PlainTextResponse
 
-from tai_skeleton.routers import health
+from tai42_skeleton.routers import health
 
 
 async def test_health_check_returns_ok() -> None:

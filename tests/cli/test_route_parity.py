@@ -16,9 +16,9 @@ it serves assets — not an operator function).
 from __future__ import annotations
 
 # Importing the app imports every remote command module, populating COVERED_ROUTES.
-import tai_skeleton.cli.app  # noqa: F401
-from tai_skeleton.app.route_registry import load_api_routes
-from tai_skeleton.cli.commands._common import COVERED_ROUTES
+import tai42_skeleton.cli.app  # noqa: F401
+from tai42_skeleton.app.route_registry import load_api_routes
+from tai42_skeleton.cli.commands._common import COVERED_ROUTES
 
 # Routes intentionally not CLI-exposed: their caller is a browser or an external
 # non-operator party, or they serve assets — none are operator functions. Each entry

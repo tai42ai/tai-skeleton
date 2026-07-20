@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from tai_skeleton.connectors.stdio.launcher import reject_leading_dash
+from tai42_skeleton.connectors.stdio.launcher import reject_leading_dash
 
 
 def test_accepts_normal_value():

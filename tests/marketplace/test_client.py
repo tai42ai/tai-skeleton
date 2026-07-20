@@ -17,9 +17,9 @@ from typing import Any
 import httpx
 import pytest
 
-from tai_skeleton.marketplace import client as client_module
-from tai_skeleton.marketplace.client import RegistryClient
-from tai_skeleton.marketplace.errors import (
+from tai42_skeleton.marketplace import client as client_module
+from tai42_skeleton.marketplace.client import RegistryClient
+from tai42_skeleton.marketplace.errors import (
     ListingNotFoundError,
     RegistryResponseError,
     RegistryUnreachableError,

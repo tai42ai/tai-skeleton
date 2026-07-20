@@ -18,10 +18,10 @@ import mcp.types
 import pytest
 from langchain_core.tools import BaseTool
 from pydantic import BaseModel, Field
-from tai_contract.manifest import MCPConfig, TaiMCPConfig
+from tai42_contract.manifest import MCPConfig, TaiMCPConfig
 
-from tai_skeleton.tools.adapters.lc_tool_to_func import lc_tool_to_func
-from tai_skeleton.tools.adapters.mcp_tool_to_func import (
+from tai42_skeleton.tools.adapters.lc_tool_to_func import lc_tool_to_func
+from tai42_skeleton.tools.adapters.mcp_tool_to_func import (
     _build_input_model,
     _build_input_value,
     _build_output_schema,
@@ -30,7 +30,7 @@ from tai_skeleton.tools.adapters.mcp_tool_to_func import (
     mcp_tool_to_func,
 )
 
-_CLIENT = "tai_skeleton.tools.adapters.mcp_tool_to_func.FastMCPClient"
+_CLIENT = "tai42_skeleton.tools.adapters.mcp_tool_to_func.FastMCPClient"
 
 
 # -- faked client -------------------------------------------------------------
@@ -133,7 +133,7 @@ def test_build_signature_carries_field_default():
     # A field WITH a default flows its default into the synthesized parameter
     # (the non-PydanticUndefined branch of ``_build_signature``); a required
     # field maps to ``Parameter.empty``.
-    from tai_skeleton.tools.adapters.mcp_tool_to_func import _build_signature
+    from tai42_skeleton.tools.adapters.mcp_tool_to_func import _build_signature
 
     class _M(BaseModel):
         q: str
@@ -218,10 +218,10 @@ def test_wrapper_managed_token_expired_force_refreshes_and_retries():
     # gate plus ``handle_token_expired``).
     from unittest.mock import AsyncMock
 
-    from tai_contract.connectors.models import ConnectorRef
+    from tai42_contract.connectors.models import ConnectorRef
 
-    from tai_skeleton.connectors.runtime.resolver import ManagedAuth
-    from tai_skeleton.connectors.token_injection import CONNECTOR_ERROR_PREFIX
+    from tai42_skeleton.connectors.runtime.resolver import ManagedAuth
+    from tai42_skeleton.connectors.token_injection import CONNECTOR_ERROR_PREFIX
 
     conn = "11111111-1111-1111-1111-111111111111"
     managed = TaiMCPConfig(
@@ -265,8 +265,8 @@ def test_wrapper_managed_token_expired_force_refreshes_and_retries():
     async def go():
         with (
             patch(_CLIENT, return_value=client),
-            patch("tai_skeleton.connectors.token_injection.resolve_managed_auth", new=resolver),
-            patch("tai_skeleton.connectors.token_injection.force_refresh", new=refresher),
+            patch("tai42_skeleton.connectors.token_injection.resolve_managed_auth", new=resolver),
+            patch("tai42_skeleton.connectors.token_injection.force_refresh", new=refresher),
         ):
             return await mcp_tool_call_wrapper(managed, "lookup", _build_input_model(_FakeTool(), 50), {"q": "x"})
 
@@ -282,9 +282,9 @@ def test_wrapper_managed_no_expiry_skips_retry():
     # retry branch is skipped (the 144->152 false edge).
     from unittest.mock import AsyncMock
 
-    from tai_contract.connectors.models import ConnectorRef
+    from tai42_contract.connectors.models import ConnectorRef
 
-    from tai_skeleton.connectors.runtime.resolver import ManagedAuth
+    from tai42_skeleton.connectors.runtime.resolver import ManagedAuth
 
     managed = TaiMCPConfig(
         title="srv",
@@ -302,8 +302,8 @@ def test_wrapper_managed_no_expiry_skips_retry():
     async def go():
         with (
             patch(_CLIENT, return_value=client),
-            patch("tai_skeleton.connectors.token_injection.resolve_managed_auth", new=resolver),
-            patch("tai_skeleton.connectors.token_injection.force_refresh", new=refresher),
+            patch("tai42_skeleton.connectors.token_injection.resolve_managed_auth", new=resolver),
+            patch("tai42_skeleton.connectors.token_injection.force_refresh", new=refresher),
         ):
             return await mcp_tool_call_wrapper(managed, "lookup", _build_input_model(_FakeTool(), 50), {"q": "x"})
 
@@ -326,7 +326,7 @@ def test_wrapper_error_response_annotates_span_and_returns():
     async def go():
         with (
             patch(_CLIENT, return_value=client),
-            patch("tai_skeleton.tools.adapters.mcp_tool_to_func.get_monitoring", return_value=_Mon()),
+            patch("tai42_skeleton.tools.adapters.mcp_tool_to_func.get_monitoring", return_value=_Mon()),
         ):
             return await mcp_tool_call_wrapper(
                 _http_config(), "lookup", _build_input_model(_FakeTool(), 50), {"q": "x"}
@@ -423,7 +423,7 @@ class _AliasTool(BaseTool):
 def test_build_signature_aliased_field_keyed_by_field_name():
     # ``build_signature`` iterates ``model_fields`` and keys each parameter by the
     # FIELD name (not the alias), so an aliased field binds correctly.
-    from tai_skeleton.tools.adapters.lc_tool_to_func import build_signature
+    from tai42_skeleton.tools.adapters.lc_tool_to_func import build_signature
 
     sig = build_signature(_AliasArgs)
     assert set(sig.parameters) == {"q"}

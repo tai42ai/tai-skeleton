@@ -1,7 +1,7 @@
 """Preset-engine test wiring.
 
 The router/extension test dirs bind the process app singleton at collection so the
-``@tai_app`` decorators (routes, tools, extensions) that fire at module import land
+``@tai42_app`` decorators (routes, tools, extensions) that fire at module import land
 on a live app; the preset-engine tests import ``_fixtures`` (which decorates tools
 + extensions) the same way, so bind here too.
 
@@ -17,14 +17,14 @@ import asyncio
 from contextlib import asynccontextmanager
 
 import pytest
-from tai_contract.app import tai_app
-from tai_kit.clients.impl.postgres import PostgresClient
+from tai42_contract.app import tai42_app
+from tai42_kit.clients.impl.postgres import PostgresClient
 
-import tai_skeleton.versioning.store as store_module
-from tai_skeleton.app import instance
+import tai42_skeleton.versioning.store as store_module
+from tai42_skeleton.app import instance
 from tests.versioning.conftest import FakeVersioningPg
 
-tai_app.bind(instance.build_app())
+tai42_app.bind(instance.build_app())
 
 
 @pytest.fixture

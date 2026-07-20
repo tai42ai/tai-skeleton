@@ -17,8 +17,8 @@ from contextlib import contextmanager
 import pytest
 import yaml
 
-import tai_skeleton.config.file_manager as fm
-from tai_skeleton.config.file_manager import FileConfigManager
+import tai42_skeleton.config.file_manager as fm
+from tai42_skeleton.config.file_manager import FileConfigManager
 
 # --- cross-process lock helpers (module level so ``spawn`` can import them) --
 #
@@ -420,7 +420,7 @@ def test_read_env_os_error_propagates(monkeypatch: pytest.MonkeyPatch, tmp_path)
     """A read failure from the parser is logged and re-raised, never swallowed
     into an empty config."""
     (tmp_path / ".env").write_text("A=1\n", encoding="utf-8")  # exists() True
-    import tai_skeleton.config.file_manager as fm
+    import tai42_skeleton.config.file_manager as fm
 
     def boom(path, interpolate=True):
         raise OSError("disk error")
@@ -1024,7 +1024,7 @@ def test_atomic_write_cleans_up_temp_on_replace_failure(monkeypatch: pytest.Monk
     """When ``os.replace`` fails mid-write, the error propagates loudly AND the
     orphan temp file is removed, so no leftover temp lingers in the config dir
     (the ``except OSError: os.unlink(tmp)`` branch ran)."""
-    import tai_skeleton.config.file_manager as fm
+    import tai42_skeleton.config.file_manager as fm
 
     def boom(src, dst):
         raise OSError("replace failed")
@@ -1045,7 +1045,7 @@ def test_write_manifest_write_failure_propagates(monkeypatch: pytest.MonkeyPatch
     """A manifest write failure inside the locked section (here a failing
     ``os.replace``) is logged and re-raised, not swallowed — the lock is held over a
     genuinely fallible atomic write."""
-    import tai_skeleton.config.file_manager as fm
+    import tai42_skeleton.config.file_manager as fm
 
     def boom(src, dst):
         raise OSError("replace failed")

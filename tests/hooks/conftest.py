@@ -3,7 +3,7 @@
 ``FakeRedis`` covers exactly the hash + pipeline operations
 ``RedisHooksManager`` calls (``hset``/``hdel``/``hget``/``hgetall`` direct and
 queued through a pipeline) plus the two atomic register/unregister ``eval``
-scripts. ``bound_app`` binds a fake ``tai_app`` impl exposing the template
+scripts. ``bound_app`` binds a fake ``tai42_app`` impl exposing the template
 manager + tool runner the firing path reaches.
 """
 
@@ -158,18 +158,18 @@ class _FakeApp:
 
 @pytest.fixture
 def make_app():
-    """Factory binding a fake ``tai_app`` impl; unbinds after the test."""
-    from tai_contract.app import tai_app
+    """Factory binding a fake ``tai42_app`` impl; unbinds after the test."""
+    from tai42_contract.app import tai42_app
 
     created: list = []
 
     def _make(*, by_id: dict | None = None, raise_tools: set[str] | None = None) -> _FakeApp:
         app = _FakeApp(by_id=by_id, raise_tools=raise_tools)
-        tai_app.bind(app)
+        tai42_app.bind(app)
         created.append(app)
         return app
 
     try:
         yield _make
     finally:
-        tai_app.bind(None)
+        tai42_app.bind(None)

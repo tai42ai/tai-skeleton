@@ -11,18 +11,18 @@ own coverage.
 from __future__ import annotations
 
 import pytest
-from tai_contract.manifest import ApiToolsConfig
+from tai42_contract.manifest import ApiToolsConfig
 
-from tai_skeleton.hooks.managers.in_memory_hooks_manager import InMemoryHooksManager
-from tai_skeleton.hooks.settings import HooksSettings
-from tai_skeleton.operations import (
+from tai42_skeleton.hooks.managers.in_memory_hooks_manager import InMemoryHooksManager
+from tai42_skeleton.hooks.settings import HooksSettings
+from tai42_skeleton.operations import (
     BadRequestError,
     NotFoundError,
     OperationRegistry,
     operation_metadata_of,
 )
-from tai_skeleton.operations import hooks as hooks_ops
-from tai_skeleton.operations.projection import project_operations
+from tai42_skeleton.operations import hooks as hooks_ops
+from tai42_skeleton.operations.projection import project_operations
 
 
 @pytest.fixture
@@ -42,14 +42,14 @@ class _FakeVerifier:
 
 @pytest.fixture
 def registry():
-    """The process app's webhook-verifier registry bound to ``tai_app`` so
+    """The process app's webhook-verifier registry bound to ``tai42_app`` so
     ``set_topic_verifier`` resolves bind-time verifier names; cleared after."""
-    from tai_contract.app import tai_app
+    from tai42_contract.app import tai42_app
 
-    from tai_skeleton.app.instance import build_app
+    from tai42_skeleton.app.instance import build_app
 
     app = build_app()
-    tai_app.bind(app)
+    tai42_app.bind(app)
     reg = app._webhook_verifier_registry
     try:
         yield reg

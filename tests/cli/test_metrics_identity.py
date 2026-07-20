@@ -17,10 +17,10 @@ import sys
 import textwrap
 
 import pytest
-from tai_contract.access_control import registry
+from tai42_contract.access_control import registry
 
-from tai_skeleton.access_control.settings import AccessControlSettings
-from tai_skeleton.cli import metrics
+from tai42_skeleton.access_control.settings import AccessControlSettings
+from tai42_skeleton.cli import metrics
 
 
 def test_disabled_access_control_is_a_noop() -> None:
@@ -54,15 +54,15 @@ def test_metrics_process_resolves_redis_after_importing_plugin(tmp_path) -> None
     # the configured provider resolves — /metrics can verify tokens.
     manifest = tmp_path / "manifest.yml"
     manifest.write_text(
-        "lifecycle_modules:\n  - tai_identity_redis.redis_api_key_provider\n",
+        "lifecycle_modules:\n  - tai42_identity_redis.redis_api_key_provider\n",
         encoding="utf-8",
     )
     child = textwrap.dedent(
         """
-        from tai_contract.access_control import registry
-        from tai_contract.access_control.registry import get_identity_provider_factory
-        from tai_skeleton.access_control.settings import AccessControlSettings
-        from tai_skeleton.cli import metrics
+        from tai42_contract.access_control import registry
+        from tai42_contract.access_control.registry import get_identity_provider_factory
+        from tai42_skeleton.access_control.settings import AccessControlSettings
+        from tai42_skeleton.cli import metrics
 
         # A fresh process has imported no identity plugin.
         assert "redis" not in registry._REGISTRY

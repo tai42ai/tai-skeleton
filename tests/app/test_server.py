@@ -3,7 +3,7 @@
 Split between:
 * a throwaway (unstarted) ``TaiMCP`` for the thin FastMCP forwarders, the
   registration decorators, the property accessors, and the "not started" guards
-  (constructing one does NOT bind the global ``tai_app``); and
+  (constructing one does NOT bind the global ``tai42_app``); and
 * the process ``app`` driven through ``app_context`` with fixture manifests for
   the tool/extension/agent/toolkit registration paths, ``run_tool``,
   ``get_client_tools``, and the MCP-tool binding.
@@ -22,22 +22,22 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from fastmcp.tools.function_tool import FunctionTool
 from starlette.types import ASGIApp
-from tai_contract.agent import Agent
-from tai_contract.extensions import ExtensionKind
-from tai_contract.manifest import MCPConfig, TaiMCPConfig
-from tai_contract.storage import Storage
+from tai42_contract.agent import Agent
+from tai42_contract.extensions import ExtensionKind
+from tai42_contract.manifest import MCPConfig, TaiMCPConfig
+from tai42_contract.storage import Storage
 
-from tai_skeleton.app import server as server_module
-from tai_skeleton.app.instance import app
-from tai_skeleton.app.server import TaiMCP
-from tai_skeleton.manifest import Manifest
-from tai_skeleton.middleware.body_limit import BodyLimitMiddleware
-from tai_skeleton.middleware.rate_limit import RateLimitMiddleware
-from tai_skeleton.monitoring import registry as monitoring_registry
-from tai_skeleton.tools.binding import ToolBinding
+from tai42_skeleton.app import server as server_module
+from tai42_skeleton.app.instance import app
+from tai42_skeleton.app.server import TaiMCP
+from tai42_skeleton.manifest import Manifest
+from tai42_skeleton.middleware.body_limit import BodyLimitMiddleware
+from tai42_skeleton.middleware.rate_limit import RateLimitMiddleware
+from tai42_skeleton.monitoring import registry as monitoring_registry
+from tai42_skeleton.tools.binding import ToolBinding
 
 if TYPE_CHECKING:
-    from tai_skeleton.template import ResourceManager
+    from tai42_skeleton.template import ResourceManager
 
 
 class _Storage(Storage):
@@ -324,14 +324,14 @@ def test_register_storage_forwards_to_registry():
 
 def test_register_connector_forwards_to_engine_registry():
     a = _fresh()
-    with patch("tai_skeleton.connectors.providers.registry.register_connector") as reg:
+    with patch("tai42_skeleton.connectors.providers.registry.register_connector") as reg:
         a.connectors.register_connector("descriptor")  # pyright: ignore[reportArgumentType]
     reg.assert_called_once_with("descriptor")
 
 
 def test_token_store_property_forwards():
     a = _fresh()
-    with patch("tai_skeleton.connectors.store.token_store", return_value="the-store"):
+    with patch("tai42_skeleton.connectors.store.token_store", return_value="the-store"):
         assert a.connectors.token_store == "the-store"
 
 
@@ -448,7 +448,7 @@ def test_get_client_tools_unknown_name_raises():
 
 
 def _fake_function_tool(name):
-    from tai_skeleton.tools.binding import FunctionTool
+    from tai42_skeleton.tools.binding import FunctionTool
 
     def fn():
         """A tool."""

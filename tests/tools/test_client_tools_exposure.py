@@ -16,9 +16,9 @@ import logging
 import pytest
 from fastmcp.server.context import Context
 
-from tai_skeleton.app.instance import app
-from tai_skeleton.manifest import Manifest
-from tai_skeleton.tools import sampling_bridge
+from tai42_skeleton.app.instance import app
+from tai42_skeleton.manifest import Manifest
+from tai42_skeleton.tools import sampling_bridge
 
 
 class _FakeModel:

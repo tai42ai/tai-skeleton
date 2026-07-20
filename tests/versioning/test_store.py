@@ -10,13 +10,13 @@ directions), and the hard-delete scoping that spares a soft-deleted ghost.
 from __future__ import annotations
 
 import pytest
-from tai_contract.versioning.errors import (
+from tai42_contract.versioning.errors import (
     DocumentExistsError,
     DocumentNotFoundError,
     DocumentVersionNotFoundError,
 )
 
-from tai_skeleton.versioning.store import PostgresVersionedStore
+from tai42_skeleton.versioning.store import PostgresVersionedStore
 
 
 @pytest.fixture

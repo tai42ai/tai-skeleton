@@ -9,10 +9,10 @@ import mcp.types
 import pytest
 from langchain_core.tools import BaseTool
 from pydantic import BaseModel, ValidationError
-from tai_contract.manifest import MCPConfig, TaiMCPConfig
-from tai_kit.utils.data.json_schema_util import json_schema_to_pydantic_model
+from tai42_contract.manifest import MCPConfig, TaiMCPConfig
+from tai42_kit.utils.data.json_schema_util import json_schema_to_pydantic_model
 
-from tai_skeleton.tools import (
+from tai42_skeleton.tools import (
     ToolRegistry,
     lc_tool_to_func,
     mcp_tool_to_func,

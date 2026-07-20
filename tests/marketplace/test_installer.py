@@ -17,15 +17,15 @@ from typing import Any, cast
 
 import pytest
 from pyaml_env import parse_config
-from tai_contract.plugins import PluginSpec
-from tai_kit.utils.data import dump_manifest
+from tai42_contract.plugins import PluginSpec
+from tai42_kit.utils.data import dump_manifest
 
-from tai_skeleton.app.boot_rules import BackendNeedsBusError
-from tai_skeleton.app.bus import FleetResult
-from tai_skeleton.config.service import ApplyResult
-from tai_skeleton.manifest import Manifest
-from tai_skeleton.marketplace import installer as installer_module
-from tai_skeleton.marketplace.errors import (
+from tai42_skeleton.app.boot_rules import BackendNeedsBusError
+from tai42_skeleton.app.bus import FleetResult
+from tai42_skeleton.config.service import ApplyResult
+from tai42_skeleton.manifest import Manifest
+from tai42_skeleton.marketplace import installer as installer_module
+from tai42_skeleton.marketplace.errors import (
     ArtifactIntegrityError,
     ContractIncompatibleError,
     InstallStateError,
@@ -40,9 +40,9 @@ from tai_skeleton.marketplace.errors import (
     RegistryResponseError,
     VersionRefusedError,
 )
-from tai_skeleton.marketplace.installer import Installer
-from tai_skeleton.marketplace.store import InstallRecord
-from tai_skeleton.operations._broadcast import FleetBroadcastError
+from tai42_skeleton.marketplace.installer import Installer
+from tai42_skeleton.marketplace.store import InstallRecord
+from tai42_skeleton.operations._broadcast import FleetBroadcastError
 from tests.marketplace._specs import make_resolved, make_spec
 
 
@@ -299,7 +299,7 @@ async def test_install_happy_step_order_manifest_response(monkeypatch: pytest.Mo
     assert h.svc.writes[-1]["tools"] == [{"title": "pkg.tools.uuid", "module": "pkg.tools.uuid"}]
     # The response reports the RESOLVED version even though the caller passed None.
     assert result["version"] == "1.0.0"
-    assert result["package"] == "tai-toolbox"
+    assert result["package"] == "tai42-toolbox"
     # The reload field carries the local reload result plus the standard fleet fan-out
     # summary (single-worker harness => the local-only note).
     assert result["reload"]["reloaded"] is True
@@ -325,7 +325,7 @@ async def test_install_version_pinning_honoured(monkeypatch: pytest.MonkeyPatch)
     h.registry.resolved = make_resolved(spec, version="1.2.3")
     await h.installer().install("tai42/toolbox", "1.2.3")
     assert h.registry.resolve_calls == [("tai42", "toolbox", "1.2.3")]
-    assert h.pip.calls[0][-1] == "tai-toolbox==1.2.3"
+    assert h.pip.calls[0][-1] == "tai42-toolbox==1.2.3"
 
 
 _GH_ARTIFACT = "https://codeload.github.com/tai42ai/toolbox/tar.gz/refs/tags/v2.0.0"
@@ -434,7 +434,7 @@ async def test_install_already_installed_raises(monkeypatch: pytest.MonkeyPatch)
 
 
 async def test_install_no_published_version_maps_to_not_found() -> None:
-    from tai_skeleton.marketplace.errors import ListingNotFoundError
+    from tai42_skeleton.marketplace.errors import ListingNotFoundError
 
     h = Harness()
     h.registry.resolve_error = ListingNotFoundError("marketplace listing not found: tai42/toolbox")
@@ -554,7 +554,7 @@ async def test_install_manifest_persist_failure_unwinds_with_pip_uninstall(monke
         await h.installer().install("tai42/toolbox")
     # pip install then the unwind pip uninstall; nothing persisted, so no restore.
     assert h.pip.calls[0][0] == "install"
-    assert h.pip.calls[1] == ["uninstall", "--yes", "tai-toolbox"]
+    assert h.pip.calls[1] == ["uninstall", "--yes", "tai42-toolbox"]
     assert h.svc.writes == []
 
 
@@ -572,7 +572,7 @@ async def test_install_reload_failure_restores_manifest_and_uninstalls(monkeypat
     assert h.svc.writes[-1] == {}
     # Two applies (forward + converge-back), pip install then uninstall.
     assert h.svc.calls == 2
-    assert h.pip.calls[-1] == ["uninstall", "--yes", "tai-toolbox"]
+    assert h.pip.calls[-1] == ["uninstall", "--yes", "tai42-toolbox"]
 
 
 async def test_install_broadcast_failure_after_persist_restores_manifest_and_uninstalls(
@@ -596,7 +596,7 @@ async def test_install_broadcast_failure_after_persist_restores_manifest_and_uni
     # Two applies (forward patch + converge-back restore), and the freshly-installed
     # package is pip-uninstalled — the manifest never references a pip-removed package.
     assert h.svc.calls == 2
-    assert h.pip.calls[-1] == ["uninstall", "--yes", "tai-toolbox"]
+    assert h.pip.calls[-1] == ["uninstall", "--yes", "tai42-toolbox"]
 
 
 async def test_install_store_failure_full_unwind(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -609,7 +609,7 @@ async def test_install_store_failure_full_unwind(monkeypatch: pytest.MonkeyPatch
         await h.installer().install("tai42/toolbox")
     assert h.svc.writes[-1] == {}  # restored
     assert h.svc.calls == 2  # restore apply (converge-back)
-    assert h.pip.calls[-1] == ["uninstall", "--yes", "tai-toolbox"]
+    assert h.pip.calls[-1] == ["uninstall", "--yes", "tai42-toolbox"]
 
 
 async def test_install_unwind_substep_failure_escalates(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -642,7 +642,7 @@ async def test_install_compose_failure_is_manifest_compose_error(monkeypatch: py
     # Nothing persisted; the freshly-installed package is unwound.
     assert h.svc.writes == []
     assert h.pip.calls[0][0] == "install"
-    assert h.pip.calls[-1] == ["uninstall", "--yes", "tai-toolbox"]
+    assert h.pip.calls[-1] == ["uninstall", "--yes", "tai42-toolbox"]
 
 
 async def test_install_env_marker_on_non_string_field_validates_resolved(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -688,7 +688,7 @@ async def test_install_backend_needs_bus_maps_to_manifest_compose_error(monkeypa
     with pytest.raises(ManifestComposeError, match="TAI_BUS_REDIS_URL"):
         await h.installer().install("tai42/toolbox")
     assert h.svc.writes == []
-    assert h.pip.calls[-1] == ["uninstall", "--yes", "tai-toolbox"]
+    assert h.pip.calls[-1] == ["uninstall", "--yes", "tai42-toolbox"]
 
 
 # -- uninstall ---------------------------------------------------------------
@@ -701,7 +701,7 @@ async def test_uninstall_happy_path() -> None:
     result = await h.installer().uninstall("tai42/toolbox")
     order = [e for e in h.events if e in ("cm:write", "reload", "pip", "store:delete")]
     assert order == ["cm:write", "reload", "pip", "store:delete"]
-    assert h.pip.calls[-1] == ["uninstall", "--yes", "tai-toolbox"]
+    assert h.pip.calls[-1] == ["uninstall", "--yes", "tai42-toolbox"]
     assert result["uninstalled"] is True
     assert "tai42/toolbox" not in h.store.rows
     # Never touches the registry.
@@ -732,7 +732,7 @@ async def test_uninstall_reloads_to_convergence_when_manifest_already_clean() ->
     # Convergence order: the apply (persist + deregister reload) BEFORE pip uninstall + row delete.
     order = [e for e in h.events if e in ("cm:write", "reload", "pip", "store:delete")]
     assert order == ["cm:write", "reload", "pip", "store:delete"]
-    assert h.pip.calls[-1] == ["uninstall", "--yes", "tai-toolbox"]
+    assert h.pip.calls[-1] == ["uninstall", "--yes", "tai42-toolbox"]
 
 
 async def test_uninstall_env_selected_only_plugin_takes_skip_path() -> None:

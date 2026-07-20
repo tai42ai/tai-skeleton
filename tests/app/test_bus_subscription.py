@@ -25,14 +25,14 @@ from typing import Any, cast
 from unittest.mock import AsyncMock
 
 import pytest
-from tai_contract.app import tai_app
+from tai42_contract.app import tai42_app
 
-from tai_skeleton.app.bus import OriginKind, WorkerBus
-from tai_skeleton.app.instance import app
-from tai_skeleton.app.lifecycle import TaiMCPLifecycleMixin
-from tai_skeleton.manifest import Manifest
+from tai42_skeleton.app.bus import OriginKind, WorkerBus
+from tai42_skeleton.app.instance import app
+from tai42_skeleton.app.lifecycle import TaiMCPLifecycleMixin
+from tai42_skeleton.manifest import Manifest
 
-tai_app.bind(app)
+tai42_app.bind(app)
 
 
 class _Mixin(TaiMCPLifecycleMixin):
@@ -50,7 +50,7 @@ class _Mixin(TaiMCPLifecycleMixin):
 
 
 def test_build_bus_is_local_without_a_redis_url(monkeypatch: pytest.MonkeyPatch) -> None:
-    from tai_kit.settings import reset_all_settings
+    from tai42_kit.settings import reset_all_settings
 
     monkeypatch.delenv("TAI_BUS_REDIS_URL", raising=False)
     reset_all_settings()
@@ -62,7 +62,7 @@ def test_build_bus_is_local_without_a_redis_url(monkeypatch: pytest.MonkeyPatch)
 
 
 def test_build_bus_is_real_with_a_redis_url(monkeypatch: pytest.MonkeyPatch) -> None:
-    from tai_kit.settings import reset_all_settings
+    from tai42_kit.settings import reset_all_settings
 
     monkeypatch.setenv("TAI_BUS_REDIS_URL", "redis://localhost:6379/0")
     reset_all_settings()
@@ -248,7 +248,7 @@ def test_on_fleet_op_applied_is_registered_through_the_lifecycle_facet() -> None
 
 
 async def test_app_context_builds_local_bus_and_manages_the_subscription(monkeypatch: pytest.MonkeyPatch) -> None:
-    from tai_kit.settings import reset_all_settings
+    from tai42_kit.settings import reset_all_settings
 
     # Single-worker, file-mode, no-backend, no-bus: the supported busless shape runs
     # on WorkerBus.local() — app_context builds it, spawns the subscription, and

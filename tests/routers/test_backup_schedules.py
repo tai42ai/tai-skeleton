@@ -2,7 +2,7 @@
 
 The section carries whatever the scheduling backend's ``backend_export_schedules``
 / ``backend_import_schedules`` tools return, without parsing schedule internals.
-The ``tai_app.tools`` facet is faked: an unbound backend has neither tool, so
+The ``tai42_app.tools`` facet is faked: an unbound backend has neither tool, so
 ``run_tool`` raises the binding's real unknown-tool ``RuntimeError`` and the
 router records it per-section; a bound backend round-trips the document opaquely.
 """
@@ -13,11 +13,11 @@ import json
 from types import SimpleNamespace
 
 from starlette.requests import Request
-from tai_contract.app import tai_app
+from tai42_contract.app import tai42_app
 
-from tai_skeleton.backup.registry import BackupRegistry
-from tai_skeleton.backup.sections import register_core_sections
-from tai_skeleton.routers.backup import export_backup, import_backup
+from tai42_skeleton.backup.registry import BackupRegistry
+from tai42_skeleton.backup.sections import register_core_sections
+from tai42_skeleton.routers.backup import export_backup, import_backup
 
 
 def _post_req(payload: dict) -> Request:
@@ -56,7 +56,7 @@ class _FakeTools:
 def _install(monkeypatch, tools: _FakeTools) -> None:
     registry = BackupRegistry()
     register_core_sections(registry)
-    monkeypatch.setattr(tai_app, "_impl", SimpleNamespace(backup=registry, tools=tools))
+    monkeypatch.setattr(tai42_app, "_impl", SimpleNamespace(backup=registry, tools=tools))
 
 
 # -- no backend: absence is a per-section error, not a crash -----------------

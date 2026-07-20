@@ -11,29 +11,29 @@ from starlette.authentication import AuthenticationError
 from starlette.middleware import Middleware
 from starlette.requests import HTTPConnection
 from starlette.responses import JSONResponse
-from tai_contract.access_control import OWNER_USER_ID_CLAIM
-from tai_contract.access_control.context import (
+from tai42_contract.access_control import OWNER_USER_ID_CLAIM
+from tai42_contract.access_control.context import (
     get_current_user_id,
     reset_request_user_id,
     set_request_user_id,
 )
-from tai_contract.access_control.identity import AuthIdentity, IdentityProvider
-from tai_contract.access_control.models import AccessPolicy
-from tai_contract.access_control.registry import register_identity_provider
-from tai_identity_redis.redis_api_key_provider import RedisApiKeyProvider
-from tai_kit.utils.data.string_util import hash_api_key
+from tai42_contract.access_control.identity import AuthIdentity, IdentityProvider
+from tai42_contract.access_control.models import AccessPolicy
+from tai42_contract.access_control.registry import register_identity_provider
+from tai42_identity_redis.redis_api_key_provider import RedisApiKeyProvider
+from tai42_kit.utils.data.string_util import hash_api_key
 
-from tai_skeleton.access_control.adapter import AuthAdapter, handle_auth_error
-from tai_skeleton.access_control.backend import AccessControlAuthBackend, AuthorizationError
-from tai_skeleton.access_control.request_scopes import (
+from tai42_skeleton.access_control.adapter import AuthAdapter, handle_auth_error
+from tai42_skeleton.access_control.backend import AccessControlAuthBackend, AuthorizationError
+from tai42_skeleton.access_control.request_scopes import (
     reset_request_identity_claims,
     set_request_identity_claims,
 )
-from tai_skeleton.access_control.settings import (
+from tai42_skeleton.access_control.settings import (
     AccessControlSettings,
     access_control_settings,
 )
-from tai_skeleton.access_control.user import (
+from tai42_skeleton.access_control.user import (
     TaiUser,
     is_admin_policy,
     request_identity,
@@ -63,7 +63,7 @@ def test_adapter_builds_middleware_stack_without_resolving_provider():
 
 
 def test_adapter_get_identity_providers_resolves_redis_from_registry():
-    # The tai-identity-redis plugin registers "redis" in the module-level registry at
+    # The tai42-identity-redis plugin registers "redis" in the module-level registry at
     # import (ensured by the suite's default-provider fixture), so the adapter's
     # registry lookup builds the plugin's RedisApiKeyProvider on demand.
     adapter = AuthAdapter(AccessControlSettings())
@@ -208,7 +208,7 @@ def test_auth_providers_defaults_preserve_single_redis():
 
 
 def test_auth_providers_parses_json_list_from_env(monkeypatch):
-    from tai_kit.settings import reset_all_settings
+    from tai42_kit.settings import reset_all_settings
 
     monkeypatch.setenv("ACCESS_CONTROL_AUTH_PROVIDERS", '["accounts-postgres", "redis"]')
     reset_all_settings()
@@ -252,7 +252,7 @@ def test_authenticated_always_allowed_paths_default():
 
 
 def test_authenticated_always_allowed_paths_parse_json_from_env(monkeypatch):
-    from tai_kit.settings import reset_all_settings
+    from tai42_kit.settings import reset_all_settings
 
     monkeypatch.setenv("ACCESS_CONTROL_AUTHENTICATED_ALWAYS_ALLOWED_PATHS", '["/api/auth/me", "/api/auth/session"]')
     reset_all_settings()

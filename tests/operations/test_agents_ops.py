@@ -12,8 +12,8 @@ from typing import Any
 import pytest
 from pydantic import BaseModel
 
-from tai_skeleton.agent import Agent
-from tai_skeleton.operations import agents as agent_ops
+from tai42_skeleton.agent import Agent
+from tai42_skeleton.operations import agents as agent_ops
 
 
 class _Input(BaseModel):

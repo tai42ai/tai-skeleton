@@ -17,7 +17,7 @@ from urllib.parse import urlencode
 
 import pytest
 from starlette.requests import Request
-from tai_contract.monitoring import (
+from tai42_contract.monitoring import (
     MetricsResult,
     MetricsRow,
     MetricsView,
@@ -28,8 +28,8 @@ from tai_contract.monitoring import (
     TraceNotFoundError,
 )
 
-from tai_skeleton.monitoring.registry import register_monitoring, reset_monitoring
-from tai_skeleton.routers import observability as router
+from tai42_skeleton.monitoring.registry import register_monitoring, reset_monitoring
+from tai42_skeleton.routers import observability as router
 
 _T0 = datetime(2026, 7, 1, 12, 0, 0, tzinfo=UTC)
 _T1 = datetime(2026, 7, 1, 12, 0, 2, tzinfo=UTC)

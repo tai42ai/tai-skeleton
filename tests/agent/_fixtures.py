@@ -11,8 +11,8 @@ from __future__ import annotations
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
-from tai_contract.agent import Agent
-from tai_contract.app import tai_app
+from tai42_contract.agent import Agent
+from tai42_contract.app import tai42_app
 
 
 class EchoInput(BaseModel):
@@ -21,7 +21,7 @@ class EchoInput(BaseModel):
     note: str = "unset"
 
 
-@tai_app.agents.agent("echo_fields")
+@tai42_app.agents.agent("echo_fields")
 class EchoFieldsAgent(Agent):
     tool_name = "echo_fields"
     tool_description = "Echo which fields were forwarded."
@@ -49,7 +49,7 @@ class InlineSkillLike(BaseModel):
 class NestedInput(BaseModel):
     """A ``ToolInput`` carrying nested pydantic-model fields, standing in for the
     real ``tools_agent`` / ``deep_agent`` inputs (the skeleton binds the ``Agent``
-    contract only and never imports ``tai_agents``).
+    contract only and never imports ``tai42_agents``).
 
     ``presets`` / ``subagents`` / ``inline_skills`` each nest a model, so
     ``model_json_schema`` emits them as ``$defs`` refs — the shape an extension
@@ -64,7 +64,7 @@ class NestedInput(BaseModel):
     inline_skills: list[InlineSkillLike] | None = None
 
 
-@tai_app.agents.agent("nested_fields")
+@tai42_app.agents.agent("nested_fields")
 class NestedFieldsAgent(Agent):
     tool_name = "nested_fields"
     tool_description = "Echo which nested fields were forwarded."

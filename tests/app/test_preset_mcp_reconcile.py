@@ -25,14 +25,14 @@ from typing import Any, ClassVar
 from unittest.mock import AsyncMock
 
 import pytest
-from tai_contract.agent.base import PresetSpec
-from tai_contract.manifest import MCPConfig, TaiMCPConfig
-from tai_kit.clients.impl.postgres import PostgresClient
+from tai42_contract.agent.base import PresetSpec
+from tai42_contract.manifest import MCPConfig, TaiMCPConfig
+from tai42_kit.clients.impl.postgres import PostgresClient
 
-import tai_skeleton.versioning.store as store_module
-from tai_skeleton.app import instance
-from tai_skeleton.app.reload_gate import reload_gate
-from tai_skeleton.manifest import Manifest
+import tai42_skeleton.versioning.store as store_module
+from tai42_skeleton.app import instance
+from tai42_skeleton.app.reload_gate import reload_gate
+from tai42_skeleton.manifest import Manifest
 from tests.versioning.conftest import FakeVersioningPg
 
 

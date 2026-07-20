@@ -7,10 +7,10 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 import pytest
-from tai_contract.app import tai_app
+from tai42_contract.app import tai42_app
 
-from tai_skeleton.operations import BadRequestError
-from tai_skeleton.operations.backup import import_backup
+from tai42_skeleton.operations import BadRequestError
+from tai42_skeleton.operations.backup import import_backup
 
 
 async def test_import_rejects_wrong_version() -> None:
@@ -29,7 +29,7 @@ async def test_import_registered_section_absent_from_document_reports_error(monk
     # A selected section this host DOES register, but which the document omits, is a
     # per-section report error (ok=False) — not a transport failure.
     backup = SimpleNamespace(sections=lambda: [SimpleNamespace(name="manifest", secret=False)])
-    monkeypatch.setattr(tai_app, "_impl", SimpleNamespace(backup=backup))
+    monkeypatch.setattr(tai42_app, "_impl", SimpleNamespace(backup=backup))
 
     result = await import_backup({"version": 1, "sections": {}}, ["manifest"])
 

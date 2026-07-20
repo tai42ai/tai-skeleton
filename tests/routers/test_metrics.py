@@ -23,10 +23,10 @@ from pydantic import ValidationError
 from starlette.requests import Request
 from starlette.responses import Response
 
-from tai_skeleton.routers import metrics as metrics_mod
-from tai_skeleton.routers import prometheus as prom_mod
-from tai_skeleton.routers.metrics_settings import MetricsSettings
-from tai_skeleton.routers.prometheus import render_multiproc_metrics
+from tai42_skeleton.routers import metrics as metrics_mod
+from tai42_skeleton.routers import prometheus as prom_mod
+from tai42_skeleton.routers.metrics_settings import MetricsSettings
+from tai42_skeleton.routers.prometheus import render_multiproc_metrics
 
 
 class _FakeRequest:
@@ -45,7 +45,7 @@ def test_metrics_settings_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
     settings = MetricsSettings()
     assert settings.backend_metrics_host == "127.0.0.1"
     assert settings.backend_metrics_port == 8012
-    expected = os.path.join(tempfile.gettempdir(), "tai_prometheus")
+    expected = os.path.join(tempfile.gettempdir(), "tai42_prometheus")
     assert settings.prometheus_multiproc_dir == expected
     assert os.path.isabs(settings.prometheus_multiproc_dir)  # the default passes its own validator
 
@@ -53,11 +53,11 @@ def test_metrics_settings_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_metrics_settings_rejects_relative_override_argument() -> None:
     # A relative override resolves per-CWD and splits the shared dir — refuse loudly.
     with pytest.raises(ValidationError, match="absolute path"):
-        MetricsSettings(prometheus_multiproc_dir="relative/tai_prometheus")
+        MetricsSettings(prometheus_multiproc_dir="relative/tai42_prometheus")
 
 
 def test_metrics_settings_rejects_relative_env_override(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("PROMETHEUS_MULTIPROC_DIR", "relative/tai_prometheus")
+    monkeypatch.setenv("PROMETHEUS_MULTIPROC_DIR", "relative/tai42_prometheus")
     with pytest.raises(ValidationError, match="absolute path"):
         MetricsSettings()
 
@@ -151,7 +151,7 @@ def test_assert_multiproc_value_class_raises_under_mutex(monkeypatch: pytest.Mon
         prom_mod.assert_multiproc_value_class()
 
 
-@pytest.mark.parametrize("module", ["tai_skeleton.cli.mcp_app", "tai_skeleton.cli.backend"])
+@pytest.mark.parametrize("module", ["tai42_skeleton.cli.mcp_app", "tai42_skeleton.cli.backend"])
 def test_writer_cli_import_does_not_preload_prometheus(module: str) -> None:
     """Each WRITER entry point must publish ``PROMETHEUS_MULTIPROC_DIR`` before
     anything imports ``prometheus_client`` (which freezes its value backend). That
@@ -182,7 +182,7 @@ def test_counter_from_spawned_process_is_visible_to_scrape(monkeypatch: pytest.M
 
         # The env (set by the parent below) must have frozen the mmap backend.
         assert ValueClass.__name__ == "MmapedValue", ValueClass.__name__
-        counter = Counter("tai_worker_probe_total", "cross-process probe", ["runtime"])
+        counter = Counter("tai42_worker_probe_total", "cross-process probe", ["runtime"])
         counter.labels(runtime="worker").inc(3)
         """
     )
@@ -202,9 +202,9 @@ def test_counter_from_spawned_process_is_visible_to_scrape(monkeypatch: pytest.M
     monkeypatch.setenv("PROMETHEUS_MULTIPROC_DIR", str(mp_dir))
     exposition = render_multiproc_metrics().decode()
 
-    assert "tai_worker_probe_total" in exposition
+    assert "tai42_worker_probe_total" in exposition
     assert 'runtime="worker"' in exposition
-    assert 'tai_worker_probe_total{runtime="worker"} 3.0' in exposition
+    assert 'tai42_worker_probe_total{runtime="worker"} 3.0' in exposition
 
 
 def test_backend_main_activates_multiproc_before_prometheus_import_in_clean_env() -> None:
@@ -226,7 +226,7 @@ def test_backend_main_activates_multiproc_before_prometheus_import_in_clean_env(
         """
         import asyncio
 
-        import tai_skeleton.cli.backend as backend
+        import tai42_skeleton.cli.backend as backend
         from click.testing import CliRunner
 
         async def _noop():
@@ -276,8 +276,8 @@ def test_mcp_app_master_activates_multiproc_before_prometheus_import_in_clean_en
     activation."""
     child = textwrap.dedent(
         """
-        import tai_skeleton.cli.mcp_app as mcp_app
-        from tai_skeleton.settings.cache import app_args_settings
+        import tai42_skeleton.cli.mcp_app as mcp_app
+        from tai42_skeleton.settings.cache import app_args_settings
 
         async def _fake_run_stdio():
             return 0
@@ -405,7 +405,7 @@ def test_render_metrics_logs_mode_once(monkeypatch: pytest.MonkeyPatch, caplog: 
     monkeypatch.setattr(prom_mod, "render_multiproc_metrics", lambda: b"MP")
     monkeypatch.setattr(prom_mod, "_mode_logged", False)
 
-    with caplog.at_level(logging.INFO, logger="tai_skeleton.routers.prometheus"):
+    with caplog.at_level(logging.INFO, logger="tai42_skeleton.routers.prometheus"):
         prom_mod.render_metrics()
         first = [r for r in caplog.records if "/metrics in" in r.getMessage()]
         assert len(first) == 1
@@ -426,13 +426,13 @@ def test_metrics_dir_init_skipped_without_multiproc_env(tmp_path) -> None:
         """
         import os
 
-        from tai_contract.app import tai_app
-        from tai_skeleton.app.route_registry import _SpecApp
+        from tai42_contract.app import tai42_app
+        from tai42_skeleton.app.route_registry import _SpecApp
 
-        tai_app.bind(_SpecApp())
-        import tai_skeleton.routers.metrics  # noqa: F401
+        tai42_app.bind(_SpecApp())
+        import tai42_skeleton.routers.metrics  # noqa: F401
 
-        from tai_skeleton.routers.metrics_settings import metrics_settings
+        from tai42_skeleton.routers.metrics_settings import metrics_settings
 
         d = metrics_settings().prometheus_multiproc_dir
         assert not os.path.exists(d), d
@@ -455,11 +455,11 @@ def test_metrics_dir_init_runs_with_multiproc_env(tmp_path) -> None:
         """
         import os
 
-        from tai_contract.app import tai_app
-        from tai_skeleton.app.route_registry import _SpecApp
+        from tai42_contract.app import tai42_app
+        from tai42_skeleton.app.route_registry import _SpecApp
 
-        tai_app.bind(_SpecApp())
-        import tai_skeleton.routers.metrics  # noqa: F401
+        tai42_app.bind(_SpecApp())
+        import tai42_skeleton.routers.metrics  # noqa: F401
 
         d = os.environ["PROMETHEUS_MULTIPROC_DIR"]
         assert os.path.isdir(d), d

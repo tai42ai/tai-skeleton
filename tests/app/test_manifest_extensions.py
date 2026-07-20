@@ -14,12 +14,12 @@ from __future__ import annotations
 import asyncio
 
 import pytest
-from tai_contract.manifest import MCPConfig, TaiMCPConfig
+from tai42_contract.manifest import MCPConfig, TaiMCPConfig
 
-from tai_skeleton.app.instance import app
-from tai_skeleton.exceptions.exceptions import TaiValidationError
-from tai_skeleton.manifest import Manifest
-from tai_skeleton.tools.registry import ToolRegistry
+from tai42_skeleton.app.instance import app
+from tai42_skeleton.exceptions.exceptions import TaiValidationError
+from tai42_skeleton.manifest import Manifest
+from tai42_skeleton.tools.registry import ToolRegistry
 
 _TOOLS_B = "tests.app._fixtures.tools_b"
 _EXT_MOD = "tests.app._fixtures.ext_mod"  # registers the WRAPPER ``loud``

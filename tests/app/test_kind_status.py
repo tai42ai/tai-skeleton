@@ -8,15 +8,15 @@ import logging
 from types import SimpleNamespace
 
 import pytest
-from tai_contract.app import tai_app
+from tai42_contract.app import tai42_app
 
-from tai_skeleton.app import kind_status as ks
-from tai_skeleton.app.instance import build_app
-from tai_skeleton.app.kind_status import KindStatus, collect_kind_status
-from tai_skeleton.manifest import Manifest
-from tai_skeleton.monitoring.noop import NoOpMonitoring
-from tai_skeleton.monitoring.registry import init_monitoring, reset_monitoring
-from tai_skeleton.plugins.registry import StudioPluginError
+from tai42_skeleton.app import kind_status as ks
+from tai42_skeleton.app.instance import build_app
+from tai42_skeleton.app.kind_status import KindStatus, collect_kind_status
+from tai42_skeleton.manifest import Manifest
+from tai42_skeleton.monitoring.noop import NoOpMonitoring
+from tai42_skeleton.monitoring.registry import init_monitoring, reset_monitoring
+from tai42_skeleton.plugins.registry import StudioPluginError
 from tests._helpers import DeliverOnlyChannel
 
 _EXPECTED_KINDS = [
@@ -68,11 +68,11 @@ class _Channel(DeliverOnlyChannel):
 
 @pytest.fixture
 def bound_app(monkeypatch: pytest.MonkeyPatch):
-    """The process app singleton, bound to ``tai_app`` with an empty live manifest
+    """The process app singleton, bound to ``tai42_app`` with an empty live manifest
     and its app-bound registries cleared, so each row is deterministic before a
     test permutes exactly one kind. Cleared again on teardown."""
     app = build_app()
-    tai_app.bind(app)
+    tai42_app.bind(app)
     monkeypatch.setattr(app, "_manifest", Manifest.model_validate({}), raising=False)
     monkeypatch.setattr(app._storage_registry, "_provider", None)
     monkeypatch.setattr(app._backend_holder, "_backend", None)
@@ -206,8 +206,8 @@ def test_channels_off_when_none_registered(bound_app) -> None:
 
 
 def test_channels_active_lists_sorted_names(bound_app) -> None:
-    tai_app.channels.register("zeta", _Channel())
-    tai_app.channels.register("alpha", _Channel())
+    tai42_app.channels.register("zeta", _Channel())
+    tai42_app.channels.register("alpha", _Channel())
     row = _row("channels")
     assert row.state == "active"
     assert row.plugin is None

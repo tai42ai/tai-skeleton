@@ -1,7 +1,7 @@
 """Worker-backend launcher.
 
 ``run_backend`` launches every invocation inside ``app_context`` — which binds
-the ``tai_app`` handle and imports the manifest's backend module, so a plugin
+the ``tai42_app`` handle and imports the manifest's backend module, so a plugin
 registering its Backend at import lands in the bound holder. It joins the worker
 bus under the ``backend`` origin kind, and publishes the resolved manifest into the
 env for the WORKER runtime only — the one whose forked children need it. The
@@ -23,10 +23,10 @@ from types import SimpleNamespace
 import pytest
 from click.testing import CliRunner
 
-import tai_skeleton.cli.backend as backend
-from tai_skeleton.connectors import meta_log_redactor
+import tai42_skeleton.cli.backend as backend
+from tai42_skeleton.connectors import meta_log_redactor
 
-_LOGGING_RELOAD_KEY = "tai_skeleton.app.instance.apply_logging_settings"
+_LOGGING_RELOAD_KEY = "tai42_skeleton.app.instance.apply_logging_settings"
 
 
 @pytest.fixture(autouse=True)
@@ -102,7 +102,7 @@ def _bus_configured(monkeypatch: pytest.MonkeyPatch) -> None:
     rule requires the worker bus. Report it configured so the launcher-wiring tests
     exercise the launch path without a real Redis (the app itself builds the no-op
     local bus, which never connects)."""
-    import tai_skeleton.app.boot_rules as boot_rules
+    import tai42_skeleton.app.boot_rules as boot_rules
 
     monkeypatch.setattr(boot_rules, "_bus_configured", lambda: True)
 
@@ -119,7 +119,7 @@ def fake_app(monkeypatch: pytest.MonkeyPatch) -> _FakeApp:
 async def test_run_backend_non_worker_enters_context_as_backend_origin(
     fake_app: _FakeApp, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from tai_skeleton.app.bus import OriginKind
+    from tai42_skeleton.app.bus import OriginKind
 
     settings = backend.base_backend_settings()
     monkeypatch.delenv(settings.manifest_key, raising=False)
@@ -175,21 +175,21 @@ async def test_run_backend_beat_reaches_import_registered_backend(monkeypatch: p
     """A beat-style (non-worker) invocation with a REAL app and a plugin module
     that registers its Backend at import: ``run_backend`` must bind the app
     (``app_context`` -> ``start()``) BEFORE the backend module import runs, so
-    the import-time ``tai_app.backends.register_backend`` lands in the bound
+    the import-time ``tai42_app.backends.register_backend`` lands in the bound
     holder and ``launch`` receives the args. Importing the module before the
-    bind instead hits the unbound ``tai_app`` handle (AttributeError) and the
+    bind instead hits the unbound ``tai42_app`` handle (AttributeError) and the
     invocation never reaches ``launch``."""
-    from tai_contract.app import tai_app
+    from tai42_contract.app import tai42_app
 
-    from tai_skeleton.app import instance
+    from tai42_skeleton.app import instance
 
     real_app = instance.build_app()
-    bound_before = object.__getattribute__(tai_app, "_impl")
+    bound_before = object.__getattribute__(tai42_app, "_impl")
     # Model a fresh process: the handle is unbound until start() binds it, so an
     # import-before-bind registration raises instead of landing anywhere. The
     # plugin module is therefore NOT imported here — start() imports it, after
     # the bind.
-    tai_app.bind(None)
+    tai42_app.bind(None)
     saved_backend = real_app._backend_holder._backend
     real_app._backend_holder._backend = None
     try:
@@ -208,7 +208,7 @@ async def test_run_backend_beat_reaches_import_registered_backend(monkeypatch: p
         plugin.LaunchRecordingBackend.launched.clear()
     finally:
         real_app._backend_holder._backend = saved_backend
-        tai_app.bind(bound_before)
+        tai42_app.bind(bound_before)
 
 
 def test_main_sets_manifest_env_and_runs_loop(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -338,7 +338,7 @@ def test_main_publishes_absolute_multiproc_dir(monkeypatch: pytest.MonkeyPatch) 
     # ``activate_multiproc_env()`` can put back on the env.
     import tempfile
 
-    from tai_kit.settings import reset_all_settings
+    from tai42_kit.settings import reset_all_settings
 
     monkeypatch.delenv("PROMETHEUS_MULTIPROC_DIR", raising=False)
     reset_all_settings()
@@ -354,7 +354,7 @@ def test_main_publishes_absolute_multiproc_dir(monkeypatch: pytest.MonkeyPatch) 
         assert result.exit_code == 0, result.output
         # ``main``'s ``activate_multiproc_env()`` must publish the coded default: the
         # host-tempdir absolute path the settings field resolves to with the env unset.
-        expected = os.path.join(tempfile.gettempdir(), "tai_prometheus")
+        expected = os.path.join(tempfile.gettempdir(), "tai42_prometheus")
         assert os.environ["PROMETHEUS_MULTIPROC_DIR"] == expected
         assert os.path.isabs(os.environ["PROMETHEUS_MULTIPROC_DIR"])
     finally:

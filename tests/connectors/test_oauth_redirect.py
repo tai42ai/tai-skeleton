@@ -7,9 +7,9 @@ from typing import cast
 import pytest
 from starlette.requests import Request
 
-import tai_skeleton.connectors.oauth.redirect as redirect_mod
-from tai_skeleton.connectors.oauth.client import RedirectUriNotAllowedError
-from tai_skeleton.connectors.oauth.redirect import (
+import tai42_skeleton.connectors.oauth.redirect as redirect_mod
+from tai42_skeleton.connectors.oauth.client import RedirectUriNotAllowedError
+from tai42_skeleton.connectors.oauth.redirect import (
     CALLBACK_PATH,
     compute_deployment_origin,
     compute_redirect_uri,

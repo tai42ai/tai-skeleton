@@ -11,12 +11,12 @@ from __future__ import annotations
 import pytest
 from click.testing import CliRunner
 
-from tai_skeleton.cli import app as app_module
+from tai42_skeleton.cli import app as app_module
 
 _VALID_MANIFEST = """
 tools:
   - title: toolbox
-    module: tai_skeleton.examples
+    module: tai42_skeleton.examples
     include: []
 """
 
@@ -77,7 +77,7 @@ def test_config_lint_without_manifest_still_checks_settings(monkeypatch: pytest.
 
 def test_config_lint_flags_unresolved_required_setting(monkeypatch: pytest.MonkeyPatch) -> None:
     # A required setting whose env var is absent must fail the lint loudly.
-    from tai_kit.settings import SettingsClassInfo, SettingsFieldInfo
+    from tai42_kit.settings import SettingsClassInfo, SettingsFieldInfo
 
     field = SettingsFieldInfo(
         name="token",
@@ -91,7 +91,7 @@ def test_config_lint_flags_unresolved_required_setting(monkeypatch: pytest.Monke
     )
     group = SettingsClassInfo(name="LintProbe", module="probe", qualname="probe.LintProbe", fields=[field])
 
-    import tai_skeleton.cli.commands.config as config_cmd
+    import tai42_skeleton.cli.commands.config as config_cmd
 
     monkeypatch.setattr(config_cmd, "registered_settings", lambda: [group])
     monkeypatch.setattr(config_cmd, "load_api_routes", list)

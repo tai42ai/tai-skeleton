@@ -9,14 +9,14 @@ from __future__ import annotations
 
 from typing import Any
 
-from tai_contract.plugins import PluginSpec
+from tai42_contract.plugins import PluginSpec
 
-# The tai-contract version installed in this environment satisfies this range, so
+# The tai42-contract version installed in this environment satisfies this range, so
 # a resolve built with it passes the installer's contract check by default.
 DEFAULT_CONTRACT_RANGE = ">=0.1,<1.0"
 
 
-def tool_item(module: str = "tai_toolbox.tools.gen_uuid", name: str = "gen-uuid") -> dict[str, Any]:
+def tool_item(module: str = "tai42_toolbox.tools.gen_uuid", name: str = "gen-uuid") -> dict[str, Any]:
     """A ``tool``-kind provides item."""
     return {"kind": "tool", "name": name, "module": module, "description": "Generate a UUID"}
 
@@ -25,7 +25,7 @@ def make_spec(
     *,
     namespace: str = "tai42",
     name: str = "toolbox",
-    package: str = "tai-toolbox",
+    package: str = "tai42-toolbox",
     version: str = "1.0.0",
     provides: list[dict[str, Any]] | None = None,
     contract: str = DEFAULT_CONTRACT_RANGE,

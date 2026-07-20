@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from starlette.routing import Route
 
-import tai_skeleton.routers.presets as router
+import tai42_skeleton.routers.presets as router
 from tests.routers._auth_boundary import AUTHED, boundary_client
 
 _ROUTES = [

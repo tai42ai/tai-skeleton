@@ -13,19 +13,19 @@ from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
 import pytest
-from tai_contract.interactions import AnswerFormat, InteractionRequest
+from tai42_contract.interactions import AnswerFormat, InteractionRequest
 
-from tai_skeleton.interactions import InteractionStore
-from tai_skeleton.interactions.settings import InteractionsSettings
-from tai_skeleton.operations import (
+from tai42_skeleton.interactions import InteractionStore
+from tai42_skeleton.interactions.settings import InteractionsSettings
+from tai42_skeleton.operations import (
     BadRequestError,
     ConflictError,
     ForbiddenError,
     NotFoundError,
     PayloadTooLargeError,
 )
-from tai_skeleton.operations import interactions as ops
-from tai_skeleton.operations.decorator import operation_metadata_of
+from tai42_skeleton.operations import interactions as ops
+from tai42_skeleton.operations.decorator import operation_metadata_of
 
 
 @pytest.fixture

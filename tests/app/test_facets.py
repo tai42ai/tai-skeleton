@@ -1,4 +1,4 @@
-"""Facet forwarding: each of the 17 ``tai_contract.app`` facets is a thin view
+"""Facet forwarding: each of the 17 ``tai42_contract.app`` facets is a thin view
 that forwards to its feature's impl collaborator (``ToolBinding``,
 ``AgentBinding``, ``BackendHolder``, the extension registry, ``HttpSurface``) or
 to the app's remaining private members. These assert every facet method and
@@ -10,12 +10,12 @@ from __future__ import annotations
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from tai_contract.extensions import ExtensionKind
-from tai_contract.presets import PresetBody
-from tai_contract.storage import Storage
+from tai42_contract.extensions import ExtensionKind
+from tai42_contract.presets import PresetBody
+from tai42_contract.storage import Storage
 
-import tai_skeleton.monitoring
-from tai_skeleton.app.facets import (
+import tai42_skeleton.monitoring
+from tai42_skeleton.app.facets import (
     AdminFacet,
     AgentsFacet,
     BackendsFacet,
@@ -33,7 +33,7 @@ from tai_skeleton.app.facets import (
     VersioningFacet,
     WebhookVerifiersFacet,
 )
-from tai_skeleton.exceptions.exceptions import TaiValidationError
+from tai42_skeleton.exceptions.exceptions import TaiValidationError
 
 
 def _app() -> MagicMock:
@@ -217,7 +217,7 @@ def test_storage_facet_forwarding():
 
 def test_monitoring_facet_forwarding(monkeypatch):
     recorded = MagicMock()
-    monkeypatch.setattr(tai_skeleton.monitoring, "register_monitoring", recorded)
+    monkeypatch.setattr(tai42_skeleton.monitoring, "register_monitoring", recorded)
     f = MonitoringFacet(_app())
     f.register_monitoring(_noop)
     recorded.assert_called_once_with(_noop)
@@ -225,7 +225,7 @@ def test_monitoring_facet_forwarding(monkeypatch):
 
 def test_monitoring_facet_active_returns_the_registered_backend(monkeypatch):
     backend = MagicMock()
-    monkeypatch.setattr(tai_skeleton.monitoring, "get_monitoring", lambda: backend)
+    monkeypatch.setattr(tai42_skeleton.monitoring, "get_monitoring", lambda: backend)
     f = MonitoringFacet(_app())
     assert f.active is backend
 

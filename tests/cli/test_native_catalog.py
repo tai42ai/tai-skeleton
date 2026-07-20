@@ -13,8 +13,8 @@ from types import SimpleNamespace
 import pytest
 from click.testing import CliRunner
 
-from tai_skeleton.cli import app as app_module
-from tai_skeleton.cli.native import catalog
+from tai42_skeleton.cli import app as app_module
+from tai42_skeleton.cli.native import catalog
 
 _VALID_KINDS = {
     "tool",
@@ -52,7 +52,7 @@ entries:
     module: m
     description: d
 packages:
-  tai-skeleton: tai-skeleton
+  tai42-skeleton: tai42-skeleton
 """
     fake_resource = SimpleNamespace(read_text=lambda encoding="utf-8": document)
     monkeypatch.setattr(
@@ -99,4 +99,4 @@ def test_catalog_table_renders_with_repo_column() -> None:
     result = CliRunner().invoke(app_module.app, ["catalog"])
     assert result.exit_code == 0, result.output
     assert "repo" in result.output
-    assert "tai-skeleton" in result.output
+    assert "tai42-skeleton" in result.output

@@ -12,13 +12,13 @@ guard denies the request loudly instead of silently.
 from __future__ import annotations
 
 import pytest
-from tai_contract.access_control import OWNER_USER_ID_CLAIM
-from tai_contract.access_control.identity import ApiKeyIdentityProvider, AuthIdentity, IdentityProvider
+from tai42_contract.access_control import OWNER_USER_ID_CLAIM
+from tai42_contract.access_control.identity import ApiKeyIdentityProvider, AuthIdentity, IdentityProvider
 
-from tai_skeleton.access_control import store as store_module
-from tai_skeleton.access_control import verifier as verifier_module
-from tai_skeleton.access_control.settings import AccessControlSettings
-from tai_skeleton.access_control.verifier import AccessControlVerifier
+from tai42_skeleton.access_control import store as store_module
+from tai42_skeleton.access_control import verifier as verifier_module
+from tai42_skeleton.access_control.settings import AccessControlSettings
+from tai42_skeleton.access_control.verifier import AccessControlVerifier
 
 from .conftest import FakeAccessControlPg, FakeRedis, make_client_ctx, make_pg_ctx
 
@@ -391,7 +391,7 @@ async def test_route_repoint_visible_to_warm_cache_after_version_bump(monkeypatc
     """A route re-point via management is visible to a second reader the instant
     the policy version is bumped, WITHOUT waiting out the cache ttl — the verifier
     route cache is version-aware, mirroring the policy cache."""
-    from tai_skeleton.access_control import management
+    from tai42_skeleton.access_control import management
 
     settings = AccessControlSettings()
     pg = FakeAccessControlPg()
@@ -420,7 +420,7 @@ async def test_route_repoint_visible_to_warm_cache_after_version_bump(monkeypatc
 async def test_dynamic_pattern_change_visible_after_version_bump(monkeypatch):
     """The dynamic-pattern cache is version-aware too: a pattern registered after
     the cache warmed is visible once the version is bumped, without the ttl."""
-    from tai_skeleton.access_control import management
+    from tai42_skeleton.access_control import management
 
     settings = AccessControlSettings()
     pg = FakeAccessControlPg()

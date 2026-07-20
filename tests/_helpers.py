@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 
-from tai_contract.channels import ChannelNotification
+from tai42_contract.channels import ChannelNotification
 
 
 class DeliverOnlyChannel:

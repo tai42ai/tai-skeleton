@@ -1,15 +1,15 @@
 """A dummy :class:`Agent` for the auto-tool-generation test.
 
 Listed as an ``agents:`` manifest module so importing it fires
-``@tai_app.agent`` and the skeleton synthesizes its JSON ``run`` tool. Its
+``@tai42_app.agent`` and the skeleton synthesizes its JSON ``run`` tool. Its
 ``ToolInput`` deliberately carries a ``default_factory`` list and a nested
 pydantic field to exercise the two auto-tool seam hazards (a factory field must
 synthesize a real default, and a nested model must reach ``run`` as an instance).
 """
 
 from pydantic import BaseModel, Field
-from tai_contract.agent import Agent
-from tai_contract.app import tai_app
+from tai42_contract.agent import Agent
+from tai42_contract.app import tai42_app
 
 
 class DummyItem(BaseModel):
@@ -23,7 +23,7 @@ class DummyInput(BaseModel):
     item: DummyItem | None = None
 
 
-@tai_app.agents.agent("dummy_agent")
+@tai42_app.agents.agent("dummy_agent")
 class DummyAgent(Agent):
     tool_name = "dummy_agent"
     tool_description = "Echo text a number of times."

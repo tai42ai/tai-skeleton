@@ -14,25 +14,25 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
-from tai_contract.manifest import ApiToolsConfig
-from tai_contract.presets import PresetBody
-from tai_contract.presets.errors import (
+from tai42_contract.manifest import ApiToolsConfig
+from tai42_contract.presets import PresetBody
+from tai42_contract.presets.errors import (
     PresetExistsError,
     PresetNameConflictError,
     PresetNotFoundError,
 )
-from tai_kit.clients.impl.postgres import PostgresClient
+from tai42_kit.clients.impl.postgres import PostgresClient
 
-import tai_skeleton.versioning.store as store_module
-from tai_skeleton.app import instance
-from tai_skeleton.manifest import Manifest
-from tai_skeleton.operations import ConflictError, NotFoundError, OperationRegistry, operation_metadata_of
-from tai_skeleton.operations import presets as preset_ops
-from tai_skeleton.operations.projection import project_operations
+import tai42_skeleton.versioning.store as store_module
+from tai42_skeleton.app import instance
+from tai42_skeleton.manifest import Manifest
+from tai42_skeleton.operations import ConflictError, NotFoundError, OperationRegistry, operation_metadata_of
+from tai42_skeleton.operations import presets as preset_ops
+from tai42_skeleton.operations.projection import project_operations
 
 # Importing the router registers the routes, which forces ``destructive`` on the
 # DELETE op (the adapter's DELETE rule) so the projection oracle sees it.
-from tai_skeleton.routers import presets as _presets_router  # noqa: F401
+from tai42_skeleton.routers import presets as _presets_router  # noqa: F401
 from tests.versioning.conftest import FakeVersioningPg
 
 _MANIFEST = {

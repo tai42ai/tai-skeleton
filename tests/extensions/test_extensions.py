@@ -11,10 +11,10 @@ kind and allows duplicates of a stackable kind.
 from __future__ import annotations
 
 import pytest
-from tai_contract.extensions import ExtensionKind
+from tai42_contract.extensions import ExtensionKind
 
-from tai_skeleton.exceptions.exceptions import TaiValidationError
-from tai_skeleton.extensions import ExtensionRegistry
+from tai42_skeleton.exceptions.exceptions import TaiValidationError
+from tai42_skeleton.extensions import ExtensionRegistry
 
 
 def _noop(func, name, desc):

@@ -14,11 +14,11 @@ Against the base tool ``report(text: str) -> Report`` (object output schema):
 
 from makefun import create_function
 from pydantic import BaseModel
-from tai_contract.app import tai_app
-from tai_contract.extensions import ExtensionKind
+from tai42_contract.app import tai42_app
+from tai42_contract.extensions import ExtensionKind
 
 
-@tai_app.extensions.extension(kind=ExtensionKind.WRAPPER, name="passw")
+@tai42_app.extensions.extension(kind=ExtensionKind.WRAPPER, name="passw")
 def passw(func, name, desc, config=None):
     """Shape-preserving wrapper with no return annotation — branch inherits."""
 
@@ -28,7 +28,7 @@ def passw(func, name, desc, config=None):
     return create_function(f"{name}_passw(text: str)", impl, func_name=f"{name}_passw")
 
 
-@tai_app.extensions.extension(kind=ExtensionKind.BACKEND, name="passb")
+@tai42_app.extensions.extension(kind=ExtensionKind.BACKEND, name="passb")
 def passb(func, name, desc, config=None):
     """Shape-preserving backend swap with no return annotation — branch inherits."""
 
@@ -38,7 +38,7 @@ def passb(func, name, desc, config=None):
     return create_function(f"{name}_passb(text: str)", impl, func_name=f"{name}_passb")
 
 
-@tai_app.extensions.extension(kind=ExtensionKind.TRANSFORMER, name="listtf")
+@tai42_app.extensions.extension(kind=ExtensionKind.TRANSFORMER, name="listtf")
 def listtf(func, name, desc, config=None):
     """Reshape the single result into a list — its branch must NOT inherit the
     base's single-object output schema. Presents a concrete signature (the
@@ -54,7 +54,7 @@ class OwnOut(BaseModel):
     kept: bool
 
 
-@tai_app.extensions.extension(kind=ExtensionKind.WRAPPER, name="ownw")
+@tai42_app.extensions.extension(kind=ExtensionKind.WRAPPER, name="ownw")
 def ownw(func, name, desc, config=None):
     """Shape-preserving wrapper that declares its OWN object output schema — the
     gate must leave it, never force the base schema over it."""

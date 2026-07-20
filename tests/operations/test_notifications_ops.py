@@ -13,19 +13,19 @@ from collections.abc import Iterator
 from contextlib import asynccontextmanager, contextmanager
 
 import pytest
-from tai_contract.access_control import OWNER_USER_ID_CLAIM
-from tai_contract.access_control.context import reset_request_user_id, set_request_user_id
-from tai_contract.app import tai_app
-from tai_contract.channels import ChannelDeliveryError, ChannelNotification
-from tai_contract.manifest import ApiToolsConfig
+from tai42_contract.access_control import OWNER_USER_ID_CLAIM
+from tai42_contract.access_control.context import reset_request_user_id, set_request_user_id
+from tai42_contract.app import tai42_app
+from tai42_contract.channels import ChannelDeliveryError, ChannelNotification
+from tai42_contract.manifest import ApiToolsConfig
 
-from tai_skeleton.access_control.request_scopes import (
+from tai42_skeleton.access_control.request_scopes import (
     reset_request_identity_claims,
     set_request_identity_claims,
 )
-from tai_skeleton.app.instance import app
-from tai_skeleton.channels import notifications_sink
-from tai_skeleton.operations import (
+from tai42_skeleton.app.instance import app
+from tai42_skeleton.channels import notifications_sink
+from tai42_skeleton.operations import (
     BadRequestError,
     ForbiddenError,
     NotSupportedError,
@@ -33,8 +33,8 @@ from tai_skeleton.operations import (
     UpstreamError,
     operation_metadata_of,
 )
-from tai_skeleton.operations import notifications as notifications_ops
-from tai_skeleton.operations.projection import project_operations
+from tai42_skeleton.operations import notifications as notifications_ops
+from tai42_skeleton.operations.projection import project_operations
 
 
 @contextmanager
@@ -183,7 +183,7 @@ async def test_restricted_notify_channel_path_rejects_other_identity_as_403(sink
     # skip the channel path, deliver to the channel, and write alice's feed.
     app._channel_registry.reset()
     channel = _RecordingChannel()
-    tai_app.channels.register("fake", channel)
+    tai42_app.channels.register("fake", channel)
     try:
         with _restricted("bob"), pytest.raises(ForbiddenError, match="may address only its own identity"):
             await notifications_ops.notify_user("hi alice", channel="fake", audience="alice")
@@ -202,7 +202,7 @@ async def test_restricted_notify_channel_path_rejects_own_owner_as_403(sink_redi
     # stays empty. Under key-keyed isolation the owner holds no channel-write privilege.
     app._channel_registry.reset()
     channel = _RecordingChannel()
-    tai_app.channels.register("fake", channel)
+    tai42_app.channels.register("fake", channel)
     try:
         with (
             _restricted("bob", owner="alice"),

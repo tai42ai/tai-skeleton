@@ -21,14 +21,14 @@ from typing import Any, cast
 import pytest
 from starlette.requests import Request
 from starlette.responses import Response, StreamingResponse
-from tai_kit.clients.impl.postgres import PostgresClient
+from tai42_kit.clients.impl.postgres import PostgresClient
 
-import tai_skeleton.versioning.store as store_module
-from tai_skeleton.app import instance
-from tai_skeleton.manifest import Manifest
-from tai_skeleton.operations import presets as preset_ops
-from tai_skeleton.routers import agents as agents_router
-from tai_skeleton.routers import presets as presets_router
+import tai42_skeleton.versioning.store as store_module
+from tai42_skeleton.app import instance
+from tai42_skeleton.manifest import Manifest
+from tai42_skeleton.operations import presets as preset_ops
+from tai42_skeleton.routers import agents as agents_router
+from tai42_skeleton.routers import presets as presets_router
 from tests.versioning.conftest import FakeVersioningPg
 
 _MANIFEST = {

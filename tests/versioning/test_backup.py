@@ -14,12 +14,12 @@ from datetime import UTC, datetime
 from typing import Any
 
 import pytest
-from tai_kit.clients.impl.postgres import Json, PostgresClient
+from tai42_kit.clients.impl.postgres import Json, PostgresClient
 
-import tai_skeleton.versioning.backup as versioning_backup
-from tai_skeleton.backup.registry import BackupRegistry
-from tai_skeleton.backup.sections import register_core_sections
-from tai_skeleton.versioning.backup import export_versioned_documents, import_versioned_documents
+import tai42_skeleton.versioning.backup as versioning_backup
+from tai42_skeleton.backup.registry import BackupRegistry
+from tai42_skeleton.backup.sections import register_core_sections
+from tai42_skeleton.versioning.backup import export_versioned_documents, import_versioned_documents
 
 _T0 = datetime(2024, 1, 1, tzinfo=UTC)
 

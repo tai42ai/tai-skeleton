@@ -4,7 +4,7 @@ FastMCP derives a real object output schema that shape-preserving branches must
 inherit."""
 
 from pydantic import BaseModel
-from tai_contract.app import tai_app
+from tai42_contract.app import tai42_app
 
 
 class Report(BaseModel):
@@ -12,7 +12,7 @@ class Report(BaseModel):
     score: int
 
 
-@tai_app.tools.tool
+@tai42_app.tools.tool
 def report(text: str) -> Report:
     """Build a report from the text."""
     return Report(title=text, score=len(text))

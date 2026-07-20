@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 from click.testing import CliRunner
 
-from tai_skeleton.cli import app as app_module
+from tai42_skeleton.cli import app as app_module
 
 
 @pytest.mark.parametrize("shell", ["bash", "zsh", "fish"])

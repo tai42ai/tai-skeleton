@@ -17,10 +17,10 @@ from typing import cast
 
 import pytest
 from starlette.requests import Request
-from tai_contract.storage import ObjectStat, Storage, assert_not_root
+from tai42_contract.storage import ObjectStat, Storage, assert_not_root
 
-from tai_skeleton.app import instance
-from tai_skeleton.routers import storage as router
+from tai42_skeleton.app import instance
+from tai42_skeleton.routers import storage as router
 
 
 class _FakeStorage(Storage):

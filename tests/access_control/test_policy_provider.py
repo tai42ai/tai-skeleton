@@ -2,7 +2,7 @@
 
 The enforcer reads the POLICY body from the PG store (the ``pg`` fake), while the
 live context and the policy-version counter stay on the AC Redis (the ``FakeRedis``).
-The RedisApiKeyProvider identity-lookup coverage lives in the ``tai-identity-redis``
+The RedisApiKeyProvider identity-lookup coverage lives in the ``tai42-identity-redis``
 plugin repo along with the provider itself.
 """
 
@@ -13,10 +13,10 @@ import json
 import pytest
 from starlette.authentication import AuthenticationError
 
-from tai_skeleton.access_control import policy as policy_module
-from tai_skeleton.access_control import store as store_module
-from tai_skeleton.access_control.policy import PolicyEnforcer, PolicyEvaluationError
-from tai_skeleton.access_control.settings import AccessControlSettings
+from tai42_skeleton.access_control import policy as policy_module
+from tai42_skeleton.access_control import store as store_module
+from tai42_skeleton.access_control.policy import PolicyEnforcer, PolicyEvaluationError
+from tai42_skeleton.access_control.settings import AccessControlSettings
 
 from .conftest import FakeAccessControlPg, FakeRedis, make_client_ctx, make_pg_ctx
 

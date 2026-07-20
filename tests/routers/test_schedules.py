@@ -1,6 +1,6 @@
 """Schedules router: route-to-tool mapping plus the no-backend honesty logic.
 
-Handlers are driven directly (the router-test pattern); the ``tai_app.tools``
+Handlers are driven directly (the router-test pattern); the ``tai42_app.tools``
 facet is faked by swapping the bound app impl for a stand-in exposing ``tools``.
 The fake's ``get_tools()`` decides backend presence, and ``run_tool`` raises the
 binding's real unknown-tool ``RuntimeError`` for any name it does not know.
@@ -14,9 +14,9 @@ from typing import cast
 
 import pytest
 from starlette.requests import Request
-from tai_contract.app import tai_app
+from tai42_contract.app import tai42_app
 
-from tai_skeleton.routers import schedules as router
+from tai42_skeleton.routers import schedules as router
 
 _MARKERS = {"backend_list_schedules", "backend_delete_schedule"}
 
@@ -64,7 +64,7 @@ class _FakeTools:
 @pytest.fixture
 def install(monkeypatch):
     def _install(fake_tools: _FakeTools):
-        monkeypatch.setattr(tai_app, "_impl", SimpleNamespace(tools=fake_tools))
+        monkeypatch.setattr(tai42_app, "_impl", SimpleNamespace(tools=fake_tools))
         return fake_tools
 
     return _install
@@ -148,7 +148,7 @@ async def test_create_404_when_client_tool_unknown(install):
 async def test_create_404_when_client_tool_unknown_typed_error(install, monkeypatch):
     # The dual-catch also recognizes the TYPED ``UnknownToolError`` the binding
     # raises, not only the legacy message string.
-    from tai_skeleton.tools.binding import UnknownToolError
+    from tai42_skeleton.tools.binding import UnknownToolError
 
     fake = install(_FakeTools(_MARKERS))
 

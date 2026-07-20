@@ -9,11 +9,11 @@ description forward across the chain rather than resetting to the original.
 
 import functools
 
-from tai_contract.app import tai_app
-from tai_contract.extensions import ExtensionKind
+from tai42_contract.app import tai42_app
+from tai42_contract.extensions import ExtensionKind
 
 
-@tai_app.extensions.extension(kind=ExtensionKind.WRAPPER, name="first")
+@tai42_app.extensions.extension(kind=ExtensionKind.WRAPPER, name="first")
 def first(func, name, desc, config=None):
     @functools.wraps(func)
     def first_variant(*args, **kwargs):
@@ -25,7 +25,7 @@ def first(func, name, desc, config=None):
     return first_variant
 
 
-@tai_app.extensions.extension(kind=ExtensionKind.WRAPPER, name="second")
+@tai42_app.extensions.extension(kind=ExtensionKind.WRAPPER, name="second")
 def second(func, name, desc, config=None):
     @functools.wraps(func)
     def second_variant(*args, **kwargs):

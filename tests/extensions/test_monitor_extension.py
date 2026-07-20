@@ -20,7 +20,7 @@ from typing import Any
 
 import pytest
 from fastmcp.utilities.types import get_cached_typeadapter
-from tai_contract.monitoring import (
+from tai42_contract.monitoring import (
     Monitoring,
     MonitoringLevel,
     Span,
@@ -28,9 +28,9 @@ from tai_contract.monitoring import (
     TraceContext,
 )
 
-from tai_skeleton.app.instance import app
-from tai_skeleton.manifest import Manifest
-from tai_skeleton.monitoring import (
+from tai42_skeleton.app.instance import app
+from tai42_skeleton.manifest import Manifest
+from tai42_skeleton.monitoring import (
     NoOpMonitoring,
     NoOpReader,
     NoOpSpan,
@@ -39,7 +39,7 @@ from tai_skeleton.monitoring import (
     reset_monitoring,
 )
 
-_BUILTIN_MODULE = "tai_skeleton.extensions.builtin.monitor"
+_BUILTIN_MODULE = "tai42_skeleton.extensions.builtin.monitor"
 
 
 # --- recording monitoring fake ------------------------------------------------
@@ -189,8 +189,8 @@ def test_monitor_is_config_agnostic_and_rejects_config():
     # monitor takes no author config: it is a config-agnostic three-argument factory,
     # so ``factory_accepts_config`` is False and binding a non-empty config to it
     # raises loudly at the apply site (no silent drop).
-    from tai_skeleton.extensions.builtin.monitor import monitor
-    from tai_skeleton.extensions.registry import factory_accepts_config
+    from tai42_skeleton.extensions.builtin.monitor import monitor
+    from tai42_skeleton.extensions.registry import factory_accepts_config
 
     assert factory_accepts_config(monitor) is False
 

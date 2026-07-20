@@ -12,13 +12,13 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 
-from tai_contract.interactions import (
+from tai42_contract.interactions import (
     AnswerFormat,
     InteractionRequest,
     InteractionResponse,
 )
 
-from tai_skeleton.interactions import InteractionStore
+from tai42_skeleton.interactions import InteractionStore
 
 
 def _dated(store: InteractionStore, iid: str, gid: str, created: datetime, timeout: datetime) -> InteractionRequest:

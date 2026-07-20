@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from starlette.routing import Route
 
-import tai_skeleton.routers.metrics as router
+import tai42_skeleton.routers.metrics as router
 from tests.routers._auth_boundary import PUBLIC, boundary_client
 
 _ROUTES = [Route("/metrics", router.metrics_endpoint, methods=["GET"])]

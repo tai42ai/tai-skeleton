@@ -3,9 +3,9 @@ requires = ["setuptools>=77", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "tai-skeleton"
+name = "tai42-skeleton"
 version = "0.1.0"
-description = "Open-source implementation of tai-contract: the extended MCP server hosting tools, agents, extensions, connectors, hooks, and storage for the TAI ecosystem."
+description = "Open-source implementation of tai42-contract: the extended MCP server hosting tools, agents, extensions, connectors, hooks, and storage for the TAI ecosystem."
 readme = "README.md"
 requires-python = ">=3.13"
 license = "Apache-2.0"
@@ -24,11 +24,11 @@ classifiers = [
 ]
 dependencies = [
     # The pure interface contract this package implements.
-    "tai-contract>=0.1,<0.2",
+    "tai42-contract>=0.1,<0.2",
     # Generic leaf helpers + pooled-client framework. Extras: the LLM stack
     # (agent facets, checkpoint/store registries), jq (hooks + policy
     # conditions), uvicorn (CLI arg parsing), redis/postgres drivers.
-    "tai-kit[llm,jq,uvicorn,redis,postgres]>=0.1,<0.2",
+    "tai42-kit[llm,jq,uvicorn,redis,postgres]>=0.1,<0.2",
     # Direct third-party deps imported by the orchestrator + copied-in impl.
     "click>=8.3",
     # The unified ``tai`` CLI. Typer builds on click, so it composes with the
@@ -86,18 +86,21 @@ Issues = "https://github.com/tai42ai/tai-skeleton/issues"
 Changelog = "https://github.com/tai42ai/tai-skeleton/blob/main/CHANGELOG.md"
 
 [project.entry-points.console_scripts]
-tai = "tai_skeleton.cli.app:app"
+# `tai` is the documented command. `tai42` is an alias so a deployment that
+# already has an unrelated `tai` on PATH still has an unambiguous entry point.
+tai = "tai42_skeleton.cli.app:app"
+tai42 = "tai42_skeleton.cli.app:app"
 
 [project.optional-dependencies]
-# Batteries: the tai-toolbox contrib package — composition tool extensions
+# Batteries: the tai42-toolbox contrib package — composition tool extensions
 # (chain, batch) and a collection of generic tools — loaded from the manifest,
 # never imported by skeleton code. Toolbox's own extras still gate its heavier
 # modules. Loose pin: track compatibility, don't pin the patch.
-toolbox = ["tai-toolbox>=0.1,<0.2"]
+toolbox = ["tai42-toolbox>=0.1,<0.2"]
 
 # File loading + media: opt-in backing deps for the ResourceManager type-detect
 # registry (``load_file``) and the ``file_loader`` builtin. A module whose dep is
-# missing raises a loud "install tai-skeleton[files]" hint at import, never a
+# missing raises a loud "install tai42-skeleton[files]" hint at import, never a
 # silent skip. Magika sniffs content; the rest are per-type text extractors.
 files = [
     "magika>=0.6",
@@ -117,12 +120,12 @@ files = [
 dev = [
     # Install the toolbox + files extras so the toolbox starter example boots and
     # the resource-loading suite runs under test.
-    "tai-skeleton[toolbox,files]",
+    "tai42-skeleton[toolbox,files]",
     # The redis-backed identity provider plugin. Not a runtime dep of the skeleton
     # (which ships NO concrete identity provider) — a deployment names it in its
     # manifest — but the test suite and the example manifest register it as the
     # default "redis" provider, so it is installed for dev/test.
-    "tai-identity-redis>=0.1,<0.2",
+    "tai42-identity-redis>=0.1,<0.2",
     "pytest>=8",
     "pytest-asyncio>=1.3",
     "pytest-cov>=5",
@@ -136,10 +139,10 @@ package-dir = { "" = "src" }
 
 [tool.setuptools.packages.find]
 where = ["src"]
-include = ["tai_skeleton*"]
+include = ["tai42_skeleton*"]
 
 [tool.setuptools.package-data]
-tai_skeleton = ["py.typed", "data/*.yml", "sql/resources/*.sql"]
+tai42_skeleton = ["py.typed", "data/*.yml", "sql/resources/*.sql"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
@@ -167,7 +170,7 @@ filterwarnings = [
 ]
 
 [tool.coverage.run]
-source = ["tai_skeleton"]
+source = ["tai42_skeleton"]
 
 [tool.coverage.report]
 fail_under = 96
@@ -176,14 +179,14 @@ fail_under = 96
 cache-keys = [{ file = "pyproject.toml" }]
 
 # Dev-only: resolve the sibling packages (the tai-contract/tai-kit foundation and
-# the tai-toolbox contrib extra) from local checkouts. The published version
+# the tai42-toolbox contrib extra) from local checkouts. The published version
 # floors in [project].dependencies / [project.optional-dependencies] are what the
 # shipped wheel declares; these source overrides are not part of wheel metadata.
 [tool.uv.sources]
-tai-contract = { path = "../tai-contract", editable = true }
-tai-kit = { path = "../tai-kit", editable = true }
-tai-toolbox = { path = "../tai-toolbox", editable = true }
-tai-identity-redis = { path = "../tai-identity-redis", editable = true }
+tai42-contract = { path = "../tai-contract", editable = true }
+tai42-kit = { path = "../tai-kit", editable = true }
+tai42-toolbox = { path = "../tai-toolbox", editable = true }
+tai42-identity-redis = { path = "../tai-identity-redis", editable = true }
 
 [tool.ruff]
 src = ["src"]

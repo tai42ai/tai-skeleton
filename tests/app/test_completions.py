@@ -14,7 +14,7 @@ import pytest
 from fastmcp import Client
 from mcp import types
 
-from tai_skeleton.app.server import TaiMCP
+from tai42_skeleton.app.server import TaiMCP
 
 
 def _fresh() -> TaiMCP:

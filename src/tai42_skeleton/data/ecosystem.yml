@@ -1,0 +1,327 @@
+# Packaged ecosystem catalog for the open-source TAI world.
+#
+# A static, hand-maintained snapshot of the ecosystem's registrations, shipped
+# inside the tai42-skeleton package and rendered by `tai catalog`. It is NOT a
+# loadable manifest and NOT an import-time registry walk: `tai catalog` reads it
+# offline on a bare skeleton install with zero plugin imports.
+#
+# Schema
+# ------
+# `entries` is a list; each entry is:
+#   name        registration name (the tool/extension/connector/... identifier)
+#   kind        one of: tool | agent | extension | connector | channel |
+#               accounts | identity | backend | storage | monitoring |
+#               webhook-verifier | config
+#   group       the category / kind detail (management family, ExtensionKind,
+#               connector category, config mode, ...)
+#   package     the distribution the registration ships in
+#   module      the Python module a host imports to trigger the registration
+#   description one line describing what it does
+#
+# An entry carries NO repo field. The repo is derived at render time by joining
+# the entry's `package` against the `packages` map below — repo lives in ONE
+# place, never duplicated per entry. A `package` absent from that map is a loud
+# error at render time, never a blank repo cell.
+
+entries:
+  # -- Tools: tai42-skeleton built-ins ----------------------------------------
+  # Only the two runtime-native builtins carry catalog rows. Management
+  # capabilities live in the operations layer and project onto the
+  # MCP tool surface at runtime (no catalog rows for projected tools).
+  - name: ask_user
+    kind: tool
+    group: interactions
+    package: tai42-skeleton
+    module: tai42_skeleton.tools.builtin.interactions
+    description: Ask a human a question mid-run and block until they answer.
+  - name: file_loader
+    kind: tool
+    group: file-loading
+    package: tai42-skeleton
+    module: tai42_skeleton.tools.builtin.file_loader
+    description: Load a file from a url or a storage resource id and return its content.
+
+  # -- Tools: tai42-toolbox ----------------------------------------------------
+  - name: current_time_info
+    kind: tool
+    group: utility
+    package: tai42-toolbox
+    module: tai42_toolbox.tools.current_time_info
+    description: Return the current time as a structured object.
+  - name: generate_embeddings
+    kind: tool
+    group: embeddings
+    package: tai42-toolbox
+    module: tai42_toolbox.tools.generate_embeddings
+    description: Generate embeddings for a single string or a list of strings.
+  - name: generate_uuid
+    kind: tool
+    group: utility
+    package: tai42-toolbox
+    module: tai42_toolbox.tools.generate_uuid
+    description: Generate a random UUID (version 4).
+  - name: pad_embeddings
+    kind: tool
+    group: embeddings
+    package: tai42-toolbox
+    module: tai42_toolbox.tools.pad_embeddings
+    description: Pad each embedding vector with zeros up to a target dimension.
+  - name: request
+    kind: tool
+    group: http
+    package: tai42-toolbox
+    module: tai42_toolbox.tools.request
+    description: Execute an HTTP request through a curl-backed session.
+
+  # -- Agents: tai42-agents ----------------------------------------------------
+  - name: deep_agent
+    kind: agent
+    group: ready-made
+    package: tai42-agents
+    module: tai42_agents.deep_agent
+    description: Run a deep agent with planning, subagents, skills, and a filesystem backend.
+  - name: refine_agent
+    kind: agent
+    group: ready-made
+    package: tai42-agents
+    module: tai42_agents.refine_agent
+    description: Run an Evaluator-Critic refinement loop until the Critic approves or the budget runs out.
+  - name: voting_agent
+    kind: agent
+    group: ready-made
+    package: tai42-agents
+    module: tai42_agents.voting_agent
+    description: Run a voting workflow — voter LLMs answer in parallel, then a judge LLM decides.
+  - name: retrieval_tools_agent
+    kind: agent
+    group: ready-made
+    package: tai42-agents
+    module: tai42_agents.retrieval_tools_agent
+    description: A tools agent that retrieves its tools on demand from a vector store.
+  - name: tools_agent
+    kind: agent
+    group: ready-made
+    package: tai42-agents
+    module: tai42_agents.tools_agent
+    description: Run a LangGraph tools agent over tools loaded by name (and optional presets).
+  - name: mcp_tools_agent
+    kind: agent
+    group: ready-made
+    package: tai42-agents
+    module: tai42_agents.mcp_tools_agent
+    description: Run a LangGraph tools agent whose tools are loaded from an MCP configuration.
+  - name: vqa_agent
+    kind: agent
+    group: ready-made
+    package: tai42-agents
+    module: tai42_agents.vqa_agent
+    description: Analyze an image and answer a query about it using a multimodal LLM.
+
+  # -- Extensions: tai42-skeleton built-ins -----------------------------------
+  - name: monitor
+    kind: extension
+    group: wrapper
+    package: tai42-skeleton
+    module: tai42_skeleton.extensions.builtin.monitor
+    description: Trace a standalone tool call as one live span.
+  - name: ask_external
+    kind: extension
+    group: transformer
+    package: tai42-skeleton
+    module: tai42_skeleton.extensions.builtin.ask_external
+    description: Wrap a callback-url tool into an external human-in-the-loop question.
+
+  # -- Extensions: tai42-toolbox ----------------------------------------------
+  - name: chain
+    kind: extension
+    group: transformer
+    package: tai42-toolbox
+    module: tai42_toolbox.extensions.chain
+    description: Branch a tool into a variant that transforms its output and calls a next tool.
+  - name: batch
+    kind: extension
+    group: transformer
+    package: tai42-toolbox
+    module: tai42_toolbox.extensions.batch
+    description: Branch a tool into a variant that runs many instances at once.
+  - name: output_schema
+    kind: extension
+    group: transformer
+    package: tai42-toolbox
+    module: tai42_toolbox.extensions.output_schema
+    description: Branch a tool into a variant that forces its output to a caller-supplied JSON Schema and validates results against it.
+  - name: cache
+    kind: extension
+    group: wrapper
+    package: tai42-toolbox
+    module: tai42_toolbox.extensions.cache
+    description: Branch a tool into a variant that memoizes results by call arguments.
+  - name: proxy
+    kind: extension
+    group: wrapper
+    package: tai42-toolbox
+    module: tai42_toolbox.extensions.proxy
+    description: Branch a tool into a variant that runs the wrapped tool through a proxy.
+  - name: prometheus_metrics
+    kind: extension
+    group: wrapper
+    package: tai42-toolbox
+    module: tai42_toolbox.extensions.prometheus
+    description: Branch a tool into a variant that records a Prometheus call metric.
+
+  # -- Storage providers -----------------------------------------------------
+  - name: s3
+    kind: storage
+    group: object-store
+    package: tai42-storage-s3
+    module: tai42_storage_s3
+    description: Storage backend serving text, binary, and media content over an S3 bucket.
+  - name: github
+    kind: storage
+    group: git-backed
+    package: tai42-storage-github
+    module: tai42_storage_github
+    description: Storage backend serving text and binary/media content over a GitHub repository.
+  - name: local
+    kind: storage
+    group: filesystem
+    package: tai42-storage-local
+    module: tai42_storage_local
+    description: Storage backend serving text and binary content from a local directory tree.
+
+  # -- Execution backends ----------------------------------------------------
+  - name: arq
+    kind: backend
+    group: task-queue
+    package: tai42-backend-arq
+    module: tai42_backend_arq.backend
+    description: arq execution backend — background tool runs and schedules over Redis.
+  - name: celery
+    kind: backend
+    group: task-queue
+    package: tai42-backend-celery
+    module: tai42_backend_celery.core.backend
+    description: Celery execution backend — worker/beat/flower runtime and RedBeat scheduling.
+  - name: rq
+    kind: backend
+    group: task-queue
+    package: tai42-backend-rq
+    module: tai42_backend_rq.backend
+    description: RQ execution backend — background tool runs and schedules over Redis.
+
+  # -- Monitoring backends ---------------------------------------------------
+  - name: langfuse
+    kind: monitoring
+    group: observability
+    package: tai42-monitoring-langfuse
+    module: tai42_monitoring_langfuse.register
+    description: Langfuse monitoring backend — trace/span emission and the observability read surface.
+
+  # -- Webhook verifiers -----------------------------------------------------
+  - name: shared_secret
+    kind: webhook-verifier
+    group: builtin
+    package: tai42-skeleton
+    module: tai42_skeleton.webhooks.builtin.shared_secret
+    description: Verify a universal_webhook topic against a shared header secret.
+  - name: github
+    kind: webhook-verifier
+    group: provider
+    package: tai42-webhook-verifier-github
+    module: tai42_webhook_verifier_github
+    description: Verify a GitHub webhook delivery's X-Hub-Signature-256 HMAC before dispatch.
+
+  # -- Connectors ------------------------------------------------------------
+  - name: google
+    kind: connector
+    group: communication
+    package: tai42-connector-google
+    module: tai42_connector.google.core.connector
+    description: OAuth connector for Google (Gmail, Calendar, Drive).
+  - name: atlassian
+    kind: connector
+    group: dev-tools
+    package: tai42-connector-atlassian
+    module: tai42_connector.atlassian.core.connector
+    description: OAuth connector for Atlassian (Jira, Confluence, Compass).
+
+  # -- Config-manager providers ---------------------------------------------
+  - name: k8s
+    kind: config
+    group: config-manager
+    package: tai42-config-k8s
+    module: tai42_config_k8s.manager
+    description: Kubernetes ConfigManager backing env via Secrets and manifest via ConfigMaps.
+
+  # -- Channels: ask_user interaction deliverers ----------------------------
+  - name: telegram
+    kind: channel
+    group: chat
+    package: tai42-channel-telegram
+    module: tai42_channel_telegram.register
+    description: Deliver ask_user questions to a Telegram chat and bridge the typed reply back.
+  - name: slack
+    kind: channel
+    group: chat
+    package: tai42-channel-slack
+    module: tai42_channel_slack.register
+    description: Deliver ask_user questions to a Slack channel and bridge the threaded reply back.
+  - name: twilio
+    kind: channel
+    group: sms
+    package: tai42-channel-twilio
+    module: tai42_channel_twilio.register
+    description: Deliver ask_user questions to a phone over Twilio SMS/WhatsApp and bridge the reply back.
+
+  # -- Accounts providers ----------------------------------------------------
+  - name: accounts-postgres
+    kind: accounts
+    group: password
+    package: tai42-accounts-postgres
+    module: tai42_accounts_postgres
+    description: Postgres-backed accounts provider — password login, sessions, invites, and first-run bootstrap.
+  - name: accounts-oidc
+    kind: accounts
+    group: oidc
+    package: tai42-accounts-oidc
+    module: tai42_accounts_oidc
+    description: OIDC/OAuth2 login accounts provider — browser sign-in backed by Redis-stored sessions.
+
+  # -- Identity providers ----------------------------------------------------
+  - name: redis
+    kind: identity
+    group: api-key
+    package: tai42-identity-redis
+    module: tai42_identity_redis
+    description: Redis-backed api-key identity provider — validate inbound tokens and provision keys.
+  - name: identity-oidc
+    kind: identity
+    group: jwt
+    package: tai42-identity-oidc
+    module: tai42_identity_oidc
+    description: Validate-only OIDC identity provider — verifies issuer-minted JWTs against the issuer's JWKS.
+
+# package -> repository mapping (the single source of the repo column). Every
+# package named in `entries` MUST appear here.
+packages:
+  tai42-skeleton: tai42-skeleton
+  tai42-toolbox: tai42-toolbox
+  tai42-agents: tai42-agents
+  tai42-storage-s3: tai42-storage-s3
+  tai42-storage-github: tai42-storage-github
+  tai42-storage-local: tai42-storage-local
+  tai42-webhook-verifier-github: tai42-webhook-verifier-github
+  tai42-connector-google: tai42-connector-google
+  tai42-connector-atlassian: tai42-connector-atlassian
+  tai42-config-k8s: tai42-config-k8s
+  tai42-channel-telegram: tai42-channel-telegram
+  tai42-channel-slack: tai42-channel-slack
+  tai42-channel-twilio: tai42-channel-twilio
+  tai42-identity-redis: tai42-identity-redis
+  tai42-accounts-postgres: tai42-accounts-postgres
+  tai42-accounts-oidc: tai42-accounts-oidc
+  tai42-identity-oidc: tai42-identity-oidc
+  tai42-backend-arq: tai42-backend-arq
+  tai42-backend-celery: tai42-backend-celery
+  tai42-backend-rq: tai42-backend-rq
+  tai42-monitoring-langfuse: tai42-monitoring-langfuse

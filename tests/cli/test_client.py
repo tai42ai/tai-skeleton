@@ -11,7 +11,7 @@ from collections.abc import Iterator
 import httpx
 import pytest
 
-from tai_skeleton.cli.client import (
+from tai42_skeleton.cli.client import (
     ApiClient,
     ApiError,
     AuthError,
@@ -195,7 +195,7 @@ def test_stream_surfaces_out_of_band_event_type() -> None:
 
 
 def test_iter_sse_data_mixes_typed_and_untyped_frames() -> None:
-    from tai_skeleton.cli.client import iter_sse_data
+    from tai42_skeleton.cli.client import iter_sse_data
 
     lines = [
         "event: interaction.removed",

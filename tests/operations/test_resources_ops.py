@@ -13,13 +13,13 @@ from typing import Any
 
 import pytest
 from fastmcp.utilities.types import Image
-from tai_contract.manifest import ApiToolsConfig
+from tai42_contract.manifest import ApiToolsConfig
 
-import tai_skeleton.operations.resources as resources_ops
-from tai_skeleton.operations import BadRequestError, NotFoundError, OperationRegistry, operation_metadata_of
-from tai_skeleton.operations.projection import project_operations
-from tai_skeleton.operations.resources import get_resource_by_id
-from tai_skeleton.template.media import MediaBlock
+import tai42_skeleton.operations.resources as resources_ops
+from tai42_skeleton.operations import BadRequestError, NotFoundError, OperationRegistry, operation_metadata_of
+from tai42_skeleton.operations.projection import project_operations
+from tai42_skeleton.operations.resources import get_resource_by_id
+from tai42_skeleton.template.media import MediaBlock
 
 
 class _ResourceManager:
@@ -51,7 +51,7 @@ class _ResourceManager:
 
 def _bind(monkeypatch: pytest.MonkeyPatch, manager: _ResourceManager) -> None:
     fake_app = SimpleNamespace(storage=SimpleNamespace(resource_manager=manager))
-    monkeypatch.setattr(resources_ops, "tai_app", fake_app)
+    monkeypatch.setattr(resources_ops, "tai42_app", fake_app)
 
 
 async def test_returns_loaded_text_unrendered(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -105,15 +105,15 @@ async def test_rejects_traversal_id(monkeypatch: pytest.MonkeyPatch) -> None:
     # ``get_resource_by_id`` funnels through ``ResourceManager.load``'s empty-scheme
     # branch, so the read-side guard fires on a traversal id before any storage read;
     # the op maps the guard's ``UnsafeTemplatePathError`` to the route 400.
-    from tai_skeleton.storage import StorageRegistry
-    from tai_skeleton.template import ResourceManager
+    from tai42_skeleton.storage import StorageRegistry
+    from tai42_skeleton.template import ResourceManager
     from tests.template.test_resource_manager import _InMemoryStorage
 
     registry = StorageRegistry()
     registry.register_storage(_InMemoryStorage)
     real_manager = ResourceManager(registry.provider)
     monkeypatch.setattr(
-        resources_ops, "tai_app", SimpleNamespace(storage=SimpleNamespace(resource_manager=real_manager))
+        resources_ops, "tai42_app", SimpleNamespace(storage=SimpleNamespace(resource_manager=real_manager))
     )
 
     with pytest.raises(BadRequestError):

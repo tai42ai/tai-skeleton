@@ -9,21 +9,21 @@ from __future__ import annotations
 import pytest
 from click.testing import CliRunner
 
-from tai_skeleton.cli import app as app_module
-from tai_skeleton.cli.native import completion as completion_mod
-from tai_skeleton.cli.native import version as version_mod
+from tai42_skeleton.cli import app as app_module
+from tai42_skeleton.cli.native import completion as completion_mod
+from tai42_skeleton.cli.native import version as version_mod
 
 
 def test_version_marks_absent_package_not_installed(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(version_mod, "_PACKAGES", ["tai-skeleton", "definitely-not-a-real-package-xyz"])
+    monkeypatch.setattr(version_mod, "_PACKAGES", ["tai42-skeleton", "definitely-not-a-real-package-xyz"])
     records = version_mod._versions()
     by_name = {row["package"]: row["version"] for row in records}
     assert by_name["definitely-not-a-real-package-xyz"] == "not installed"
-    assert by_name["tai-skeleton"] != "not installed"
+    assert by_name["tai42-skeleton"] != "not installed"
 
 
 def test_openapi_check_rejects_invalid_spec(monkeypatch: pytest.MonkeyPatch) -> None:
-    import tai_skeleton.cli.openapi as builder
+    import tai42_skeleton.cli.openapi as builder
 
     # A 3.1-tagged document missing the required ``paths`` object is detected as
     # OpenAPI yet fails schema validation, so the command's ``--check`` surfaces it.

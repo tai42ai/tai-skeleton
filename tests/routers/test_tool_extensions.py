@@ -21,10 +21,10 @@ from typing import Any
 import pytest
 from starlette.requests import Request
 
-from tai_skeleton.app import instance
-from tai_skeleton.app.reload_gate import reload_gate
-from tai_skeleton.manifest import Manifest
-from tai_skeleton.routers import tool_extensions as router
+from tai42_skeleton.app import instance
+from tai42_skeleton.app.reload_gate import reload_gate
+from tai42_skeleton.manifest import Manifest
+from tai42_skeleton.routers import tool_extensions as router
 from tests._fakes.bus import FakeBus
 
 _EXT_MODULE = "tests.app._fixtures.ext_kinds"

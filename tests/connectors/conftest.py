@@ -15,15 +15,15 @@ from typing import Literal
 
 import pytest
 from pydantic import SecretStr
-from tai_contract.connectors.models import AuthHealthState, ConnectionRecord
-from tai_contract.connectors.providers import (
+from tai42_contract.connectors.models import AuthHealthState, ConnectionRecord
+from tai42_contract.connectors.providers import (
     ConfigFieldSpec,
     McpServerDescriptor,
     OAuthEndpoints,
     ProviderDescriptor,
     SubServiceDescriptor,
 )
-from tai_kit.settings import reset_all_settings
+from tai42_kit.settings import reset_all_settings
 
 # Deterministic test secrets: a 32-byte KEK and a 32-byte state-HMAC key.
 TEST_KEK_B64 = base64.b64encode(bytes(range(32))).decode("ascii")

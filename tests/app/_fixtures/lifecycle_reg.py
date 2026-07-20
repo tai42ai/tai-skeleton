@@ -7,20 +7,20 @@ middlewares are idempotent (qualname-keyed) rather than accumulating across
 repeated ``update()``.
 """
 
-from tai_contract.app import tai_app
+from tai42_contract.app import tai42_app
 
 
-@tai_app.lifecycle.on_startup
+@tai42_app.lifecycle.on_startup
 def startup_marker() -> None:
     pass
 
 
-@tai_app.lifecycle.on_shutdown
+@tai42_app.lifecycle.on_shutdown
 def shutdown_marker() -> None:
     pass
 
 
-@tai_app.http.middleware
+@tai42_app.http.middleware
 class MarkerMiddleware:
     def __init__(self, app, **kwargs) -> None:
         self._app = app

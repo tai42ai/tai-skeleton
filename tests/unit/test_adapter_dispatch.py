@@ -11,17 +11,17 @@ from __future__ import annotations
 
 import mcp.types
 import pytest
-from tai_contract.connectors.models import ConnectorRef
-from tai_contract.manifest import MCPConfig, TaiMCPConfig
+from tai42_contract.connectors.models import ConnectorRef
+from tai42_contract.manifest import MCPConfig, TaiMCPConfig
 
-import tai_skeleton.app.instance  # noqa: F401 — binds app
-from tai_skeleton.connectors.runtime.resolver import ManagedAuth
-from tai_skeleton.connectors.token_injection import (
+import tai42_skeleton.app.instance  # noqa: F401 — binds app
+from tai42_skeleton.connectors.runtime.resolver import ManagedAuth
+from tai42_skeleton.connectors.token_injection import (
     CONNECTOR_ERROR_PREFIX,
     _merge_http_auth,
     extract_connector_error_payload,
 )
-from tai_skeleton.tools.adapters.mcp_tool_to_func import _detect_transport
+from tai42_skeleton.tools.adapters.mcp_tool_to_func import _detect_transport
 
 # -- _detect_transport --------------------------------------------------------
 

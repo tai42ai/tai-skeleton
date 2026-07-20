@@ -12,9 +12,9 @@ import pytest
 
 # Trigger app setup before anything adapter-related — same preamble as
 # test_adapter_dispatch / test_constant_alignment.
-import tai_skeleton.app.instance as app_mod
-from tai_skeleton.app.lifecycle import TaiMCPLifecycleMixin
-from tai_skeleton.manifest import Manifest
+import tai42_skeleton.app.instance as app_mod
+from tai42_skeleton.app.lifecycle import TaiMCPLifecycleMixin
+from tai42_skeleton.manifest import Manifest
 
 
 def test_refresh_catalog_registered_for_startup_and_reload() -> None:

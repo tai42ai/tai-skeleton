@@ -11,18 +11,18 @@ from contextlib import asynccontextmanager, contextmanager
 from datetime import UTC, datetime
 
 import pytest
-from tai_contract.access_control import OWNER_USER_ID_CLAIM
-from tai_contract.access_control.context import reset_request_user_id, set_request_user_id
-from tai_contract.interactions import InteractionResponse
+from tai42_contract.access_control import OWNER_USER_ID_CLAIM
+from tai42_contract.access_control.context import reset_request_user_id, set_request_user_id
+from tai42_contract.interactions import InteractionResponse
 
-from tai_skeleton.access_control.request_scopes import (
+from tai42_skeleton.access_control.request_scopes import (
     reset_request_identity_claims,
     set_request_identity_claims,
 )
-from tai_skeleton.access_control.user import CrossIdentityAudienceError
-from tai_skeleton.interactions import InteractionStore, InteractionTimeoutError
-from tai_skeleton.interactions import helper as helper_module
-from tai_skeleton.tools.builtin import interactions as builtin_interactions
+from tai42_skeleton.access_control.user import CrossIdentityAudienceError
+from tai42_skeleton.interactions import InteractionStore, InteractionTimeoutError
+from tai42_skeleton.interactions import helper as helper_module
+from tai42_skeleton.tools.builtin import interactions as builtin_interactions
 from tests._helpers import await_add_event
 
 

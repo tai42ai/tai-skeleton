@@ -6,11 +6,11 @@ propagates loudly — no site swallows it."""
 from __future__ import annotations
 
 import pytest
-from tai_contract.hooks import HookParams
+from tai42_contract.hooks import HookParams
 
-import tai_skeleton.hooks.managers.base_hooks_manager as bhm
-from tai_skeleton.hooks.managers.in_memory_hooks_manager import InMemoryHooksManager
-from tai_skeleton.hooks.settings import HooksSettings
+import tai42_skeleton.hooks.managers.base_hooks_manager as bhm
+from tai42_skeleton.hooks.managers.in_memory_hooks_manager import InMemoryHooksManager
+from tai42_skeleton.hooks.settings import HooksSettings
 
 
 async def test_condition_and_expr_evaluate_through_off_loop_helper(make_app, monkeypatch):

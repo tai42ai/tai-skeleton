@@ -13,9 +13,9 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from tai_skeleton.app import server as server_module
-from tai_skeleton.tools import binding as binding_module
-from tai_skeleton.tools.binding import ToolBinding
+from tai42_skeleton.app import server as server_module
+from tai42_skeleton.tools import binding as binding_module
+from tai42_skeleton.tools.binding import ToolBinding
 
 
 def _function_tool(fn):
@@ -104,7 +104,7 @@ def test_validation_wrapper_is_cached_per_resolved_fn_and_offload():
     # TypeAdapter cache keeps hitting instead of thrashing on a per-call throwaway.
     from fastmcp.server.dependencies import without_injected_parameters
 
-    from tai_skeleton.tools.binding import _validation_wrapper
+    from tai42_skeleton.tools.binding import _validation_wrapper
 
     def f(a: int) -> int:
         """f"""

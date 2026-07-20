@@ -7,9 +7,9 @@ from datetime import timedelta
 
 import pytest
 from pydantic import SecretStr, ValidationError
-from tai_kit.settings import reset_all_settings
+from tai42_kit.settings import reset_all_settings
 
-from tai_skeleton.connectors.settings import (
+from tai42_skeleton.connectors.settings import (
     ConnectorAdapterSettings,
     ConnectorCryptoSecrets,
     ConnectorEngineConfig,
@@ -224,7 +224,7 @@ def test_connector_store_settings_is_cached():
 
 def test_adapter_settings_defaults():
     s = ConnectorAdapterSettings()
-    assert s.meta_token_key == "tai_hub.access_token"
+    assert s.meta_token_key == "tai42_hub.access_token"
     assert s.error_prefix == "tai-hub-err:"
 
 

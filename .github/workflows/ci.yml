@@ -22,15 +22,15 @@ jobs:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           path: tai-skeleton
-      # The committed uv.lock resolves tai-contract, tai-kit, and tai-toolbox from
+      # The committed uv.lock resolves tai42-contract, tai42-kit, and tai42-toolbox from
       # sibling checkouts ([tool.uv.sources] editable paths), so CI clones them
-      # next to this repo. tai-toolbox is pulled by the dev extra's
-      # tai-skeleton[toolbox] self-reference (the toolbox starter's boot test).
+      # next to this repo. tai42-toolbox is pulled by the dev extra's
+      # tai42-skeleton[toolbox] self-reference (the toolbox starter's boot test).
       # TEMPORARY (private dev): the sibling repos are private, so cross-repo
       # checkout needs TAI_CI_TOKEN (fine-grained, Contents:read on the tai
       # library repos); the default GITHUB_TOKEN cannot read another private repo.
       # TODO(public): once these repos are public and tai-contract/tai-kit/
-      # tai-toolbox publish to PyPI, delete the token lines and the sibling
+      # tai42-toolbox publish to PyPI, delete the token lines and the sibling
       # checkouts — install from PyPI.
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
@@ -58,7 +58,7 @@ jobs:
           enable-cache: true
       - run: uv python install 3.13
       # --locked asserts the committed uv.lock is current; --python pins the interpreter.
-      # The redis/postgres drivers are core deps here (via tai-kit extras), so
+      # The redis/postgres drivers are core deps here (via tai42-kit extras), so
       # only the dev extra is needed.
       - run: uv sync --locked --python 3.13 --extra dev
       - name: Ruff
@@ -96,6 +96,6 @@ jobs:
         run: |
           gh api 'repos/${{ github.repository_owner }}/tai-e2e/dispatches' \
             -f 'event_type=ecosystem-push' \
-            -f 'client_payload[repo]=tai-skeleton' \
+            -f 'client_payload[repo]=tai42-skeleton' \
             -f 'client_payload[ref]=${{ github.sha }}' \
             -f 'client_payload[legs]=arq,celery,rq'

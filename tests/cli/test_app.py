@@ -9,9 +9,9 @@ import click
 import pytest
 from click.testing import CliRunner
 
-from tai_skeleton.cli import app as app_module
-from tai_skeleton.cli.client import ApiError
-from tai_skeleton.cli.context import AppContext
+from tai42_skeleton.cli import app as app_module
+from tai42_skeleton.cli.client import ApiError
+from tai42_skeleton.cli.context import AppContext
 
 # Every command group / command that must render under ``tai --help``.
 _REMOTE_GROUPS = {
@@ -56,7 +56,7 @@ def test_compiled_group_exposes_every_command() -> None:
 def test_rehomed_launchers_are_the_original_commands() -> None:
     # The re-homed launcher subcommands are the existing click launcher
     # commands, only renamed to their ``tai`` subcommand names.
-    from tai_skeleton.cli import backend, mcp_app, metrics
+    from tai42_skeleton.cli import backend, mcp_app, metrics
 
     assert app_module.app.commands["serve"] is mcp_app.cli
     assert app_module.app.commands["backend"] is backend.main
@@ -86,7 +86,7 @@ def test_doctor_command_is_registered() -> None:
 
 
 def test_callback_populates_app_context(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
-    from tai_skeleton.cli import context
+    from tai42_skeleton.cli import context
 
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
     monkeypatch.setenv(context.SERVER_URL_ENV, "http://probe-host")
@@ -116,7 +116,7 @@ def test_trailing_json_flag_on_remote_leaf_renders_json(monkeypatch: pytest.Monk
 
     import httpx
 
-    from tai_skeleton.cli.client import ApiClient
+    from tai42_skeleton.cli.client import ApiClient
 
     transport = httpx.MockTransport(lambda request: httpx.Response(200, json={"data": ["alpha", "beta"]}))
     monkeypatch.setattr(
@@ -137,7 +137,7 @@ def test_trailing_no_json_flag_forces_table(monkeypatch: pytest.MonkeyPatch) -> 
     # The trailing ``--no-json`` overrides a flag-first ``--json`` back to the table.
     import httpx
 
-    from tai_skeleton.cli.client import ApiClient
+    from tai42_skeleton.cli.client import ApiClient
 
     transport = httpx.MockTransport(lambda request: httpx.Response(200, json={"data": ["alpha"]}))
     monkeypatch.setattr(

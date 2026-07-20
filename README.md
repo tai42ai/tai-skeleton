@@ -1,19 +1,19 @@
-# tai-skeleton
+# tai42-skeleton
 
 [![CI](https://github.com/tai42ai/tai-skeleton/actions/workflows/ci.yml/badge.svg)](https://github.com/tai42ai/tai-skeleton/actions/workflows/ci.yml)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 
-The open-source implementation of `tai-contract` — the extended MCP server that
+The open-source implementation of `tai42-contract` — the extended MCP server that
 hosts tools, agents, extensions, connectors, hooks, and storage for the TAI
 ecosystem. It provides the concrete `TaiMCP` server and the runtime engines
 (tool registry and adapters, the agent registry, the OAuth connector engine, the
 access-control middleware, the hooks router, the template/storage manager, the
 manifest loader, and the transport layer) that implement the protocols declared
-in `tai-contract`.
+in `tai42-contract`.
 
 Providers — OAuth connectors, storage backends, config providers, worker
 backends, monitoring — ship as separate plugins that register through the
-`tai_app` contract handle when the manifest loads them; no plugin imports the
+`tai42_app` contract handle when the manifest loads them; no plugin imports the
 skeleton.
 
 ## Position in the ecosystem
@@ -26,12 +26,12 @@ storage, and human-in-the-loop steps).
 Three packages; each depends only on the ones to its left:
 
 ```
-tai-contract  <--  tai-kit  <--  tai-skeleton
+tai42-contract  <--  tai42-kit  <--  tai42-skeleton
 (interfaces)      (helpers)     (the server)
 ```
 
-`tai-skeleton` is the server at the end of the chain: it depends on **only**
-`tai-contract` (the pure interface package) and `tai-kit` (generic leaf
+`tai42-skeleton` is the server at the end of the chain: it depends on **only**
+`tai42-contract` (the pure interface package) and `tai42-kit` (generic leaf
 helpers). It is the runnable body every plugin plugs into.
 
 ## Install
@@ -48,7 +48,7 @@ cd tai-skeleton
 uv sync
 ```
 
-Add the `toolbox` extra for batteries — it pulls in the `tai-toolbox` contrib
+Add the `toolbox` extra for batteries — it pulls in the `tai42-toolbox` contrib
 package, whose composition tool extensions (`chain`, `batch`) and generic tool
 collection load from the manifest (see [`examples/toolbox`](examples/toolbox)):
 
@@ -56,7 +56,7 @@ collection load from the manifest (see [`examples/toolbox`](examples/toolbox)):
 uv sync --extra toolbox
 ```
 
-Once the packages are published, `pip install tai-skeleton[toolbox]` will work
+Once the packages are published, `pip install tai42-skeleton[toolbox]` will work
 too.
 
 ## Run it
@@ -106,8 +106,8 @@ co-tenant deployments would otherwise cross-talk.
 
 ## Development
 
-The dev venv resolves `tai-contract`, `tai-kit`, `tai-toolbox`, and
-`tai-identity-redis` from sibling checkouts (see `[tool.uv.sources]`):
+The dev venv resolves `tai42-contract`, `tai42-kit`, `tai42-toolbox`, and
+`tai42-identity-redis` from sibling checkouts (see `[tool.uv.sources]`):
 
 ```bash
 uv sync --extra dev

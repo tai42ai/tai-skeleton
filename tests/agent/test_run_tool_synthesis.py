@@ -21,9 +21,9 @@ from fastmcp.tools.base import Tool
 from fastmcp.tools.function_tool import FunctionTool
 from pydantic.json_schema import PydanticJsonSchemaWarning
 
-from tai_skeleton.app.instance import app
-from tai_skeleton.manifest import Manifest
-from tai_skeleton.tools.binding import _derive_input_schema
+from tai42_skeleton.app.instance import app
+from tai42_skeleton.manifest import Manifest
+from tai42_skeleton.tools.binding import _derive_input_schema
 
 
 @pytest.fixture(autouse=True)
@@ -63,7 +63,7 @@ def _cache_manifest(*agents: str) -> Manifest:
     # only present because a manifest ``tools:`` entry needs a selected tool.
     return Manifest.model_validate(
         {
-            "extensions_modules": ["tai_toolbox.extensions.cache"],
+            "extensions_modules": ["tai42_toolbox.extensions.cache"],
             "tools": [
                 {
                     "title": "fxt",
@@ -273,7 +273,7 @@ def test_cache_and_chain_compose_over_agent_run_tool_across_a_real_run():
     # tool and both execute end-to-end.
     manifest = Manifest.model_validate(
         {
-            "extensions_modules": ["tai_toolbox.extensions.cache", "tai_toolbox.extensions.chain"],
+            "extensions_modules": ["tai42_toolbox.extensions.cache", "tai42_toolbox.extensions.chain"],
             "tools": [
                 {
                     "title": "fxt",
@@ -326,7 +326,7 @@ def test_chain_over_agent_run_tool_omitting_an_optional_preserves_set_fields_onl
     # validation) — the run_tool boundary strips it, so the agent sees only ``text``.
     manifest = Manifest.model_validate(
         {
-            "extensions_modules": ["tai_toolbox.extensions.chain"],
+            "extensions_modules": ["tai42_toolbox.extensions.chain"],
             "tools": [
                 {
                     "title": "fxt",

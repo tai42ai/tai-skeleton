@@ -5,10 +5,10 @@ re-registering a name under a new topic moves it out of the old topic's bucket.
 
 from __future__ import annotations
 
-from tai_contract.hooks import HookParams
+from tai42_contract.hooks import HookParams
 
-from tai_skeleton.hooks.managers.in_memory_hooks_manager import InMemoryHooksManager
-from tai_skeleton.hooks.settings import HooksSettings
+from tai42_skeleton.hooks.managers.in_memory_hooks_manager import InMemoryHooksManager
+from tai42_skeleton.hooks.settings import HooksSettings
 
 
 async def test_unregister_one_of_two_keeps_topic_bucket():

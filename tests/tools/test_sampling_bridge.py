@@ -13,9 +13,9 @@ from fastmcp.server.sampling import SamplingResult
 from langchain_core.messages import AIMessage
 from mcp.types import SamplingMessage, TextContent
 
-from tai_skeleton.app.instance import app
-from tai_skeleton.manifest import Manifest
-from tai_skeleton.tools import context_bridge, sampling_bridge
+from tai42_skeleton.app.instance import app
+from tai42_skeleton.manifest import Manifest
+from tai42_skeleton.tools import context_bridge, sampling_bridge
 
 
 class _FakeModel:
@@ -125,7 +125,7 @@ def test_bridge_context_noop_when_client_context_active_skips_platform_sample(mo
 def test_platform_sample_binds_token_cap_default_when_no_max(monkeypatch):
     # No caller max_tokens -> the settings-backed cap is bound as the default, so
     # the platform fallback is never an unbounded generation.
-    from tai_skeleton.tools.sampling_settings import SamplingSettings
+    from tai42_skeleton.tools.sampling_settings import SamplingSettings
 
     model = _patch_model(monkeypatch, "ok")
     monkeypatch.setattr(sampling_bridge, "sampling_settings", lambda: SamplingSettings(max_tokens_per_call=1234))
@@ -138,7 +138,7 @@ def test_platform_sample_binds_token_cap_default_when_no_max(monkeypatch):
 def test_platform_sample_over_cap_raises_naming_env_var(monkeypatch):
     # A caller asking for more than the cap is refused loudly, never silently
     # clamped.
-    from tai_skeleton.tools.sampling_settings import SamplingSettings
+    from tai42_skeleton.tools.sampling_settings import SamplingSettings
 
     _patch_model(monkeypatch, "ok")
     monkeypatch.setattr(sampling_bridge, "sampling_settings", lambda: SamplingSettings(max_tokens_per_call=100))
@@ -150,7 +150,7 @@ def test_platform_sample_over_cap_raises_naming_env_var(monkeypatch):
 def test_bridge_context_sample_call_budget(monkeypatch):
     # The per-invocation call budget bounds how many ctx.sample() calls one tool
     # invocation may make; the (budget+1)th is refused loudly.
-    from tai_skeleton.tools.sampling_settings import SamplingSettings
+    from tai42_skeleton.tools.sampling_settings import SamplingSettings
 
     async def fake_sample(*args, **kwargs):
         return "text"

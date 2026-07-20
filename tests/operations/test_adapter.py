@@ -13,12 +13,12 @@ from pydantic import BaseModel
 from starlette.requests import Request
 from starlette.responses import Response
 
-from tai_skeleton.app.reload_gate import reload_gate
-from tai_skeleton.app.route_registry import _SpecApp as SpecApp
-from tai_skeleton.app.route_registry import route_registry
-from tai_skeleton.operations import OperationRegistry, operation, register_operation_route
-from tai_skeleton.operations.decorator import operation_metadata_of
-from tai_skeleton.operations.errors import ConflictError, NotFoundError
+from tai42_skeleton.app.reload_gate import reload_gate
+from tai42_skeleton.app.route_registry import _SpecApp as SpecApp
+from tai42_skeleton.app.route_registry import route_registry
+from tai42_skeleton.operations import OperationRegistry, operation, register_operation_route
+from tai42_skeleton.operations.decorator import operation_metadata_of
+from tai42_skeleton.operations.errors import ConflictError, NotFoundError
 
 
 def _run(awaitable: Awaitable[Response]) -> Response:

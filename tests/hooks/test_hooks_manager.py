@@ -1,6 +1,6 @@
 """Conformance + behavior tests for the copied hooks feature.
 
-Conformance asserts the local managers satisfy the ``tai_contract.hooks``
+Conformance asserts the local managers satisfy the ``tai42_contract.hooks``
 ``HooksManager`` protocol they are meant to implement. Behavior exercises the
 in-memory registry (register / list / unregister) plus jq validation at
 registration time — none of which depend on the template manager (firing, which
@@ -8,11 +8,11 @@ renders condition/expr via the template impl, is verified at integration).
 """
 
 import pytest
-from tai_contract.hooks import HookParams, HooksManager
+from tai42_contract.hooks import HookParams, HooksManager
 
-from tai_skeleton.hooks.managers.in_memory_hooks_manager import InMemoryHooksManager
-from tai_skeleton.hooks.managers.redis_hooks_manager import RedisHooksManager
-from tai_skeleton.hooks.settings import HooksSettings
+from tai42_skeleton.hooks.managers.in_memory_hooks_manager import InMemoryHooksManager
+from tai42_skeleton.hooks.managers.redis_hooks_manager import RedisHooksManager
+from tai42_skeleton.hooks.settings import HooksSettings
 
 
 def _settings() -> HooksSettings:

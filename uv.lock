@@ -3086,7 +3086,7 @@ wheels = [
 ]
 
 [[package]]
-name = "tai-contract"
+name = "tai42-contract"
 version = "0.1.0"
 source = { editable = "../tai-contract" }
 dependencies = [
@@ -3108,12 +3108,12 @@ requires-dist = [
 provides-extras = ["dev"]
 
 [[package]]
-name = "tai-identity-redis"
+name = "tai42-identity-redis"
 version = "0.1.0"
 source = { editable = "../tai-identity-redis" }
 dependencies = [
-    { name = "tai-contract" },
-    { name = "tai-kit", extra = ["redis"] },
+    { name = "tai42-contract" },
+    { name = "tai42-kit", extra = ["redis"] },
 ]
 
 [package.metadata]
@@ -3124,13 +3124,13 @@ requires-dist = [
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=5" },
     { name = "pyyaml", marker = "extra == 'dev'", specifier = ">=6" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.6" },
-    { name = "tai-contract", editable = "../tai-contract" },
-    { name = "tai-kit", extras = ["redis"], editable = "../tai-kit" },
+    { name = "tai42-contract", editable = "../tai-contract" },
+    { name = "tai42-kit", extras = ["redis"], editable = "../tai-kit" },
 ]
 provides-extras = ["dev"]
 
 [[package]]
-name = "tai-kit"
+name = "tai42-kit"
 version = "0.1.0"
 source = { editable = "../tai-kit" }
 dependencies = [
@@ -3145,7 +3145,7 @@ dependencies = [
     { name = "python-dotenv" },
     { name = "pyyaml" },
     { name = "ruamel-yaml" },
-    { name = "tai-contract" },
+    { name = "tai42-contract" },
 ]
 
 [package.optional-dependencies]
@@ -3211,21 +3211,21 @@ requires-dist = [
     { name = "ruamel-yaml", specifier = ">=0.18" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.6" },
     { name = "sentence-transformers", marker = "extra == 'huggingface'", specifier = ">=5.3" },
-    { name = "tai-contract", editable = "../tai-contract" },
-    { name = "tai-kit", extras = ["llm"], marker = "extra == 'anthropic'" },
-    { name = "tai-kit", extras = ["llm"], marker = "extra == 'google'" },
-    { name = "tai-kit", extras = ["llm"], marker = "extra == 'huggingface'" },
-    { name = "tai-kit", extras = ["llm"], marker = "extra == 'langgraph-checkpoint-postgres'" },
-    { name = "tai-kit", extras = ["llm"], marker = "extra == 'langgraph-checkpoint-sqlite'" },
-    { name = "tai-kit", extras = ["llm"], marker = "extra == 'mistral'" },
-    { name = "tai-kit", extras = ["llm"], marker = "extra == 'ollama'" },
-    { name = "tai-kit", extras = ["llm"], marker = "extra == 'xai'" },
+    { name = "tai42-contract", editable = "../tai-contract" },
+    { name = "tai42-kit", extras = ["llm"], marker = "extra == 'anthropic'" },
+    { name = "tai42-kit", extras = ["llm"], marker = "extra == 'google'" },
+    { name = "tai42-kit", extras = ["llm"], marker = "extra == 'huggingface'" },
+    { name = "tai42-kit", extras = ["llm"], marker = "extra == 'langgraph-checkpoint-postgres'" },
+    { name = "tai42-kit", extras = ["llm"], marker = "extra == 'langgraph-checkpoint-sqlite'" },
+    { name = "tai42-kit", extras = ["llm"], marker = "extra == 'mistral'" },
+    { name = "tai42-kit", extras = ["llm"], marker = "extra == 'ollama'" },
+    { name = "tai42-kit", extras = ["llm"], marker = "extra == 'xai'" },
     { name = "uvicorn", marker = "extra == 'uvicorn'", specifier = ">=0.43" },
 ]
 provides-extras = ["llm", "jq", "uvicorn", "anthropic", "mistral", "google", "xai", "ollama", "huggingface", "langgraph-checkpoint-postgres", "langgraph-checkpoint-sqlite", "redis", "curl", "postgres", "jwt", "dev"]
 
 [[package]]
-name = "tai-skeleton"
+name = "tai42-skeleton"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
@@ -3256,8 +3256,8 @@ dependencies = [
     { name = "redis" },
     { name = "ruamel-yaml" },
     { name = "starlette" },
-    { name = "tai-contract" },
-    { name = "tai-kit", extra = ["jq", "llm", "postgres", "redis", "uvicorn"] },
+    { name = "tai42-contract" },
+    { name = "tai42-kit", extra = ["jq", "llm", "postgres", "redis", "uvicorn"] },
     { name = "typer" },
     { name = "uvicorn" },
     { name = "uvloop", marker = "sys_platform != 'win32'" },
@@ -3285,8 +3285,8 @@ dev = [
     { name = "ruff" },
     { name = "striprtf" },
     { name = "tabulate" },
-    { name = "tai-identity-redis" },
-    { name = "tai-toolbox" },
+    { name = "tai42-identity-redis" },
+    { name = "tai42-toolbox" },
 ]
 files = [
     { name = "beautifulsoup4" },
@@ -3303,7 +3303,7 @@ files = [
     { name = "tabulate" },
 ]
 toolbox = [
-    { name = "tai-toolbox" },
+    { name = "tai42-toolbox" },
 ]
 
 [package.metadata]
@@ -3353,11 +3353,11 @@ requires-dist = [
     { name = "starlette", specifier = ">=0.40" },
     { name = "striprtf", marker = "extra == 'files'", specifier = ">=0.0.26" },
     { name = "tabulate", marker = "extra == 'files'", specifier = ">=0.9" },
-    { name = "tai-contract", editable = "../tai-contract" },
-    { name = "tai-identity-redis", marker = "extra == 'dev'", editable = "../tai-identity-redis" },
-    { name = "tai-kit", extras = ["llm", "jq", "uvicorn", "redis", "postgres"], editable = "../tai-kit" },
-    { name = "tai-skeleton", extras = ["toolbox", "files"], marker = "extra == 'dev'" },
-    { name = "tai-toolbox", marker = "extra == 'toolbox'", editable = "../tai-toolbox" },
+    { name = "tai42-contract", editable = "../tai-contract" },
+    { name = "tai42-identity-redis", marker = "extra == 'dev'", editable = "../tai-identity-redis" },
+    { name = "tai42-kit", extras = ["llm", "jq", "uvicorn", "redis", "postgres"], editable = "../tai-kit" },
+    { name = "tai42-skeleton", extras = ["toolbox", "files"], marker = "extra == 'dev'" },
+    { name = "tai42-toolbox", marker = "extra == 'toolbox'", editable = "../tai-toolbox" },
     { name = "typer", specifier = ">=0.12" },
     { name = "uvicorn", specifier = ">=0.43" },
     { name = "uvloop", marker = "sys_platform != 'win32'", specifier = ">=0.22" },
@@ -3367,15 +3367,15 @@ requires-dist = [
 provides-extras = ["toolbox", "files", "dev"]
 
 [[package]]
-name = "tai-toolbox"
+name = "tai42-toolbox"
 version = "0.1.0"
 source = { editable = "../tai-toolbox" }
 dependencies = [
     { name = "makefun" },
     { name = "pydantic" },
     { name = "pydantic-settings" },
-    { name = "tai-contract" },
-    { name = "tai-kit" },
+    { name = "tai42-contract" },
+    { name = "tai42-kit" },
 ]
 
 [package.metadata]
@@ -3390,12 +3390,12 @@ requires-dist = [
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=5" },
     { name = "pyyaml", marker = "extra == 'dev'", specifier = ">=6" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.6" },
-    { name = "tai-contract", editable = "../tai-contract" },
-    { name = "tai-kit", editable = "../tai-kit" },
-    { name = "tai-kit", extras = ["curl"], marker = "extra == 'http'", editable = "../tai-kit" },
-    { name = "tai-kit", extras = ["jq"], marker = "extra == 'chain'", editable = "../tai-kit" },
-    { name = "tai-kit", extras = ["llm"], marker = "extra == 'embeddings'", editable = "../tai-kit" },
-    { name = "tai-toolbox", extras = ["http", "prometheus", "chain", "embeddings", "proxy"], marker = "extra == 'dev'" },
+    { name = "tai42-contract", editable = "../tai-contract" },
+    { name = "tai42-kit", editable = "../tai-kit" },
+    { name = "tai42-kit", extras = ["curl"], marker = "extra == 'http'", editable = "../tai-kit" },
+    { name = "tai42-kit", extras = ["jq"], marker = "extra == 'chain'", editable = "../tai-kit" },
+    { name = "tai42-kit", extras = ["llm"], marker = "extra == 'embeddings'", editable = "../tai-kit" },
+    { name = "tai42-toolbox", extras = ["http", "prometheus", "chain", "embeddings", "proxy"], marker = "extra == 'dev'" },
     { name = "trustme", marker = "extra == 'dev'", specifier = ">=1.1" },
 ]
 provides-extras = ["http", "prometheus", "chain", "embeddings", "proxy", "dev"]

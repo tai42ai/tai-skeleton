@@ -12,12 +12,12 @@ from datetime import UTC, datetime
 from types import SimpleNamespace
 
 import pytest
-from tai_contract.connectors.models import AuthHealthState
-from tai_contract.manifest import ApiToolsConfig
+from tai42_contract.connectors.models import AuthHealthState
+from tai42_contract.manifest import ApiToolsConfig
 
-from tai_skeleton.operations import NotFoundError, OperationRegistry, operation_metadata_of
-from tai_skeleton.operations import connectors as conn_ops
-from tai_skeleton.operations.projection import project_operations
+from tai42_skeleton.operations import NotFoundError, OperationRegistry, operation_metadata_of
+from tai42_skeleton.operations import connectors as conn_ops
+from tai42_skeleton.operations.projection import project_operations
 
 
 def _missing_loader():

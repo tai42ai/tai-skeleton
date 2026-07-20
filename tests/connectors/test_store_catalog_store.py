@@ -6,9 +6,9 @@ from contextlib import asynccontextmanager
 
 import pytest
 
-import tai_skeleton.connectors.store.catalog_store as catalog_store
-from tai_skeleton.connectors.providers import registry
-from tai_skeleton.connectors.store.catalog_store import (
+import tai42_skeleton.connectors.store.catalog_store as catalog_store
+from tai42_skeleton.connectors.providers import registry
+from tai42_skeleton.connectors.store.catalog_store import (
     ConnectorCategory,
     fetch_catalog,
     fetch_categories,

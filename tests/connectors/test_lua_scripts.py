@@ -16,16 +16,16 @@ from datetime import UTC, datetime, timedelta
 import pytest
 from fakeredis import aioredis
 
-import tai_skeleton.connectors.runtime.locks as locks
-import tai_skeleton.connectors.store.redis_pg as redis_pg
-from tai_skeleton.connectors.runtime.locks import _lock_key, _release
-from tai_skeleton.connectors.store.redis_pg import (
+import tai42_skeleton.connectors.runtime.locks as locks
+import tai42_skeleton.connectors.store.redis_pg as redis_pg
+from tai42_skeleton.connectors.runtime.locks import _lock_key, _release
+from tai42_skeleton.connectors.store.redis_pg import (
     _BLOB_FIELD,
     _CACHE_TOMBSTONE_LUA,
     _VER_FIELD,
     RedisPgConnectorTokenStore,
 )
-from tai_skeleton.utils.redis_typing import eval_script
+from tai42_skeleton.utils.redis_typing import eval_script
 
 from .conftest import CID
 

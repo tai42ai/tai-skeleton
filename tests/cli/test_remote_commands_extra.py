@@ -907,7 +907,7 @@ def test_config_mode(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_config_settings_schema_uses_groups_envelope(monkeypatch: pytest.MonkeyPatch) -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         assert request.url.path == "/api/config/settings-schema"
-        return data_response({"groups": [{"name": "redis", "module": "tai_skeleton.settings"}]})
+        return data_response({"groups": [{"name": "redis", "module": "tai42_skeleton.settings"}]})
 
     result = run_cli(monkeypatch, handler, ["config", "settings-schema"])
     assert result.exit_code == 0, result.output

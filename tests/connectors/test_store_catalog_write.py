@@ -6,12 +6,12 @@ from contextlib import asynccontextmanager
 from types import SimpleNamespace
 
 import pytest
-from tai_contract.connectors.probe import ToolSummary, VerifyResult
+from tai42_contract.connectors.probe import ToolSummary, VerifyResult
 
-import tai_skeleton.connectors.store.catalog_write as catalog_write
-from tai_skeleton.app import instance
-from tai_skeleton.connectors.store.catalog_store import ConnectorCategory
-from tai_skeleton.connectors.store.catalog_write import add_provider, create_category
+import tai42_skeleton.connectors.store.catalog_write as catalog_write
+from tai42_skeleton.app import instance
+from tai42_skeleton.connectors.store.catalog_store import ConnectorCategory
+from tai42_skeleton.connectors.store.catalog_write import add_provider, create_category
 from tests._fakes.bus import FakeBus
 
 from .conftest import make_noauth_http_descriptor, make_oauth_descriptor
@@ -74,7 +74,7 @@ class _FakePg:
 class _FakeAppImpl:
     def __init__(self, backend) -> None:
         # The app exposes the backend through the ``backends`` facet namespace,
-        # never a flat ``tai_app.backend``. ``add_provider`` runs a FULL local reload
+        # never a flat ``tai42_app.backend``. ``add_provider`` runs a FULL local reload
         # (``admin.reload_config``) then broadcasts it on the bus.
         self.backends = SimpleNamespace(backend=backend)
         self.reload_calls = 0
@@ -100,11 +100,11 @@ def fake_pg(monkeypatch):
 
 @pytest.fixture
 def bind_app(monkeypatch):
-    from tai_contract.app import tai_app
+    from tai42_contract.app import tai42_app
 
     def _bind(backend) -> _FakeAppImpl:
         impl = _FakeAppImpl(backend)
-        monkeypatch.setattr(tai_app, "_impl", impl)
+        monkeypatch.setattr(tai42_app, "_impl", impl)
         bus = FakeBus(origin="serve-x")
         monkeypatch.setattr(instance.app, "_bus", bus)
         impl.bus = bus
@@ -287,7 +287,7 @@ async def test_add_provider_success_no_backend(fake_pg, monkeypatch, bind_app):
     )
     _ensure_unknown_provider(monkeypatch)
     _patch_verify(monkeypatch, VerifyResult(ok=True, tools=[]))
-    bind_app(None)  # tai_app.backend is None
+    bind_app(None)  # tai42_app.backend is None
     desc = _community_descriptor()
     tools = await add_provider(desc, source_url="https://x", added_by="me", config_values={})
     assert tools == []

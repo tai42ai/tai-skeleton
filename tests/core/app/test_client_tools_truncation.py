@@ -7,9 +7,9 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from tai_skeleton.app import server as server_module
-from tai_skeleton.tools import binding as binding_module
-from tai_skeleton.tools.binding import ToolBinding
+from tai42_skeleton.app import server as server_module
+from tai42_skeleton.tools import binding as binding_module
+from tai42_skeleton.tools.binding import ToolBinding
 
 _LONG_PREFIX = "x" * 64
 

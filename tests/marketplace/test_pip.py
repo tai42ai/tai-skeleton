@@ -20,17 +20,17 @@ from pathlib import Path
 
 import httpx
 import pytest
-from tai_kit.net import UrlGuardError
+from tai42_kit.net import UrlGuardError
 
-from tai_skeleton.marketplace import pip as pip_module
-from tai_skeleton.marketplace.errors import (
+from tai42_skeleton.marketplace import pip as pip_module
+from tai42_skeleton.marketplace.errors import (
     ArtifactIntegrityError,
     PipFailedError,
     PipUnavailableError,
     RegistryResponseError,
     RegistryUnreachableError,
 )
-from tai_skeleton.marketplace.pip import (
+from tai42_skeleton.marketplace.pip import (
     ensure_pip_available,
     fetch_verified_artifact,
     install_args,
@@ -42,15 +42,15 @@ from tai_skeleton.marketplace.pip import (
 
 
 def test_pypi_install_args() -> None:
-    args = install_args("tai-toolbox", "1.2.3", "pypi")
-    assert args == ["install", "--no-input", "--disable-pip-version-check", "tai-toolbox==1.2.3"]
+    args = install_args("tai42-toolbox", "1.2.3", "pypi")
+    assert args == ["install", "--no-input", "--disable-pip-version-check", "tai42-toolbox==1.2.3"]
 
 
 def test_github_install_args_is_the_verified_local_tarball(tmp_path: Path) -> None:
     # The github pin is the verified LOCAL tarball path — a plain absolute path,
     # never a ``git+url@tag`` clone.
-    tarball = tmp_path / "tai-toolbox-1.2.3.tar.gz"
-    args = install_args("tai-toolbox", "1.2.3", "github", tarball)
+    tarball = tmp_path / "tai42-toolbox-1.2.3.tar.gz"
+    args = install_args("tai42-toolbox", "1.2.3", "github", tarball)
     assert args == ["install", "--no-input", "--disable-pip-version-check", str(tarball)]
     assert not args[-1].startswith("git+")
 
@@ -59,11 +59,11 @@ def test_github_install_args_without_verified_path_raises() -> None:
     # A github install with no verified artifact path is refused, never falling
     # through to some unverified pin.
     with pytest.raises(RegistryResponseError, match="verified artifact path"):
-        install_args("tai-toolbox", "1.2.3", "github")
+        install_args("tai42-toolbox", "1.2.3", "github")
 
 
 def test_uninstall_args() -> None:
-    assert uninstall_args("tai-toolbox") == ["uninstall", "--yes", "tai-toolbox"]
+    assert uninstall_args("tai42-toolbox") == ["uninstall", "--yes", "tai42-toolbox"]
 
 
 # -- rejection: registry-data faults, never ValueError -----------------------
@@ -76,12 +76,12 @@ def test_malformed_package_name_raises_response_error() -> None:
 
 def test_unparseable_version_raises_response_error() -> None:
     with pytest.raises(RegistryResponseError, match="version"):
-        install_args("tai-toolbox", "not-a-version", "pypi")
+        install_args("tai42-toolbox", "not-a-version", "pypi")
 
 
 def test_unknown_source_raises_response_error() -> None:
     with pytest.raises(RegistryResponseError, match="unknown install source"):
-        install_args("tai-toolbox", "1.0.0", "svn")
+        install_args("tai42-toolbox", "1.0.0", "svn")
 
 
 # -- fetch_verified_artifact -------------------------------------------------
@@ -109,12 +109,12 @@ async def test_fetch_verified_artifact_downloads_verifies_and_writes(
     digest = hashlib.sha256(data).hexdigest()
     seen = _fake_fetch(monkeypatch, data)
 
-    dest = await fetch_verified_artifact("tai-toolbox", "1.2.3", _ARTIFACT_URL, digest, tmp_path)
+    dest = await fetch_verified_artifact("tai42-toolbox", "1.2.3", _ARTIFACT_URL, digest, tmp_path)
 
     # The guarded fetch was used, for exactly the registry artifact URL.
     assert seen == [_ARTIFACT_URL]
     # The verified bytes are written to <package>-<version>.tar.gz and returned.
-    assert dest == tmp_path / "tai-toolbox-1.2.3.tar.gz"
+    assert dest == tmp_path / "tai42-toolbox-1.2.3.tar.gz"
     assert dest.read_bytes() == data
 
 
@@ -126,7 +126,7 @@ async def test_fetch_verified_artifact_accepts_uppercased_registry_digest(
     data = b"tarball-bytes"
     digest = hashlib.sha256(data).hexdigest().upper()
     _fake_fetch(monkeypatch, data)
-    dest = await fetch_verified_artifact("tai-toolbox", "1.2.3", _ARTIFACT_URL, digest, tmp_path)
+    dest = await fetch_verified_artifact("tai42-toolbox", "1.2.3", _ARTIFACT_URL, digest, tmp_path)
     assert dest.read_bytes() == data
 
 
@@ -138,7 +138,7 @@ async def test_fetch_verified_artifact_mismatch_raises_and_writes_nothing(
     _fake_fetch(monkeypatch, data)
 
     with pytest.raises(ArtifactIntegrityError) as exc:
-        await fetch_verified_artifact("tai-toolbox", "1.2.3", _ARTIFACT_URL, wrong, tmp_path)
+        await fetch_verified_artifact("tai42-toolbox", "1.2.3", _ARTIFACT_URL, wrong, tmp_path)
     assert exc.value.expected_sha256 == wrong
     assert exc.value.actual_sha256 == hashlib.sha256(data).hexdigest()
     assert exc.value.artifact_ref == _ARTIFACT_URL
@@ -160,7 +160,7 @@ async def test_fetch_verified_artifact_any_fetch_failure_maps_to_unreachable(
 
     monkeypatch.setattr(pip_module, "fetch_url", boom)
     with pytest.raises(RegistryUnreachableError, match="RuntimeError: network down"):
-        await fetch_verified_artifact("tai-toolbox", "1.2.3", _ARTIFACT_URL, "0" * 64, tmp_path)
+        await fetch_verified_artifact("tai42-toolbox", "1.2.3", _ARTIFACT_URL, "0" * 64, tmp_path)
     assert list(tmp_path.iterdir()) == []
 
 
@@ -178,7 +178,7 @@ async def test_fetch_verified_artifact_exception_group_maps_to_unreachable(
 
     monkeypatch.setattr(pip_module, "fetch_url", boom)
     with pytest.raises(RegistryUnreachableError, match="ExceptionGroup") as exc:
-        await fetch_verified_artifact("tai-toolbox", "1.2.3", "https://host:99999/x", "0" * 64, tmp_path)
+        await fetch_verified_artifact("tai42-toolbox", "1.2.3", "https://host:99999/x", "0" * 64, tmp_path)
     # The original group is chained for the server log.
     assert isinstance(exc.value.__cause__, ExceptionGroup)
     assert list(tmp_path.iterdir()) == []
@@ -194,7 +194,7 @@ async def test_fetch_verified_artifact_cancellation_is_not_swallowed(
 
     monkeypatch.setattr(pip_module, "fetch_url", cancelled)
     with pytest.raises(asyncio.CancelledError):
-        await fetch_verified_artifact("tai-toolbox", "1.2.3", _ARTIFACT_URL, "0" * 64, tmp_path)
+        await fetch_verified_artifact("tai42-toolbox", "1.2.3", _ARTIFACT_URL, "0" * 64, tmp_path)
 
 
 async def test_fetch_verified_artifact_write_fault_is_not_masked_as_unreachable(
@@ -208,7 +208,7 @@ async def test_fetch_verified_artifact_write_fault_is_not_masked_as_unreachable(
     digest = hashlib.sha256(data).hexdigest()
     _fake_fetch(monkeypatch, data)
     with pytest.raises(FileNotFoundError):
-        await fetch_verified_artifact("tai-toolbox", "1.2.3", _ARTIFACT_URL, digest, tmp_path / "absent")
+        await fetch_verified_artifact("tai42-toolbox", "1.2.3", _ARTIFACT_URL, digest, tmp_path / "absent")
 
 
 async def test_fetch_verified_artifact_http_error_maps_to_unreachable(
@@ -222,7 +222,7 @@ async def test_fetch_verified_artifact_http_error_maps_to_unreachable(
 
     monkeypatch.setattr(pip_module, "fetch_url", boom)
     with pytest.raises(RegistryUnreachableError, match=_ARTIFACT_URL):
-        await fetch_verified_artifact("tai-toolbox", "1.2.3", _ARTIFACT_URL, "0" * 64, tmp_path)
+        await fetch_verified_artifact("tai42-toolbox", "1.2.3", _ARTIFACT_URL, "0" * 64, tmp_path)
     assert list(tmp_path.iterdir()) == []
 
 
@@ -236,7 +236,7 @@ async def test_fetch_verified_artifact_guard_rejection_maps_to_unreachable(
 
     monkeypatch.setattr(pip_module, "fetch_url", blocked)
     with pytest.raises(RegistryUnreachableError, match=_ARTIFACT_URL):
-        await fetch_verified_artifact("tai-toolbox", "1.2.3", _ARTIFACT_URL, "0" * 64, tmp_path)
+        await fetch_verified_artifact("tai42-toolbox", "1.2.3", _ARTIFACT_URL, "0" * 64, tmp_path)
     assert list(tmp_path.iterdir()) == []
 
 
@@ -250,18 +250,18 @@ async def test_fetch_verified_artifact_unparseable_https_ref_maps_to_unreachable
     # InvalidURL (no network is reached — the URL fails to parse).
     bad_ref = "https://[::1"
     with pytest.raises(RegistryUnreachableError, match="failed to fetch"):
-        await fetch_verified_artifact("tai-toolbox", "1.2.3", bad_ref, "0" * 64, tmp_path)
+        await fetch_verified_artifact("tai42-toolbox", "1.2.3", bad_ref, "0" * 64, tmp_path)
     assert list(tmp_path.iterdir()) == []
 
 
 async def test_fetch_verified_artifact_non_https_ref_is_response_error(tmp_path: Path) -> None:
     with pytest.raises(RegistryResponseError, match="non-https artifact_ref"):
-        await fetch_verified_artifact("tai-toolbox", "1.2.3", "http://evil/x.tgz", "0" * 64, tmp_path)
+        await fetch_verified_artifact("tai42-toolbox", "1.2.3", "http://evil/x.tgz", "0" * 64, tmp_path)
 
 
 async def test_fetch_verified_artifact_non_hex64_sha256_is_response_error(tmp_path: Path) -> None:
     with pytest.raises(RegistryResponseError, match="malformed artifact sha256"):
-        await fetch_verified_artifact("tai-toolbox", "1.2.3", _ARTIFACT_URL, "not-a-digest", tmp_path)
+        await fetch_verified_artifact("tai42-toolbox", "1.2.3", _ARTIFACT_URL, "not-a-digest", tmp_path)
 
 
 async def test_fetch_verified_artifact_bad_package_name_is_response_error(tmp_path: Path) -> None:

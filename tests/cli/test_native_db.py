@@ -14,9 +14,9 @@ import psycopg
 import pytest
 from click.testing import CliRunner
 
-from tai_skeleton.cli import app as app_module
-from tai_skeleton.cli.native import db
-from tai_skeleton.sql.schema import load_ddl
+from tai42_skeleton.cli import app as app_module
+from tai42_skeleton.cli.native import db
+from tai42_skeleton.sql.schema import load_ddl
 
 # --- DDL properties -------------------------------------------------------
 

@@ -28,14 +28,14 @@ at collection, as ``tests/routers/conftest`` does for the routers.
 from __future__ import annotations
 
 import pytest
-from tai_contract.app import tai_app
+from tai42_contract.app import tai42_app
 
-from tai_skeleton.app import instance
-from tai_skeleton.app.route_registry import route_registry
-from tai_skeleton.operations import reregister_operations
-from tai_skeleton.operations.registry import operation_registry
+from tai42_skeleton.app import instance
+from tai42_skeleton.app.route_registry import route_registry
+from tai42_skeleton.operations import reregister_operations
+from tai42_skeleton.operations.registry import operation_registry
 
-tai_app.bind(instance.build_app())
+tai42_app.bind(instance.build_app())
 
 
 @pytest.fixture(autouse=True)

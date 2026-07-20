@@ -8,11 +8,11 @@ creates a distinct branch rather than colliding with the base tool name.
 
 import functools
 
-from tai_contract.app import tai_app
-from tai_contract.extensions import ExtensionKind
+from tai42_contract.app import tai42_app
+from tai42_contract.extensions import ExtensionKind
 
 
-@tai_app.extensions.extension(kind=ExtensionKind.WRAPPER, name="loud")
+@tai42_app.extensions.extension(kind=ExtensionKind.WRAPPER, name="loud")
 def loud(func, name, desc, config=None):
     """Branch ``func`` into a renamed variant whose string result is upper-cased."""
 

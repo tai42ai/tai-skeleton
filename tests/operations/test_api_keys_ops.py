@@ -10,14 +10,14 @@ exercised at the operation itself, independent of the route surface.
 from __future__ import annotations
 
 import pytest
-from tai_contract.access_control import OWNER_USER_ID_CLAIM
-from tai_contract.access_control.context import reset_request_user_id, set_request_user_id
-from tai_contract.access_control.models import AccessPolicy
+from tai42_contract.access_control import OWNER_USER_ID_CLAIM
+from tai42_contract.access_control.context import reset_request_user_id, set_request_user_id
+from tai42_contract.access_control.models import AccessPolicy
 
-from tai_skeleton.access_control import management
-from tai_skeleton.access_control.settings import AccessControlSettings
-from tai_skeleton.operations import api_keys as ops
-from tai_skeleton.operations.errors import BadRequestError, ForbiddenError, NotFoundError
+from tai42_skeleton.access_control import management
+from tai42_skeleton.access_control.settings import AccessControlSettings
+from tai42_skeleton.operations import api_keys as ops
+from tai42_skeleton.operations.errors import BadRequestError, ForbiddenError, NotFoundError
 
 
 def _caller(*, caller_id="c", scopes=None, is_admin=False, owner_claim=None) -> ops._Caller:
@@ -138,7 +138,7 @@ async def test_rollback_policy_restore_value_error_maps_to_bad_request(monkeypat
     from types import SimpleNamespace
 
     monkeypatch.setattr(ops, "_resolve_caller", lambda: _make(_caller(is_admin=True)))
-    monkeypatch.setattr("tai_skeleton.versioning.versioned_store_configured", lambda: True)
+    monkeypatch.setattr("tai42_skeleton.versioning.versioned_store_configured", lambda: True)
 
     class _Store:
         async def get_version(self, _user_id, _version):

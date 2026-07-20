@@ -9,15 +9,15 @@ import importlib
 from collections.abc import Iterator
 
 import pytest
-from tai_contract.config.manager import ConfigManager
+from tai42_contract.config.manager import ConfigManager
 
-from tai_skeleton.config import (
+from tai42_skeleton.config import (
     ConfigManagerFactory,
     FileConfigManager,
     build_config_manager,
 )
-from tai_skeleton.config import factory as factory_mod
-from tai_skeleton.config.config_mode import ConfigMode, config_mode
+from tai42_skeleton.config import factory as factory_mod
+from tai42_skeleton.config.config_mode import ConfigMode, config_mode
 
 
 @pytest.fixture(autouse=True)
@@ -46,26 +46,26 @@ def test_mode_module_map_holds_k8s_as_string_literal() -> None:
     """The k8s entry is a string module name, never a statically imported module."""
     k8s_entry = factory_mod._PROVIDER_MODULES["k8s"]
     assert isinstance(k8s_entry, str)
-    assert k8s_entry.startswith("tai_config_k8s")
+    assert k8s_entry.startswith("tai42_config_k8s")
 
 
 def test_factory_does_not_statically_import_k8s_plugin() -> None:
     """Importing the factory must not pull in the (not-installed) k8s plugin."""
     import sys
 
-    assert "tai_config_k8s" not in sys.modules
+    assert "tai42_config_k8s" not in sys.modules
 
 
 def test_unknown_mode_raises_loudly(monkeypatch: pytest.MonkeyPatch) -> None:
     """An unmapped mode raises ValueError rather than silently defaulting."""
-    monkeypatch.setitem(factory_mod._PROVIDER_MODULES, "file", "tai_skeleton.config.file_manager")
+    monkeypatch.setitem(factory_mod._PROVIDER_MODULES, "file", "tai42_skeleton.config.file_manager")
     monkeypatch.setattr(factory_mod, "config_mode", lambda: "vault")
     with pytest.raises(ValueError, match="Unknown config mode 'vault'"):
         ConfigManagerFactory.create()
 
 
 def test_k8s_mode_raises_import_error_when_plugin_absent(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Selecting ``k8s`` without the ``tai-config-k8s`` plugin installed raises
+    """Selecting ``k8s`` without the ``tai42-config-k8s`` plugin installed raises
     ImportError loudly rather than degrading to a default provider."""
     monkeypatch.setattr(factory_mod, "config_mode", lambda: "k8s")
     with pytest.raises(ImportError):
@@ -75,7 +75,7 @@ def test_k8s_mode_raises_import_error_when_plugin_absent(monkeypatch: pytest.Mon
 def test_factory_dispatches_via_dynamic_import(monkeypatch: pytest.MonkeyPatch) -> None:
     """The factory imports the mapped module and calls its ``build_config_manager``."""
     sentinel = object()
-    fake = importlib.import_module("tai_skeleton.config.file_manager")
+    fake = importlib.import_module("tai42_skeleton.config.file_manager")
     monkeypatch.setattr(fake, "build_config_manager", lambda: sentinel)
     assert ConfigManagerFactory.create() is sentinel
 

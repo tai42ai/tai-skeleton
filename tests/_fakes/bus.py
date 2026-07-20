@@ -1,6 +1,6 @@
-"""A recording stand-in for :class:`~tai_skeleton.app.bus.WorkerBus`.
+"""A recording stand-in for :class:`~tai42_skeleton.app.bus.WorkerBus`.
 
-Op-level oracle tests drive the operations directly with a faked ``tai_app`` impl.
+Op-level oracle tests drive the operations directly with a faked ``tai42_app`` impl.
 :class:`FakeBus` is the bus half of that fake: it records every ``publish`` /
 ``validate_targets`` call and returns a :class:`FleetResult` built from the caller's
 own ``local`` self entry plus one ``applied`` entry per configured remote origin —
@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from tai_skeleton.app.bus import (
+from tai42_skeleton.app.bus import (
     FleetOrigin,
     FleetResult,
     LocalApplyResult,

@@ -8,10 +8,10 @@ from typing import cast
 
 import pytest
 from cryptography.exceptions import InvalidTag
-from tai_kit.settings import reset_all_settings
+from tai42_kit.settings import reset_all_settings
 
-from tai_skeleton.connectors.oauth import crypto
-from tai_skeleton.connectors.oauth.crypto import ConnectorEncryptionConfigError
+from tai42_skeleton.connectors.oauth import crypto
+from tai42_skeleton.connectors.oauth.crypto import ConnectorEncryptionConfigError
 
 from .conftest import CID, CID2, TEST_KEK_B64
 

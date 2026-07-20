@@ -1,4 +1,4 @@
-"""Unit oracles for :class:`~tai_skeleton.config.service.ConfigService` — the single
+"""Unit oracles for :class:`~tai42_skeleton.config.service.ConfigService` — the single
 manifest-mutation pipeline.
 
 Each test drives the service against a fake config store (the transactional seams),
@@ -24,15 +24,15 @@ from typing import TYPE_CHECKING, Any, cast
 import pytest
 from pyaml_env import parse_config
 from pydantic import ValidationError
-from tai_kit.settings import reset_all_settings
-from tai_kit.utils.data import dump_manifest
+from tai42_kit.settings import reset_all_settings
+from tai42_kit.utils.data import dump_manifest
 
-from tai_skeleton.app import instance
-from tai_skeleton.app.boot_rules import BackendNeedsBusError
-from tai_skeleton.app.bus import FleetResult, LocalApplyResult, OpOutcome, OriginResult
-from tai_skeleton.config.secret_seal import ResolvedSecretError
-from tai_skeleton.config.service import ConfigService
-from tai_skeleton.operations._broadcast import FleetBroadcastError, apply_response
+from tai42_skeleton.app import instance
+from tai42_skeleton.app.boot_rules import BackendNeedsBusError
+from tai42_skeleton.app.bus import FleetResult, LocalApplyResult, OpOutcome, OriginResult
+from tai42_skeleton.config.secret_seal import ResolvedSecretError
+from tai42_skeleton.config.service import ConfigService
+from tai42_skeleton.operations._broadcast import FleetBroadcastError, apply_response
 from tests._fakes.bus import FakeBus
 
 if TYPE_CHECKING:
@@ -535,7 +535,7 @@ async def test_unconfirmed_origin_logs_error_but_returns_success(
     bus = RecordingBus(remotes=["serve-w1"], remote_outcome=OpOutcome.missing)
     service, _admin, _bus = _service(store, bus=bus)
 
-    with caplog.at_level(logging.ERROR, logger="tai_skeleton.operations._broadcast"):
+    with caplog.at_level(logging.ERROR, logger="tai42_skeleton.operations._broadcast"):
         result = await service.apply_replace({"mcp": []})
 
     # Persist + local reload landed, so the call SUCCEEDS; the unconfirmed origin is a

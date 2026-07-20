@@ -4,7 +4,7 @@ envelope and error-reporting rules.
 Handlers are driven directly (the router-test pattern): the bound app impl is
 swapped for a stand-in exposing the facets each section touches
 (``backup``/``config``/``storage``/``sub_app``), and the two subsystems a section
-reaches WITHOUT the ``tai_app`` handle — access_control's redis provisioning and
+reaches WITHOUT the ``tai42_app`` handle — access_control's redis provisioning and
 the hooks manager — are faked at their own module seams.
 
 Each feasible core section is round-tripped (fresh state -> export -> wipe ->
@@ -21,13 +21,13 @@ import json
 from types import SimpleNamespace
 
 from starlette.requests import Request
-from tai_contract.app import tai_app
-from tai_contract.hooks import HookParams
+from tai42_contract.app import tai42_app
+from tai42_contract.hooks import HookParams
 
-from tai_skeleton.app import instance
-from tai_skeleton.backup.registry import BackupRegistry
-from tai_skeleton.backup.sections import _empty_report, register_core_sections
-from tai_skeleton.routers.backup import export_backup, import_backup, list_sections
+from tai42_skeleton.app import instance
+from tai42_skeleton.backup.registry import BackupRegistry
+from tai42_skeleton.backup.sections import _empty_report, register_core_sections
+from tai42_skeleton.routers.backup import export_backup, import_backup, list_sections
 from tests._fakes.bus import FakeBus
 
 # -- request builders --------------------------------------------------------
@@ -140,12 +140,12 @@ def _registry() -> BackupRegistry:
 
 def _install(monkeypatch, *, registry=None, **facets) -> SimpleNamespace:
     # The manifest/env sections import through ``ConfigService.from_app()``, which
-    # resolves the admin reload seam off ``tai_app`` and the worker bus off the app
+    # resolves the admin reload seam off ``tai42_app`` and the worker bus off the app
     # singleton — wire a local-reload admin and a recording bus so a restore runs the
     # real pipeline (validate + reload + broadcast) against the faked config manager.
     facets.setdefault("admin", SimpleNamespace(reload_config=lambda: {"status": "ok", "reloaded": True}))
     impl = SimpleNamespace(backup=registry or _registry(), **facets)
-    monkeypatch.setattr(tai_app, "_impl", impl)
+    monkeypatch.setattr(tai42_app, "_impl", impl)
     monkeypatch.setattr(instance.app, "_bus", FakeBus(origin="serve-test"))
     return impl
 
@@ -278,10 +278,10 @@ async def test_secret_section_absent_from_export_unless_requested(monkeypatch):
 
 
 async def test_access_control_roundtrip_mints_new_keys(monkeypatch):
-    from tai_identity_redis import redis_api_key_provider as provider_module
+    from tai42_identity_redis import redis_api_key_provider as provider_module
 
-    from tai_skeleton.access_control import management
-    from tai_skeleton.access_control import store as store_module
+    from tai42_skeleton.access_control import management
+    from tai42_skeleton.access_control import store as store_module
     from tests.access_control.conftest import FakeAccessControlPg, FakeRedis, make_client_ctx, make_pg_ctx
 
     # The POLICY store is Postgres; the identity record + live context are Redis.
@@ -323,9 +323,9 @@ async def test_access_control_roundtrip_mints_new_keys(monkeypatch):
 async def test_sub_mcp_roundtrip(monkeypatch):
     # Backup export/import go through the DURABLE store (the source of truth), with
     # the service binding restored registrations into the local router too.
-    from tai_contract.sub_mcp import RouteConfig
+    from tai42_contract.sub_mcp import RouteConfig
 
-    from tai_skeleton.sub_mcp import store as sub_mcp_store
+    from tai42_skeleton.sub_mcp import store as sub_mcp_store
 
     seeded = sub_mcp_store.InMemorySubMcpStore()
     await seeded.save_route("slug1", RouteConfig(tools=["tool_a"], transport="http"))
@@ -354,11 +354,11 @@ async def test_sub_mcp_roundtrip(monkeypatch):
 
 
 async def test_webhooks_roundtrip(monkeypatch):
-    from tai_skeleton.hooks.managers.in_memory_hooks_manager import InMemoryHooksManager
-    from tai_skeleton.hooks.settings import HooksSettings
+    from tai42_skeleton.hooks.managers.in_memory_hooks_manager import InMemoryHooksManager
+    from tai42_skeleton.hooks.settings import HooksSettings
 
     source = InMemoryHooksManager(HooksSettings())
-    monkeypatch.setattr("tai_skeleton.hooks.cache.get_hooks_manager", lambda: source)
+    monkeypatch.setattr("tai42_skeleton.hooks.cache.get_hooks_manager", lambda: source)
     await source.register(HookParams(name="h1", topic="t1", tool="mytool"))
 
     _install(monkeypatch)
@@ -366,7 +366,7 @@ async def test_webhooks_roundtrip(monkeypatch):
     assert [h["name"] for h in doc["sections"]["webhooks"]] == ["h1"]
 
     target = InMemoryHooksManager(HooksSettings())
-    monkeypatch.setattr("tai_skeleton.hooks.cache.get_hooks_manager", lambda: target)
+    monkeypatch.setattr("tai42_skeleton.hooks.cache.get_hooks_manager", lambda: target)
     data = _json(await import_backup(_post_req({"document": doc, "sections": ["webhooks"]})))["data"]
     assert data["ok"] is True
     assert data["sections"]["webhooks"] == {"created": 1, "updated": 0, "skipped": 0, "errors": []}
@@ -438,10 +438,10 @@ async def test_export_absent_subsystem_records_section_error_not_500(monkeypatch
 
 
 async def test_access_control_pattern_scoped_route_round_trips(monkeypatch):
-    from tai_identity_redis import redis_api_key_provider as provider_module
+    from tai42_identity_redis import redis_api_key_provider as provider_module
 
-    from tai_skeleton.access_control import management
-    from tai_skeleton.access_control import store as store_module
+    from tai42_skeleton.access_control import management
+    from tai42_skeleton.access_control import store as store_module
     from tests.access_control.conftest import FakeAccessControlPg, FakeRedis, make_client_ctx, make_pg_ctx
 
     monkeypatch.setattr(store_module, "client_ctx", make_pg_ctx(FakeAccessControlPg()))
@@ -470,10 +470,10 @@ async def test_access_control_pattern_scoped_route_round_trips(monkeypatch):
 
 
 async def test_access_control_public_route_round_trips(monkeypatch):
-    from tai_identity_redis import redis_api_key_provider as provider_module
+    from tai42_identity_redis import redis_api_key_provider as provider_module
 
-    from tai_skeleton.access_control import management
-    from tai_skeleton.access_control import store as store_module
+    from tai42_skeleton.access_control import management
+    from tai42_skeleton.access_control import store as store_module
     from tests.access_control.conftest import FakeAccessControlPg, FakeRedis, make_client_ctx, make_pg_ctx
 
     monkeypatch.setattr(store_module, "client_ctx", make_pg_ctx(FakeAccessControlPg()))
@@ -481,7 +481,7 @@ async def test_access_control_public_route_round_trips(monkeypatch):
     monkeypatch.setattr(management, "client_ctx", make_client_ctx(source))
     # The export enumerates tokens through the provider, so point it at the fake too.
     monkeypatch.setattr(provider_module, "client_ctx", make_client_ctx(source))
-    from tai_skeleton.access_control.settings import access_control_settings
+    from tai42_skeleton.access_control.settings import access_control_settings
 
     marker = access_control_settings().public_resource_id
     # An operator-set explicit public mapping (value ``public_resource_id``).
@@ -507,9 +507,9 @@ async def test_access_control_public_route_round_trips(monkeypatch):
 async def test_access_control_import_marker_mapping_lands_via_pin_route_public(monkeypatch):
     # A restored marker-valued mapping restores through the dedicated ``pin_route_public``
     # writer, never ``add_url_to_scope`` — the marker is a column value, not a scope.
-    from tai_skeleton.access_control import management
-    from tai_skeleton.access_control import store as store_module
-    from tai_skeleton.access_control.settings import access_control_settings
+    from tai42_skeleton.access_control import management
+    from tai42_skeleton.access_control import store as store_module
+    from tai42_skeleton.access_control.settings import access_control_settings
     from tests.access_control.conftest import FakeAccessControlPg, FakeRedis, make_client_ctx, make_pg_ctx
 
     pg = FakeAccessControlPg()
@@ -557,7 +557,7 @@ async def test_access_control_import_marker_mapping_lands_via_pin_route_public(m
 
 
 async def test_access_control_import_rejects_blank_user_id(monkeypatch):
-    from tai_skeleton.access_control import management
+    from tai42_skeleton.access_control import management
     from tests.access_control.conftest import FakeRedis, make_client_ctx
 
     target = FakeRedis()
@@ -710,9 +710,9 @@ async def test_import_env_no_existing_counts_all_created(monkeypatch):
 
 async def test_import_sub_mcp_existing_slug_updates(monkeypatch):
     # The slug already exists in the DURABLE store, so the import is an update.
-    from tai_contract.sub_mcp import RouteConfig
+    from tai42_contract.sub_mcp import RouteConfig
 
-    from tai_skeleton.sub_mcp import store as sub_mcp_store
+    from tai42_skeleton.sub_mcp import store as sub_mcp_store
 
     seeded = sub_mcp_store.InMemorySubMcpStore()
     await seeded.save_route("slug1", RouteConfig(tools=["old"], transport="http"))
@@ -730,7 +730,7 @@ async def test_import_sub_mcp_existing_slug_updates(monkeypatch):
 
 
 async def test_import_sub_mcp_malformed_entry_is_skipped_not_fatal(monkeypatch):
-    from tai_skeleton.sub_mcp import store as sub_mcp_store
+    from tai42_skeleton.sub_mcp import store as sub_mcp_store
 
     monkeypatch.setattr(sub_mcp_store, "_IN_MEMORY_STORE", sub_mcp_store.InMemorySubMcpStore())
     router = _FakeSubAppRouter(routes={})
@@ -766,12 +766,12 @@ async def test_import_sub_mcp_malformed_entry_is_skipped_not_fatal(monkeypatch):
 
 
 async def test_import_webhooks_existing_name_updates(monkeypatch):
-    from tai_skeleton.hooks.managers.in_memory_hooks_manager import InMemoryHooksManager
-    from tai_skeleton.hooks.settings import HooksSettings
+    from tai42_skeleton.hooks.managers.in_memory_hooks_manager import InMemoryHooksManager
+    from tai42_skeleton.hooks.settings import HooksSettings
 
     manager = InMemoryHooksManager(HooksSettings())
     await manager.register(HookParams(name="h1", topic="t1", tool="mytool"))
-    monkeypatch.setattr("tai_skeleton.hooks.cache.get_hooks_manager", lambda: manager)
+    monkeypatch.setattr("tai42_skeleton.hooks.cache.get_hooks_manager", lambda: manager)
     _install(monkeypatch)
 
     document = {
@@ -796,8 +796,8 @@ async def test_import_templates_existing_path_updates(monkeypatch):
 
 
 async def test_import_access_control_scope_failure_is_per_token_skip(monkeypatch):
-    from tai_skeleton.access_control import management
-    from tai_skeleton.access_control import store as store_module
+    from tai42_skeleton.access_control import management
+    from tai42_skeleton.access_control import store as store_module
     from tests.access_control.conftest import FakeAccessControlPg, FakeRedis, make_client_ctx, make_pg_ctx
 
     monkeypatch.setattr(store_module, "client_ctx", make_pg_ctx(FakeAccessControlPg()))
@@ -830,9 +830,9 @@ async def test_import_access_control_scope_failure_is_per_token_skip(monkeypatch
 async def test_versioned_documents_section_round_trips_through_router(monkeypatch):
     from contextlib import asynccontextmanager
 
-    from tai_kit.clients.impl.postgres import PostgresClient
+    from tai42_kit.clients.impl.postgres import PostgresClient
 
-    import tai_skeleton.versioning.backup as versioning_backup
+    import tai42_skeleton.versioning.backup as versioning_backup
     from tests.versioning.test_backup import _FakeVersioningBackupPg, _seed
 
     def _ctx_for(fake):

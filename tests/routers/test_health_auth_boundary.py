@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from starlette.routing import Route
 
-import tai_skeleton.routers.health as router
+import tai42_skeleton.routers.health as router
 from tests.routers._auth_boundary import PUBLIC, boundary_client
 
 _ROUTES = [Route("/health", router.health_check, methods=["GET"])]

@@ -3,7 +3,7 @@
 ``add_managed_entries`` / ``remove_managed_entries`` edit a PRESERVED manifest
 document in place and return the titles they touched. The read-modify-write
 transaction, validation, reload, and fleet broadcast belong to
-:class:`~tai_skeleton.config.service.ConfigService`, exercised in
+:class:`~tai42_skeleton.config.service.ConfigService`, exercised in
 ``tests/config/test_service.py``; here we assert only the mutation semantics on a
 plain document.
 """
@@ -14,7 +14,7 @@ from typing import Any
 
 import pytest
 
-from tai_skeleton.connectors.service.manifest_writer import (
+from tai42_skeleton.connectors.service.manifest_writer import (
     add_managed_entries,
     managed_title,
     remove_managed_entries,

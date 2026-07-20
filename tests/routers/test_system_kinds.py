@@ -7,20 +7,20 @@ import json
 
 import pytest
 from starlette.requests import Request
-from tai_contract.app import tai_app
+from tai42_contract.app import tai42_app
 
-from tai_skeleton.app.instance import build_app
-from tai_skeleton.app.kind_status import KindStatus
-from tai_skeleton.manifest import Manifest
-from tai_skeleton.routers import system_kinds as router
+from tai42_skeleton.app.instance import build_app
+from tai42_skeleton.app.kind_status import KindStatus
+from tai42_skeleton.manifest import Manifest
+from tai42_skeleton.routers import system_kinds as router
 
 
 @pytest.fixture
 def bound_app(monkeypatch: pytest.MonkeyPatch):
-    """The process app singleton bound to ``tai_app`` with an empty live manifest,
+    """The process app singleton bound to ``tai42_app`` with an empty live manifest,
     so the collector reads a started app the way the route does at runtime."""
     app = build_app()
-    tai_app.bind(app)
+    tai42_app.bind(app)
     monkeypatch.setattr(app, "_manifest", Manifest.model_validate({}), raising=False)
     return app
 

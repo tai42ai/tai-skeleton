@@ -16,10 +16,10 @@ from starlette.applications import Starlette
 from starlette.routing import Route
 from starlette.testclient import TestClient
 
-import tai_skeleton.routers.hooks as router
-from tai_skeleton.access_control import verifier as verifier_module
-from tai_skeleton.access_control.adapter import AuthAdapter
-from tai_skeleton.access_control.settings import AccessControlSettings
+import tai42_skeleton.routers.hooks as router
+from tai42_skeleton.access_control import verifier as verifier_module
+from tai42_skeleton.access_control.adapter import AuthAdapter
+from tai42_skeleton.access_control.settings import AccessControlSettings
 from tests.routers._auth_boundary import wire_store_from_route_strings
 
 # tier 1: path -> template key. Management doors map to one protected template;

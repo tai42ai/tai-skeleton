@@ -7,8 +7,8 @@ from types import SimpleNamespace
 
 import pytest
 
-import tai_skeleton.connectors.runtime.probe as probe_mod
-from tai_skeleton.connectors.runtime.probe import probe, verify
+import tai42_skeleton.connectors.runtime.probe as probe_mod
+from tai42_skeleton.connectors.runtime.probe import probe, verify
 
 from .conftest import make_noauth_stdio_descriptor, make_oauth_descriptor
 

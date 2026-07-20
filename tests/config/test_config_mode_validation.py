@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import pytest
 
-from tai_skeleton.config.config_mode import ConfigMode, ConfigModeSettings, config_mode
+from tai42_skeleton.config.config_mode import ConfigMode, ConfigModeSettings, config_mode
 
 
 def test_non_string_mode_raises() -> None:

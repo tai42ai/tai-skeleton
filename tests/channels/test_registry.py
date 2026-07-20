@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from tai_skeleton.channels.registry import ChannelRegistry
+from tai42_skeleton.channels.registry import ChannelRegistry
 from tests._helpers import DeliverOnlyChannel
 
 
@@ -49,17 +49,17 @@ def test_reset_clears() -> None:
 
 
 def test_facet_registers_and_resolves_through_app() -> None:
-    from tai_contract.app import tai_app
+    from tai42_contract.app import tai42_app
 
-    from tai_skeleton.app.instance import build_app
+    from tai42_skeleton.app.instance import build_app
 
     app = build_app()
-    tai_app.bind(app)
+    tai42_app.bind(app)
     app._channel_registry.reset()
     try:
         c = _Chan()
-        tai_app.channels.register("facet-prov", c)
-        assert tai_app.channels.get("facet-prov") is c
-        assert tai_app.channels.names() == ["facet-prov"]
+        tai42_app.channels.register("facet-prov", c)
+        assert tai42_app.channels.get("facet-prov") is c
+        assert tai42_app.channels.names() == ["facet-prov"]
     finally:
         app._channel_registry.reset()

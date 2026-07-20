@@ -6,7 +6,7 @@ A manifest listing this module under ``lifecycle_modules`` registers
 prompt (the reload prompt/resource symmetry), which the lifecycle tests assert.
 """
 
-from tai_skeleton.app.instance import app
+from tai42_skeleton.app.instance import app
 
 
 @app.fastmcp.prompt

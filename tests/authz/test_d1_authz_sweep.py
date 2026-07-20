@@ -41,21 +41,21 @@ from typing import Any, cast
 import pytest
 from fastmcp.exceptions import ToolError
 from fastmcp.server.middleware import MiddlewareContext
-from tai_contract.access_control.context import reset_request_user_id, set_request_user_id
+from tai42_contract.access_control.context import reset_request_user_id, set_request_user_id
 
-import tai_skeleton.routers as _routers_pkg
-from tai_skeleton.access_control import policy as policy_module
-from tai_skeleton.access_control import store as store_module
-from tai_skeleton.access_control import verifier as verifier_module
-from tai_skeleton.access_control.request_scopes import (
+import tai42_skeleton.routers as _routers_pkg
+from tai42_skeleton.access_control import policy as policy_module
+from tai42_skeleton.access_control import store as store_module
+from tai42_skeleton.access_control import verifier as verifier_module
+from tai42_skeleton.access_control.request_scopes import (
     reset_request_effective_scopes,
     set_request_effective_scopes,
 )
-from tai_skeleton.access_control.settings import AccessControlSettings
-from tai_skeleton.app.instance import app
-from tai_skeleton.authz.middleware import AuthzMiddleware
-from tai_skeleton.manifest import Manifest
-from tai_skeleton.operations.errors import PermissionDenied
+from tai42_skeleton.access_control.settings import AccessControlSettings
+from tai42_skeleton.app.instance import app
+from tai42_skeleton.authz.middleware import AuthzMiddleware
+from tai42_skeleton.manifest import Manifest
+from tai42_skeleton.operations.errors import PermissionDenied
 from tests.access_control.conftest import FakeAccessControlPg, FakeRedis, make_client_ctx, make_pg_ctx
 
 # The enforcer's alru cache is created and used across boots — a benign loop-reset
@@ -212,9 +212,9 @@ def _default_projected_names() -> list[str]:
     """Every DEFAULT-projected operation name, taken from the REAL projection over the
     live registry — so this exhaustive sweep can never silently drift from what
     actually projects (a new leaf op joins the sweep the moment it projects)."""
-    from tai_contract.manifest import ApiToolsConfig
+    from tai42_contract.manifest import ApiToolsConfig
 
-    from tai_skeleton.operations import operation_registry, project_operations
+    from tai42_skeleton.operations import operation_registry, project_operations
 
     class _Recorder:
         def tool(self, *, force: bool, name: str, tags: Any, annotations: Any):
@@ -296,7 +296,7 @@ def test_d1_sweep_allow_when_access_control_disabled(monkeypatch: pytest.MonkeyP
     """With ``ACCESS_CONTROL_ENABLE=false`` the tool edge allows everything — the
     deny-on-no-identity rule applies only when access control is enabled."""
     _seed_ac(monkeypatch)
-    check_mod = sys.modules["tai_skeleton.authz.check"]
+    check_mod = sys.modules["tai42_skeleton.authz.check"]
     monkeypatch.setattr(check_mod, "access_control_settings", lambda: AccessControlSettings(enable=False))
 
     async def run():
@@ -316,7 +316,7 @@ def test_d1_sweep_allow_when_access_control_disabled(monkeypatch: pytest.MonkeyP
 def _sub_dispatcher(monkeypatch: pytest.MonkeyPatch, built_instances: list) -> None:
     """Record every sub-MCP ``FastMCP`` built so the test can reach the instance
     (and its installed middleware), not merely its ASGI http app."""
-    import tai_skeleton.app.sub_mcp_app as sub_mod
+    import tai42_skeleton.app.sub_mcp_app as sub_mod
 
     real = sub_mod.FastMCP
 
@@ -337,7 +337,7 @@ def test_d1_sweep_sub_mcp_mount_deny_and_allow(monkeypatch: pytest.MonkeyPatch):
     built: list = []
     _sub_dispatcher(monkeypatch, built)
 
-    from tai_skeleton.app.sub_mcp_app import SubMcpAppRouter
+    from tai42_skeleton.app.sub_mcp_app import SubMcpAppRouter
 
     async def run():
         async with app.app_context(_sweep_manifest()):

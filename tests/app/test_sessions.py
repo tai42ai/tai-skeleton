@@ -13,9 +13,9 @@ import asyncio
 
 import pytest
 
-from tai_skeleton.app.instance import app
-from tai_skeleton.app.sessions import SessionRegistry, SessionTrackingMiddleware
-from tai_skeleton.manifest import Manifest
+from tai42_skeleton.app.instance import app
+from tai42_skeleton.app.sessions import SessionRegistry, SessionTrackingMiddleware
+from tai42_skeleton.manifest import Manifest
 
 
 class _FakeSession:

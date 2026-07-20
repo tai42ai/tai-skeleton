@@ -4,16 +4,16 @@ instead of hanging the request/loop task."""
 
 import pytest
 
-from tai_skeleton.access_control.settings import AccessControlRedisSettings
-from tai_skeleton.connectors.settings import ConnectorStoreRedisSettings
-from tai_skeleton.hooks.settings import HooksRedisSettings
-from tai_skeleton.interactions.settings import (
+from tai42_skeleton.access_control.settings import AccessControlRedisSettings
+from tai42_skeleton.connectors.settings import ConnectorStoreRedisSettings
+from tai42_skeleton.hooks.settings import HooksRedisSettings
+from tai42_skeleton.interactions.settings import (
     InteractionsRedisSettings,
     InteractionsSettings,
     interactions_settings,
 )
-from tai_skeleton.routers.tool_runs_settings import ToolRunsRedisSettings
-from tai_skeleton.settings.rate_limit import RateLimitRedisSettings
+from tai42_skeleton.routers.tool_runs_settings import ToolRunsRedisSettings
+from tai42_skeleton.settings.rate_limit import RateLimitRedisSettings
 
 
 @pytest.mark.parametrize(

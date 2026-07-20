@@ -1,14 +1,14 @@
-"""``ClientsFacet`` delegate: it forwards the app client surface onto the tai-kit
+"""``ClientsFacet`` delegate: it forwards the app client surface onto the tai42-kit
 pool (per-key pooling, fresh off-pool clients, shutdown, settings/kwargs guard).
 """
 
 from __future__ import annotations
 
 import pytest
-from tai_contract.app.facets import AppClients as AppClientsProtocol
-from tai_kit.clients import PooledClient
+from tai42_contract.app.facets import AppClients as AppClientsProtocol
+from tai42_kit.clients import PooledClient
 
-from tai_skeleton.app.clients import ClientsFacet
+from tai42_skeleton.app.clients import ClientsFacet
 
 
 class _DummyClient(PooledClient[dict]):

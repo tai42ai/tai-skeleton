@@ -18,14 +18,14 @@ from starlette.applications import Starlette
 from starlette.responses import PlainTextResponse
 from starlette.routing import Mount
 from starlette.testclient import TestClient
-from tai_identity_redis import redis_api_key_provider as provider_module
-from tai_kit.utils.data.string_util import hash_api_key
+from tai42_identity_redis import redis_api_key_provider as provider_module
+from tai42_kit.utils.data.string_util import hash_api_key
 
-from tai_skeleton.access_control import policy as policy_module
-from tai_skeleton.access_control import store as store_module
-from tai_skeleton.access_control import verifier as verifier_module
-from tai_skeleton.access_control.adapter import AuthAdapter
-from tai_skeleton.access_control.settings import AccessControlSettings
+from tai42_skeleton.access_control import policy as policy_module
+from tai42_skeleton.access_control import store as store_module
+from tai42_skeleton.access_control import verifier as verifier_module
+from tai42_skeleton.access_control.adapter import AuthAdapter
+from tai42_skeleton.access_control.settings import AccessControlSettings
 from tests.access_control.conftest import FakeAccessControlPg, FakeRedis, _FakeApp, make_client_ctx, make_pg_ctx
 
 # The enforcer's alru cache is created in the test's loop and first used in the
@@ -43,15 +43,15 @@ async def _endpoint(scope, receive, send) -> None:
 
 @pytest.fixture
 def bound_app():
-    """Bind a fake ``tai_app`` so the enforcer can render the (empty) condition."""
-    from tai_contract.app import tai_app
+    """Bind a fake ``tai42_app`` so the enforcer can render the (empty) condition."""
+    from tai42_contract.app import tai42_app
 
     app = _FakeApp()
-    tai_app.bind(app)
+    tai42_app.bind(app)
     try:
         yield app
     finally:
-        tai_app.bind(None)
+        tai42_app.bind(None)
 
 
 def _client(monkeypatch: pytest.MonkeyPatch) -> TestClient:

@@ -23,22 +23,22 @@ import asyncio
 from unittest.mock import AsyncMock, patch
 
 import pytest
-from tai_contract.connectors.models import ConnectorRef
-from tai_contract.manifest import MCPConfig, TaiMCPConfig
+from tai42_contract.connectors.models import ConnectorRef
+from tai42_contract.manifest import MCPConfig, TaiMCPConfig
 
 # Bind app before importing the adapter, so the adapter import chain
 # resolves against a constructed app.
-import tai_skeleton.app.instance  # noqa: F401
-from tai_skeleton.connectors.runtime.resolver import ManagedAuth
-from tai_skeleton.connectors.token_injection import (
+import tai42_skeleton.app.instance  # noqa: F401
+from tai42_skeleton.connectors.runtime.resolver import ManagedAuth
+from tai42_skeleton.connectors.token_injection import (
     _force_refresh,
     resolve_managed_auth_for_config,
 )
 
 CONN_ID = "11111111-1111-1111-1111-111111111111"
 
-_RESOLVER = "tai_skeleton.connectors.token_injection.resolve_managed_auth"
-_REFRESHER = "tai_skeleton.connectors.token_injection.force_refresh"
+_RESOLVER = "tai42_skeleton.connectors.token_injection.resolve_managed_auth"
+_REFRESHER = "tai42_skeleton.connectors.token_injection.force_refresh"
 
 
 def _managed_config(*, transport: str = "http") -> TaiMCPConfig:

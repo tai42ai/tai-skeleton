@@ -1,4 +1,4 @@
-# Example tai-skeleton manifest.
+# Example tai42-skeleton manifest.
 #
 # Start the server with `tai serve --manifest-path <this file>` (or set
 # TAI_MANIFEST_PATH in the env as the flag's default). Every section is optional —
@@ -6,11 +6,11 @@
 # runnable app, see hello/ next to this file.
 #
 # The `*_module(s)` entries are Python import paths; importing them runs their
-# `@tai_app.*` registration decorators (tools, agents, storage, monitoring, ...).
+# `@tai42_app.*` registration decorators (tools, agents, storage, monitoring, ...).
 
 # --- Startup module hooks (import paths into your own package) ---------------
 backend_module: ""          # registers the agent backend (e.g. "myapp.backend")
-storage_module: ""          # registers the Storage provider (e.g. "tai_storage_local")
+storage_module: ""          # registers the Storage provider (e.g. "tai42_storage_local")
 monitoring_module: ""       # registers a monitoring backend (optional)
 
 lifecycle_modules:          # modules with on_startup / on_reload handlers
@@ -21,40 +21,40 @@ lifecycle_modules:          # modules with on_startup / on_reload handlers
   # name one here; removing or replacing this line SWAPS the authn backend (e.g. for
   # an OIDC/SAML provider plugin). This is also the module the metrics entrypoint
   # imports so `/metrics` token verification can resolve the provider.
-  - tai_identity_redis.redis_api_key_provider
+  - tai42_identity_redis.redis_api_key_provider
   # The builtin `shared_secret` webhook verifier registers via a lifecycle module
   # (import-only); opt it in to lock a `universal_webhook` topic with a header
   # secret. Provider verifiers (e.g. github) ship as their own packages, added
   # here the same way.
-  # - tai_skeleton.webhooks.builtin.shared_secret
+  # - tai42_skeleton.webhooks.builtin.shared_secret
 routers_modules: []         # modules adding HTTP routers
   # The interactions HTTP surface (SSE stream + human answer door + the public
   # callback doors that external-format ask_user questions wake through) ships as
   # a router module; opt it in when you use ask_user, and required for `external`.
-  # - tai_skeleton.routers.interactions
+  # - tai42_skeleton.routers.interactions
   # The agents HTTP surface (list registered agents + run one over an SSE stream
   # of its StreamEvents); opt it in to drive agents from a UI.
-  # - tai_skeleton.routers.agents
+  # - tai42_skeleton.routers.agents
   # The background tool-runs surface (submit a tool run, poll its result, list
   # recent runs) — for long / interactive tool runs that outlive one request.
-  # - tai_skeleton.routers.tool_runs
+  # - tai42_skeleton.routers.tool_runs
   # The presets HTTP surface (list/create presets, save versions, roll back,
   # delete); presets are versioned + store-backed. Opt it in to manage presets
   # from a UI.
-  # - tai_skeleton.routers.presets
+  # - tai42_skeleton.routers.presets
   # The tool-extensions HTTP surface (read/write a tool's `extensions:` map from
   # a UI — attach a chain/batch/monitor branch to a tool); opt it in to apply
   # extensions from a UI.
-  # - tai_skeleton.routers.tool_extensions
+  # - tai42_skeleton.routers.tool_extensions
   # The marketplace surface (search/install/update/uninstall plugins from the
   # tai42 marketplace registry, plus advisories for installed ones); opt it in
   # to manage plugins from the CLI or Studio. Install/uninstall/update mutate
   # the running environment — scope-guard them like any other route.
-  # - tai_skeleton.routers.marketplace
+  # - tai42_skeleton.routers.marketplace
   # The public login surface: `GET /api/login/methods` (the accounts login-method
   # aggregator, public) and the authed `POST /api/auth/logout` dispatcher. Opt it in
   # when an accounts provider is installed.
-  # - tai_skeleton.routers.login
+  # - tai42_skeleton.routers.login
 middlewares_modules: []     # modules adding your own middlewares
   # The app-level rate limiter that guards the two PUBLIC door families (the
   # interactions callback and `universal_webhook/*`) is registered automatically —
@@ -67,8 +67,8 @@ extensions_modules: []      # modules registering tool extensions
   # span (`extensions: {toolname: [monitor]}`). `ask_external` wraps a
   # callback_url-taking tool into an external human-in-the-loop question
   # (`extensions: {toolname: [ask_external]}`).
-  # - tai_skeleton.extensions.builtin.monitor
-  # - tai_skeleton.extensions.builtin.ask_external
+  # - tai42_skeleton.extensions.builtin.monitor
+  # - tai42_skeleton.extensions.builtin.ask_external
 
 # --- Local tools ------------------------------------------------------------
 # Each entry imports `module`; `include` filters which tool names to expose
@@ -86,9 +86,9 @@ extensions_modules: []      # modules registering tool extensions
 # the same way (see the built-in tools & extensions docs at
 # https://tai42.ai/concepts/tools-and-extensions):
 #   - title: file-loader
-#     module: tai_skeleton.tools.builtin.file_loader  # file_loader (url or resource id -> text/media)
+#     module: tai42_skeleton.tools.builtin.file_loader  # file_loader (url or resource id -> text/media)
 #   - title: ask-user
-#     module: tai_skeleton.tools.builtin.interactions  # ask_user (human-in-the-loop)
+#     module: tai42_skeleton.tools.builtin.interactions  # ask_user (human-in-the-loop)
 #
 # Management tools (run_tool, reload_config, update_manifest, list_hooks,
 # the mcp/template/resource families, notify_user, ...) are not builtin
@@ -106,7 +106,7 @@ tools:
     include: [greet]
 
 # --- Agents -----------------------------------------------------------------
-# Each entry imports `module`; its `@tai_app.agents.agent` decorator registers
+# Each entry imports `module`; its `@tai42_app.agents.agent` decorator registers
 # the agent and auto-generates its run tool.
 agents:
   - title: my_agents

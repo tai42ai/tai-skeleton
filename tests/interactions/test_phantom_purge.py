@@ -16,10 +16,10 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from tai_contract.interactions import AnswerFormat, InteractionRequest
+from tai42_contract.interactions import AnswerFormat, InteractionRequest
 
-from tai_skeleton.interactions import InteractionStore
-from tai_skeleton.interactions import store as store_module
+from tai42_skeleton.interactions import InteractionStore
+from tai42_skeleton.interactions import store as store_module
 
 
 def _req(iid: str, gid: str, store: InteractionStore, *, created_offset: float = 0, timeout_offset: float = 60):

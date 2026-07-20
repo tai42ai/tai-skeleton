@@ -4,10 +4,10 @@ renders through a registered in-memory Storage provider."""
 from __future__ import annotations
 
 import pytest
-from tai_contract.storage import Storage
+from tai42_contract.storage import Storage
 
-from tai_skeleton.storage import StorageRegistry
-from tai_skeleton.template import ResourceManager
+from tai42_skeleton.storage import StorageRegistry
+from tai42_skeleton.template import ResourceManager
 
 
 class _InMemoryStorage(Storage):
@@ -89,7 +89,7 @@ async def test_load_rejects_traversal_id() -> None:
     """The empty-scheme branch guards the bare storage id against a root escape
     BEFORE it reaches the provider — the single seam every unguarded read funnels
     through."""
-    from tai_skeleton.template.path_guard import UnsafeTemplatePathError
+    from tai42_skeleton.template.path_guard import UnsafeTemplatePathError
 
     registry = StorageRegistry()
     registry.register_storage(_InMemoryStorage)
@@ -113,7 +113,7 @@ async def test_load_accepts_clean_id() -> None:
 
 
 async def test_normalize_media_rejects_traversal_id() -> None:
-    from tai_skeleton.template.path_guard import UnsafeTemplatePathError
+    from tai42_skeleton.template.path_guard import UnsafeTemplatePathError
 
     registry = StorageRegistry()
     registry.register_storage(_InMemoryStorage)
@@ -132,7 +132,7 @@ async def test_render_and_fetch_by_id_reject_traversal() -> None:
     provider. A ``../x`` id is refused with ``UnsafeTemplatePathError`` at this
     app-layer seam, not passed into storage (where it would surface as a
     ``FileNotFoundError``/``TemplateNotFoundError``)."""
-    from tai_skeleton.template.path_guard import UnsafeTemplatePathError
+    from tai42_skeleton.template.path_guard import UnsafeTemplatePathError
 
     registry = StorageRegistry()
 

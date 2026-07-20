@@ -15,10 +15,10 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import pytest
-from tai_kit.clients.impl.postgres import Json, PostgresClient
+from tai42_kit.clients.impl.postgres import Json, PostgresClient
 
-from tai_skeleton.marketplace import store as store_module
-from tai_skeleton.marketplace.store import MarketplaceInstallStore
+from tai42_skeleton.marketplace import store as store_module
+from tai42_skeleton.marketplace.store import MarketplaceInstallStore
 
 
 def _unwrap(value: Any) -> Any:

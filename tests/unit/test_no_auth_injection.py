@@ -12,20 +12,20 @@ import asyncio
 from unittest.mock import AsyncMock, patch
 
 import pytest
-from tai_contract.connectors.models import ConnectorRef
-from tai_contract.manifest import MCPConfig, TaiMCPConfig
+from tai42_contract.connectors.models import ConnectorRef
+from tai42_contract.manifest import MCPConfig, TaiMCPConfig
 
 # Bind app before importing the adapter seam.
-import tai_skeleton.app.instance  # noqa: F401
-from tai_skeleton.connectors.runtime.resolver import ManagedAuth
-from tai_skeleton.connectors.token_injection import (
+import tai42_skeleton.app.instance  # noqa: F401
+from tai42_skeleton.connectors.runtime.resolver import ManagedAuth
+from tai42_skeleton.connectors.token_injection import (
     CONNECTOR_META_TOKEN_KEY,
     _prepare_request,
     resolve_managed_auth_for_config,
 )
 
 CONN_ID = "11111111-1111-1111-1111-111111111111"
-_RESOLVER = "tai_skeleton.connectors.token_injection.resolve_managed_auth"
+_RESOLVER = "tai42_skeleton.connectors.token_injection.resolve_managed_auth"
 
 
 def _config(*, transport: str = "http") -> TaiMCPConfig:

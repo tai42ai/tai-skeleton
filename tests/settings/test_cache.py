@@ -10,8 +10,8 @@ from __future__ import annotations
 
 import pytest
 
-from tai_skeleton.settings import cache
-from tai_skeleton.settings.settings import AppArgsSettings
+from tai42_skeleton.settings import cache
+from tai42_skeleton.settings.settings import AppArgsSettings
 
 
 def test_manifest_path_reads_core_setting(monkeypatch: pytest.MonkeyPatch) -> None:

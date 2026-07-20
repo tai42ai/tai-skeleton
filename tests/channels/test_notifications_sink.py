@@ -11,9 +11,9 @@ from contextlib import asynccontextmanager
 
 import pytest
 
-from tai_skeleton.channels import notifications_sink
-from tai_skeleton.channels.notifications_sink import NotificationSink
-from tai_skeleton.interactions.settings import InteractionsSettings
+from tai42_skeleton.channels import notifications_sink
+from tai42_skeleton.channels.notifications_sink import NotificationSink
+from tai42_skeleton.interactions.settings import InteractionsSettings
 
 # The default interactions key prefix, the namespace the sink shares with the
 # interactions keys; the direct-sink tests build a sink under it explicitly.

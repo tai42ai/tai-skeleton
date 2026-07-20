@@ -13,12 +13,12 @@ import json
 
 from pydantic import BaseModel
 
-from tai_skeleton.app.route_registry import _SpecApp as SpecApp
-from tai_skeleton.app.route_registry import load_api_routes, route_registry
-from tai_skeleton.cli.openapi import build_openapi_spec, version
-from tai_skeleton.operations import OperationRegistry, operation, register_operation_route
-from tai_skeleton.operations.decorator import operation_metadata_of
-from tai_skeleton.operations.errors import ConflictError
+from tai42_skeleton.app.route_registry import _SpecApp as SpecApp
+from tai42_skeleton.app.route_registry import load_api_routes, route_registry
+from tai42_skeleton.cli.openapi import build_openapi_spec, version
+from tai42_skeleton.operations import OperationRegistry, operation, register_operation_route
+from tai42_skeleton.operations.decorator import operation_metadata_of
+from tai42_skeleton.operations.errors import ConflictError
 
 
 class _Body(BaseModel):
@@ -54,7 +54,7 @@ def test_declared_destructive_route_emits_x_destructive():
     register_operation_route(SpecApp(), operation_metadata_of(wipe), path="/api/things/wipe", method="POST")
 
     # The emitter reads the registry; find the recorded route directly and emit.
-    from tai_skeleton.cli.openapi import _operation as emit_operation
+    from tai42_skeleton.cli.openapi import _operation as emit_operation
 
     meta = next(r for r in route_registry.routes() if r.path == "/api/things/wipe")
     op = emit_operation(meta, "POST", {})
@@ -81,7 +81,7 @@ def test_declared_metadata_drives_statuses_not_ast():
 def test_spec_version_present():
     """Sanity: the emitter still stamps the package version (unchanged path)."""
     spec = build_openapi_spec()
-    assert spec["info"]["version"] == version("tai-skeleton")
+    assert spec["info"]["version"] == version("tai42-skeleton")
 
 
 def test_converted_route_appears_in_api_routes():

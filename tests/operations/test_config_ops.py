@@ -11,15 +11,15 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 import pytest
-from tai_contract.app import tai_app
-from tai_contract.manifest import ApiToolsConfig
+from tai42_contract.app import tai42_app
+from tai42_contract.manifest import ApiToolsConfig
 
-from tai_skeleton.app import instance
-from tai_skeleton.app.bus import OpOutcome
-from tai_skeleton.operations import BadRequestError, OperationRegistry, operation_metadata_of
-from tai_skeleton.operations import config as config_ops
-from tai_skeleton.operations._broadcast import FleetBroadcastError
-from tai_skeleton.operations.projection import project_operations
+from tai42_skeleton.app import instance
+from tai42_skeleton.app.bus import OpOutcome
+from tai42_skeleton.operations import BadRequestError, OperationRegistry, operation_metadata_of
+from tai42_skeleton.operations import config as config_ops
+from tai42_skeleton.operations._broadcast import FleetBroadcastError
+from tai42_skeleton.operations.projection import project_operations
 from tests._fakes.bus import FakeBus
 
 
@@ -44,7 +44,7 @@ def _install(
         admin=admin,
         backends=SimpleNamespace(backend=None),
     )
-    monkeypatch.setattr(tai_app, "_impl", impl)
+    monkeypatch.setattr(tai42_app, "_impl", impl)
     bus = bus or FakeBus()
     monkeypatch.setattr(instance.app, "_bus", bus)
     return bus

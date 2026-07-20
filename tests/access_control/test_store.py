@@ -15,8 +15,8 @@ from __future__ import annotations
 import pytest
 from psycopg.errors import UniqueViolation
 
-from tai_skeleton.access_control.settings import access_control_settings
-from tai_skeleton.access_control.store import access_control_store
+from tai42_skeleton.access_control.settings import access_control_settings
+from tai42_skeleton.access_control.store import access_control_store
 
 from .conftest import FakeAccessControlPg
 

@@ -9,16 +9,16 @@ from contextlib import asynccontextmanager, contextmanager
 
 import pytest
 from starlette.requests import Request
-from tai_contract.access_control import OWNER_USER_ID_CLAIM
-from tai_contract.access_control.context import reset_request_user_id, set_request_user_id
+from tai42_contract.access_control import OWNER_USER_ID_CLAIM
+from tai42_contract.access_control.context import reset_request_user_id, set_request_user_id
 
-from tai_skeleton.access_control.request_scopes import (
+from tai42_skeleton.access_control.request_scopes import (
     reset_request_identity_claims,
     set_request_identity_claims,
 )
-from tai_skeleton.channels import notifications_sink
-from tai_skeleton.operations import notifications as notifications_ops
-from tai_skeleton.routers import notifications as router
+from tai42_skeleton.channels import notifications_sink
+from tai42_skeleton.operations import notifications as notifications_ops
+from tai42_skeleton.routers import notifications as router
 
 
 @contextmanager
@@ -154,7 +154,7 @@ async def test_restricted_feed_stays_complete_when_shared_feed_flooded(sink_redi
     # past its cap by OTHER records. keyA's per-identity feed still contains its
     # record — proving a per-identity feed, not a post-filtered shared window (which
     # would have LTRIM'd its record out before any filter ran).
-    from tai_skeleton.interactions.settings import InteractionsSettings
+    from tai42_skeleton.interactions.settings import InteractionsSettings
 
     cap = 5
     monkeypatch.setattr(

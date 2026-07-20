@@ -7,12 +7,12 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 from pydantic import SecretStr
-from tai_contract.connectors.models import AuthHealthState
+from tai42_contract.connectors.models import AuthHealthState
 
-import tai_skeleton.connectors.runtime.resolver as resolver_mod
-from tai_skeleton.connectors.oauth import client as oauth_client
-from tai_skeleton.connectors.oauth.client import TokenRefreshFailedError, TokenResponse
-from tai_skeleton.connectors.runtime.resolver import (
+import tai42_skeleton.connectors.runtime.resolver as resolver_mod
+from tai42_skeleton.connectors.oauth import client as oauth_client
+from tai42_skeleton.connectors.oauth.client import TokenRefreshFailedError, TokenResponse
+from tai42_skeleton.connectors.runtime.resolver import (
     ConnectorConnectionError,
     ConnectorReconnectRequiredError,
     ConnectorRefreshFailingError,
@@ -90,7 +90,7 @@ def wiring(monkeypatch):
     async def fake_load_with_blob(connection_id):
         rec = state["record"]
         if rec is None:
-            from tai_skeleton.connectors.store.persistence import ConnectionNotFoundError
+            from tai42_skeleton.connectors.store.persistence import ConnectionNotFoundError
 
             raise ConnectionNotFoundError(connection_id)
         return rec, _STARTED_BLOB

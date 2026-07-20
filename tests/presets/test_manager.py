@@ -17,13 +17,13 @@ import logging
 
 import pytest
 from fastmcp.tools.base import Tool
-from tai_contract.agent.base import PresetSpec
-from tai_contract.presets import PresetBody
-from tai_contract.presets.errors import PresetNameConflictError, PresetNotFoundError
+from tai42_contract.agent.base import PresetSpec
+from tai42_contract.presets import PresetBody
+from tai42_contract.presets.errors import PresetNameConflictError, PresetNotFoundError
 
-from tai_skeleton.app.instance import app
-from tai_skeleton.exceptions.exceptions import TaiValidationError
-from tai_skeleton.manifest import Manifest
+from tai42_skeleton.app.instance import app
+from tai42_skeleton.exceptions.exceptions import TaiValidationError
+from tai42_skeleton.manifest import Manifest
 from tests.versioning.conftest import FakeVersioningPg
 
 _MANIFEST = {
@@ -387,7 +387,7 @@ def test_rehydrate_skips_record_whose_active_body_is_absent(pg: FakeVersioningPg
 
             # A record with no active body must be SKIPPED, never a bare
             # ``bodies[rec.name]`` KeyError that aborts the whole boot/reload.
-            with caplog.at_level(logging.WARNING, logger="tai_skeleton.presets.manager"):
+            with caplog.at_level(logging.WARNING, logger="tai42_skeleton.presets.manager"):
                 await mgr.rehydrate()
 
             # The skipped record is neither registered nor quarantined — just dropped.

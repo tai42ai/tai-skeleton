@@ -5,8 +5,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from tai_skeleton.authz.resolver import resolve_base_operation
-from tai_skeleton.operations import OperationRegistry, operation
+from tai42_skeleton.authz.resolver import resolve_base_operation
+from tai42_skeleton.operations import OperationRegistry, operation
 
 
 class _FakeToolRegistry:

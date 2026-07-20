@@ -9,13 +9,13 @@ from __future__ import annotations
 from typing import cast
 
 import pytest
-from tai_contract.sub_mcp import RouteConfig
+from tai42_contract.sub_mcp import RouteConfig
 
-from tai_skeleton.app.instance import app, rehydrate_sub_mcp_apps
-from tai_skeleton.app.sub_mcp_app import SubMcpAppRouter
-from tai_skeleton.sub_mcp import store as store_mod
-from tai_skeleton.sub_mcp.settings import sub_mcp_settings
-from tai_skeleton.sub_mcp.store import InMemorySubMcpStore
+from tai42_skeleton.app.instance import app, rehydrate_sub_mcp_apps
+from tai42_skeleton.app.sub_mcp_app import SubMcpAppRouter
+from tai42_skeleton.sub_mcp import store as store_mod
+from tai42_skeleton.sub_mcp.settings import sub_mcp_settings
+from tai42_skeleton.sub_mcp.store import InMemorySubMcpStore
 
 
 @pytest.fixture

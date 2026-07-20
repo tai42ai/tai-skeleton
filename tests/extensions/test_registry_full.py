@@ -6,11 +6,11 @@ missing requested extension), ``get_kind``/``missing_extensions``, and the
 from __future__ import annotations
 
 import pytest
-from tai_contract.extensions import ExtensionKind
+from tai42_contract.extensions import ExtensionKind
 
-from tai_skeleton.exceptions.exceptions import TaiValidationError
-from tai_skeleton.extensions import ExtensionRegistry
-from tai_skeleton.extensions.registry import extension_config, extension_name
+from tai42_skeleton.exceptions.exceptions import TaiValidationError
+from tai42_skeleton.extensions import ExtensionRegistry
+from tai42_skeleton.extensions.registry import extension_config, extension_name
 
 
 def _noop(func, name, desc, config=None):

@@ -11,12 +11,12 @@ provider, the tokens-payload merge, and the version bump — not the store SQL
 from __future__ import annotations
 
 import pytest
-from tai_contract.access_control import OWNER_USER_ID_CLAIM, registry
-from tai_contract.access_control.identity import ApiKeyIdentityProvider, AuthIdentity, IdentityProvider
-from tai_kit.settings import reset_all_settings
+from tai42_contract.access_control import OWNER_USER_ID_CLAIM, registry
+from tai42_contract.access_control.identity import ApiKeyIdentityProvider, AuthIdentity, IdentityProvider
+from tai42_kit.settings import reset_all_settings
 
-from tai_skeleton.access_control import management
-from tai_skeleton.access_control.settings import access_control_settings
+from tai42_skeleton.access_control import management
+from tai42_skeleton.access_control.settings import access_control_settings
 
 from .conftest import FakeAccessControlPg, FakeRedis, make_client_ctx
 
@@ -25,7 +25,7 @@ S = access_control_settings()
 
 class _SpyProvider(ApiKeyIdentityProvider):
     """In-memory api-key identity provider: models the record store the real
-    ``tai-identity-redis`` plugin owns, so the orchestration can be driven without
+    ``tai42-identity-redis`` plugin owns, so the orchestration can be driven without
     a plugin."""
 
     def __init__(self) -> None:

@@ -8,10 +8,10 @@ from typing import Any, cast
 
 import pytest
 from starlette.requests import Request
-from tai_contract.app import tai_app
-from tai_contract.sub_mcp import RouteConfig
+from tai42_contract.app import tai42_app
+from tai42_contract.sub_mcp import RouteConfig
 
-from tai_skeleton.routers import sub_mcp as router
+from tai42_skeleton.routers import sub_mcp as router
 
 
 def _req(**path_params) -> Request:
@@ -73,8 +73,8 @@ def install(monkeypatch):
     isolated; it is seeded from ``routes`` so the store-backed GET/DELETE see the
     same state the fake router is primed with.
     """
-    from tai_skeleton.access_control import management as management_module
-    from tai_skeleton.sub_mcp import store as sub_mcp_store
+    from tai42_skeleton.access_control import management as management_module
+    from tai42_skeleton.sub_mcp import store as sub_mcp_store
     from tests.access_control.conftest import FakeRedis, make_client_ctx
 
     # A successful register/unregister bumps the policy version (so cached capability
@@ -91,7 +91,7 @@ def install(monkeypatch):
             fresh_store._routes[slug] = config
         monkeypatch.setattr(sub_mcp_store, "_IN_MEMORY_STORE", fresh_store)
         monkeypatch.setattr(
-            tai_app,
+            tai42_app,
             "_impl",
             SimpleNamespace(
                 sub_app=SimpleNamespace(mcp_sub_app_router=fake),
@@ -270,7 +270,7 @@ async def test_register_and_unregister_bump_policy_version(install):
     # A mount is a reachable surface, so registering or unregistering one must invalidate
     # cached capability projections exactly as a route-table edit does — by bumping the
     # policy version.
-    from tai_skeleton.access_control.settings import access_control_settings
+    from tai42_skeleton.access_control.settings import access_control_settings
 
     version_key = access_control_settings().policy_version_key
     fake = install({})
@@ -290,7 +290,7 @@ async def test_register_and_unregister_bump_policy_version(install):
 async def test_failed_register_and_unregister_do_not_bump_version(install):
     # A registration/unregistration that wrote nothing (an unknown tool 404, an unknown
     # slug 404) must NOT bump the version — no surface changed.
-    from tai_skeleton.access_control.settings import access_control_settings
+    from tai42_skeleton.access_control.settings import access_control_settings
 
     version_key = access_control_settings().policy_version_key
     fake = install({}, registered=("get_forecast",))

@@ -24,10 +24,10 @@ from typing import Any, cast
 import pytest
 from starlette.applications import Starlette
 from starlette.types import ASGIApp
-from tai_contract.sub_mcp import RouteConfig
+from tai42_contract.sub_mcp import RouteConfig
 
-from tai_skeleton.app import sub_mcp_app as sub_mcp_app_module
-from tai_skeleton.app.sub_mcp_app import ROOT_PREFIX, SubMcpAppRouter, _SubAppLifespan
+from tai42_skeleton.app import sub_mcp_app as sub_mcp_app_module
+from tai42_skeleton.app.sub_mcp_app import ROOT_PREFIX, SubMcpAppRouter, _SubAppLifespan
 
 
 class _FakeLifespan(_SubAppLifespan):
@@ -192,8 +192,8 @@ async def test_reset_clears_routes_cache_and_closes_stacks():
 async def test_start_resets_stale_sub_app_routes():
     # start()/update() must reset the router so a sub-app from the previous
     # generation stops serving after a re-init.
-    from tai_skeleton.app.instance import app
-    from tai_skeleton.manifest import Manifest
+    from tai42_skeleton.app.instance import app
+    from tai42_skeleton.manifest import Manifest
 
     manifest = Manifest.model_validate({})
 
@@ -343,7 +343,7 @@ async def test_unauthenticated_request_is_denied_by_the_real_resource_guard():
     from starlette.authentication import AuthCredentials
     from starlette.testclient import TestClient
 
-    from tai_skeleton.access_control.middleware import ResourceGuardMiddleware
+    from tai42_skeleton.access_control.middleware import ResourceGuardMiddleware
 
     r = _router()
     await _register_with_fake_sub(r, "svc", "http")
@@ -405,8 +405,8 @@ async def test_real_build_http_sse_stdio_and_cache():
     # Drive the real ``_build_sub_app`` against the process app so ``get_tool``
     # returns a genuine FastMCP tool, covering the http/sse/stdio build branches
     # and the build-cache reuse path.
-    from tai_skeleton.app.instance import app
-    from tai_skeleton.manifest import Manifest
+    from tai42_skeleton.app.instance import app
+    from tai42_skeleton.manifest import Manifest
 
     manifest = Manifest.model_validate(
         {"tools": [{"title": "fxt", "module": "tests.app._fixtures.tools_a", "include": ["greet"]}]}
@@ -439,9 +439,9 @@ async def test_sub_app_carries_the_body_size_cap_inside_its_own_error_handler():
     # (inside its ServerErrorMiddleware), so /app/{slug}/... answers 413 too. Reverting
     # that injection leaves the cap absent from the sub-app's user middleware here. No
     # tools are needed — the build produces a real Starlette app regardless.
-    from tai_skeleton.app.instance import app
-    from tai_skeleton.manifest import Manifest
-    from tai_skeleton.middleware.body_limit import BodyLimitMiddleware
+    from tai42_skeleton.app.instance import app
+    from tai42_skeleton.manifest import Manifest
+    from tai42_skeleton.middleware.body_limit import BodyLimitMiddleware
 
     async def run():
         async with app.app_context(Manifest.model_validate({})):
@@ -785,7 +785,7 @@ async def test_log_teardown_result_ignores_a_cancelled_task(caplog):
         await task
     assert task.cancelled()
 
-    with caplog.at_level(logging.ERROR, logger="tai_skeleton.app.sub_mcp_app"):
+    with caplog.at_level(logging.ERROR, logger="tai42_skeleton.app.sub_mcp_app"):
         # Does not raise ``asyncio.CancelledError`` out of the callback.
         SubMcpAppRouter._log_teardown_result("svc", task)
     assert caplog.text == ""  # a cancelled teardown returns quietly, no ERROR
@@ -862,7 +862,7 @@ def test_cross_loop_close_does_not_deadlock_on_a_parked_owner_loop(caplog):
     # The close cannot have run yet — the owner loop is still parked.
     assert not close_ran.is_set()
 
-    with caplog.at_level(logging.ERROR, logger="tai_skeleton.app.sub_mcp_app"):
+    with caplog.at_level(logging.ERROR, logger="tai42_skeleton.app.sub_mcp_app"):
         unpark.set_result(None)  # release the owner loop
         assert close_ran.wait(timeout=5.0)
         # Let the done-callback fire on the owner loop.
@@ -946,7 +946,7 @@ def test_reset_does_not_deadlock_on_a_parked_owner_loop(caplog):
     # The close cannot have run yet — the owner loop is still parked.
     assert not close_ran.is_set()
 
-    with caplog.at_level(logging.ERROR, logger="tai_skeleton.app.sub_mcp_app"):
+    with caplog.at_level(logging.ERROR, logger="tai42_skeleton.app.sub_mcp_app"):
         unpark.set_result(None)  # release the owner loop
         assert close_ran.wait(timeout=5.0)
         # Let the done-callback fire on the owner loop.

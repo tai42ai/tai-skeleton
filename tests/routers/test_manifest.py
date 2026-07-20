@@ -9,10 +9,10 @@ from typing import cast
 
 import pytest
 from starlette.requests import Request
-from tai_contract.app import tai_app
+from tai42_contract.app import tai42_app
 
-import tai_skeleton.routers.manifest as router
-from tai_skeleton.app import instance
+import tai42_skeleton.routers.manifest as router
+from tai42_skeleton.app import instance
 from tests._fakes.bus import FakeBus
 
 
@@ -76,13 +76,13 @@ def fake(monkeypatch):
     )
     # No worker bus: reloads stay local-only (fan-out has its own test). Patch the
     # contract handle's impl so the router body and the fanout helper both resolve
-    # ``tai_app`` to this fake.
+    # ``tai42_app`` to this fake.
     fake_app = SimpleNamespace(
         admin=admin,
         config=SimpleNamespace(config_manager=cm),
         backends=SimpleNamespace(backend=None),
     )
-    monkeypatch.setattr(tai_app, "_impl", fake_app)
+    monkeypatch.setattr(tai42_app, "_impl", fake_app)
     bus = FakeBus(origin="serve-x")
     monkeypatch.setattr(instance.app, "_bus", bus)
     return SimpleNamespace(app=fake_app, cm=cm, live=live, bus=bus)
@@ -105,7 +105,7 @@ async def test_mcp_config_schema_shape():
 
 
 async def test_mcp_config_schema_round_trip():
-    from tai_skeleton.manifest import Manifest
+    from tai42_skeleton.manifest import Manifest
 
     # An entry shaped per the served schema's required fields (``title`` + a
     # ``config`` MCPConfig with exactly one transport) must pass full manifest
@@ -190,7 +190,7 @@ def fake_full(monkeypatch):
         config=SimpleNamespace(config_manager=cm),
         backends=SimpleNamespace(backend=None),
     )
-    monkeypatch.setattr(tai_app, "_impl", fake_app)
+    monkeypatch.setattr(tai42_app, "_impl", fake_app)
     bus = FakeBus(origin="serve-x")
     monkeypatch.setattr(instance.app, "_bus", bus)
     return SimpleNamespace(app=fake_app, cm=cm, bus=bus)

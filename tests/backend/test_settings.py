@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from tai_skeleton.backend.settings import BackendSettings, base_backend_settings
+from tai42_skeleton.backend.settings import BackendSettings, base_backend_settings
 
 
 def test_backend_settings_defaults() -> None:

@@ -14,14 +14,14 @@ from contextlib import asynccontextmanager
 from typing import cast
 
 from starlette.requests import Request
-from tai_contract.access_control import registry
-from tai_contract.access_control.identity import AuthIdentity, IdentityProvider, ReadinessTarget
-from tai_kit.clients import PostgresConnectionSettings, RedisConnectionSettings
-from tai_kit.clients.impl.postgres import PostgresClient
-from tai_kit.clients.impl.redis import RedisClient
-from tai_kit.settings import reset_all_settings
+from tai42_contract.access_control import registry
+from tai42_contract.access_control.identity import AuthIdentity, IdentityProvider, ReadinessTarget
+from tai42_kit.clients import PostgresConnectionSettings, RedisConnectionSettings
+from tai42_kit.clients.impl.postgres import PostgresClient
+from tai42_kit.clients.impl.redis import RedisClient
+from tai42_kit.settings import reset_all_settings
 
-from tai_skeleton.routers import health
+from tai42_skeleton.routers import health
 
 
 class _RedisBoom(Exception):

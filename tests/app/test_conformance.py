@@ -1,4 +1,4 @@
-"""The concrete ``TaiMCP`` satisfies the ``tai_contract.app`` facade + every facet.
+"""The concrete ``TaiMCP`` satisfies the ``tai42_contract.app`` facade + every facet.
 
 Builds a bare ``TaiMCP`` and asserts it is a structural instance of the assembled
 ``TaiApp`` protocol and of each of the 18 per-feature sub-protocols, so the flat
@@ -8,7 +8,7 @@ impl surface stays correctly partitioned onto the contract namespaces.
 from __future__ import annotations
 
 import pytest
-from tai_contract.app import (
+from tai42_contract.app import (
     AppAdmin,
     AppAgents,
     AppBackends,
@@ -28,14 +28,14 @@ from tai_contract.app import (
     AppWebhookVerifiers,
     TaiApp,
 )
-from tai_contract.tools import AppTools
+from tai42_contract.tools import AppTools
 
-from tai_skeleton.app.server import TaiMCP
+from tai42_skeleton.app.server import TaiMCP
 
 
 @pytest.fixture(scope="module")
 def app() -> TaiMCP:
-    # Constructing a TaiMCP does not touch the global ``tai_app`` handle (only
+    # Constructing a TaiMCP does not touch the global ``tai42_app`` handle (only
     # start()/app_context binds), so this throwaway app for the structural
     # checks is safe to build without saving/restoring the handle.
     return TaiMCP(name="conformance")

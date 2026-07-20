@@ -11,11 +11,11 @@ from fastmcp.server.context import Context, set_context
 from fastmcp.server.elicitation import AcceptedElicitation
 from pydantic import BaseModel
 
-from tai_skeleton.app.instance import app
-from tai_skeleton.interactions import elicit_bridge
-from tai_skeleton.interactions.helper import InteractionTimeoutError
-from tai_skeleton.manifest import Manifest
-from tai_skeleton.tools import context_bridge
+from tai42_skeleton.app.instance import app
+from tai42_skeleton.interactions import elicit_bridge
+from tai42_skeleton.interactions.helper import InteractionTimeoutError
+from tai42_skeleton.manifest import Manifest
+from tai42_skeleton.tools import context_bridge
 
 
 def _bridge_ctx() -> context_bridge.PlatformBridgeContext:

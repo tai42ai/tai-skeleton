@@ -5,11 +5,11 @@ from __future__ import annotations
 from contextlib import asynccontextmanager
 
 import pytest
-from tai_contract.connectors.service import FlowOperation
+from tai42_contract.connectors.service import FlowOperation
 
-import tai_skeleton.connectors.oauth.state as state_mod
-from tai_skeleton.connectors.oauth import state
-from tai_skeleton.connectors.oauth.state import OAuthFlowState, StateInvalidError
+import tai42_skeleton.connectors.oauth.state as state_mod
+from tai42_skeleton.connectors.oauth import state
+from tai42_skeleton.connectors.oauth.state import OAuthFlowState, StateInvalidError
 
 FLOW_ID = "33333333-3333-4333-8333-333333333333"
 ORIGIN = "https://studio.example.com"
@@ -75,7 +75,7 @@ def test_decode_rejects_non_object_payload(monkeypatch):
     import hmac
     from hashlib import sha256
 
-    from tai_skeleton.connectors.settings import connector_crypto_secrets
+    from tai42_skeleton.connectors.settings import connector_crypto_secrets
 
     key = connector_crypto_secrets().require_state_hmac_key_bytes()
     payload_b64 = state_mod._b64url_encode(b"[1, 2, 3]")
@@ -89,7 +89,7 @@ def test_decode_rejects_undecodable_payload():
     import hmac
     from hashlib import sha256
 
-    from tai_skeleton.connectors.settings import connector_crypto_secrets
+    from tai42_skeleton.connectors.settings import connector_crypto_secrets
 
     key = connector_crypto_secrets().require_state_hmac_key_bytes()
     payload_b64 = state_mod._b64url_encode(b"\xff\xfe not json")
@@ -102,7 +102,7 @@ def test_decode_rejects_missing_flow_id():
     import hmac
     from hashlib import sha256
 
-    from tai_skeleton.connectors.settings import connector_crypto_secrets
+    from tai42_skeleton.connectors.settings import connector_crypto_secrets
 
     key = connector_crypto_secrets().require_state_hmac_key_bytes()
     payload_b64 = state_mod._b64url_encode(b'{"x": "y"}')
@@ -117,7 +117,7 @@ def test_decode_rejects_missing_origin():
     import json
     from hashlib import sha256
 
-    from tai_skeleton.connectors.settings import connector_crypto_secrets
+    from tai42_skeleton.connectors.settings import connector_crypto_secrets
 
     key = connector_crypto_secrets().require_state_hmac_key_bytes()
     payload_json = json.dumps({"f": FLOW_ID}, separators=(",", ":"), sort_keys=True).encode("ascii")

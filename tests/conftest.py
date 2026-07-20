@@ -28,15 +28,15 @@ import tempfile
 # any test module imports ``prometheus_client`` — so the suite runs mmap-frozen.
 # No test writes counters to this scratch dir; render tests point the collector at
 # their own tmp dirs.
-os.environ.setdefault("PROMETHEUS_MULTIPROC_DIR", os.path.join(tempfile.gettempdir(), "tai_prometheus_test"))
+os.environ.setdefault("PROMETHEUS_MULTIPROC_DIR", os.path.join(tempfile.gettempdir(), "tai42_prometheus_test"))
 
 import logging
 from contextlib import asynccontextmanager
 
 import pytest
-from tai_kit.settings import reset_all_settings
+from tai42_kit.settings import reset_all_settings
 
-import tai_skeleton.connectors.store.catalog_store as catalog_store
+import tai42_skeleton.connectors.store.catalog_store as catalog_store
 from tests._fakes.interactions_redis import FakeRedis
 
 
@@ -47,7 +47,7 @@ def fake_redis() -> FakeRedis:
 
 @pytest.fixture
 def fake_client_ctx(fake_redis: FakeRedis):
-    """A drop-in for ``tai_kit.clients.client_ctx`` that yields the shared fake
+    """A drop-in for ``tai42_kit.clients.client_ctx`` that yields the shared fake
     for any client class, ignoring pool/fresh."""
 
     @asynccontextmanager
@@ -122,10 +122,10 @@ def _ensure_redis_identity_provider(monkeypatch: pytest.MonkeyPatch) -> None:
     is re-registered after the clear (the reset still runs, so a manifest re-import's
     duplicate guard is unaffected). Suites that isolate the registry snapshot this
     baseline and restore it."""
-    from tai_contract.access_control import registry
-    from tai_identity_redis.redis_api_key_provider import RedisApiKeyProvider
+    from tai42_contract.access_control import registry
+    from tai42_identity_redis.redis_api_key_provider import RedisApiKeyProvider
 
-    import tai_skeleton.app.lifecycle as lifecycle
+    import tai42_skeleton.app.lifecycle as lifecycle
 
     def _ensure() -> None:
         if "redis" not in registry._REGISTRY:
@@ -149,7 +149,7 @@ def _identity_probe_offline(monkeypatch: pytest.MonkeyPatch) -> None:
     ``probe_identity_provider`` awaits the active provider's ``healthcheck()``, which
     reaches Redis through the plugin's own ``client_ctx``, so patch that seam. The
     probe's own tests re-patch it to drive the failure branches."""
-    import tai_identity_redis.redis_api_key_provider as redis_provider
+    import tai42_identity_redis.redis_api_key_provider as redis_provider
 
     @asynccontextmanager
     async def fake_client_ctx(client_cls, settings=None, *, fresh=False, **kwargs):

@@ -7,7 +7,7 @@ from typing import Any
 import pytest
 from pydantic import ValidationError
 
-from tai_skeleton.interactions.settings import InteractionsSettings
+from tai42_skeleton.interactions.settings import InteractionsSettings
 
 
 def test_defaults():

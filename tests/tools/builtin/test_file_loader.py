@@ -10,8 +10,8 @@ from types import SimpleNamespace
 import pytest
 from fastmcp.utilities.types import Image
 
-from tai_skeleton.template.media import MediaBlock
-from tai_skeleton.tools.builtin import file_loader as builtin_file_loader
+from tai42_skeleton.template.media import MediaBlock
+from tai42_skeleton.tools.builtin import file_loader as builtin_file_loader
 
 
 class _ResourceManager:
@@ -69,9 +69,9 @@ async def test_file_loader_propagates_error(bind_app) -> None:
 async def test_file_loader_rejects_traversal_id(bind_app) -> None:
     # file_loader funnels through ResourceManager.load's empty-scheme branch, so the
     # read-side guard fires on a traversal storage id before any storage read.
-    from tai_skeleton.storage import StorageRegistry
-    from tai_skeleton.template import ResourceManager
-    from tai_skeleton.template.path_guard import UnsafeTemplatePathError
+    from tai42_skeleton.storage import StorageRegistry
+    from tai42_skeleton.template import ResourceManager
+    from tai42_skeleton.template.path_guard import UnsafeTemplatePathError
     from tests.template.test_resource_manager import _InMemoryStorage
 
     registry = StorageRegistry()

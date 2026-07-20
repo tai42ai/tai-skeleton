@@ -21,19 +21,19 @@ from typing import Any
 
 import pytest
 from starlette.requests import Request
-from tai_contract.presets import PresetBody
-from tai_contract.presets.errors import PresetNotFoundError
-from tai_kit.clients.impl.postgres import PostgresClient
+from tai42_contract.presets import PresetBody
+from tai42_contract.presets.errors import PresetNotFoundError
+from tai42_kit.clients.impl.postgres import PostgresClient
 
-import tai_skeleton.versioning.store as store_module
-from tai_skeleton.app import instance
-from tai_skeleton.app.bus import FleetOrigin, FleetResult, OpOutcome, OriginKind, OriginResult
-from tai_skeleton.app.reload_gate import reload_gate
-from tai_skeleton.exceptions.exceptions import TaiValidationError
-from tai_skeleton.manifest import Manifest
-from tai_skeleton.operations import presets as preset_ops
-from tai_skeleton.routers import presets as router
-from tai_skeleton.routers import tools as tools_router
+import tai42_skeleton.versioning.store as store_module
+from tai42_skeleton.app import instance
+from tai42_skeleton.app.bus import FleetOrigin, FleetResult, OpOutcome, OriginKind, OriginResult
+from tai42_skeleton.app.reload_gate import reload_gate
+from tai42_skeleton.exceptions.exceptions import TaiValidationError
+from tai42_skeleton.manifest import Manifest
+from tai42_skeleton.operations import presets as preset_ops
+from tai42_skeleton.routers import presets as router
+from tai42_skeleton.routers import tools as tools_router
 from tests.versioning.conftest import FakeVersioningPg
 
 _MANIFEST = {
@@ -916,7 +916,7 @@ def test_tags_round_trip_through_save_version(pg, emit):
 
 
 def _spec(name: str, *, base_tool: str, fixed_kwargs: dict[str, Any] | None = None):
-    from tai_contract.agent.base import PresetSpec
+    from tai42_contract.agent.base import PresetSpec
 
     return PresetSpec(name=name, description="d", base_tool=base_tool, fixed_kwargs=fixed_kwargs or {})
 
@@ -1776,7 +1776,7 @@ def test_create_non_converged_fanout_logs_loud_error(pg, emit, backend, caplog):
             await _create_versioned("wv", fixed_kwargs={"units": "v"})
             assert instance.app.preset_manager.is_registered("wv")
 
-    with caplog.at_level(logging.ERROR, logger="tai_skeleton.operations._broadcast"):
+    with caplog.at_level(logging.ERROR, logger="tai42_skeleton.operations._broadcast"):
         asyncio.run(run())
 
     errors = [r for r in caplog.records if r.levelno == logging.ERROR]
@@ -1794,7 +1794,7 @@ def test_delete_non_converged_fanout_logs_loud_error(pg, emit, backend, caplog):
             resp = await router.delete_preset(_request("DELETE", "/api/presets/wv", name="wv"))
             assert resp.status_code == 200
 
-    with caplog.at_level(logging.ERROR, logger="tai_skeleton.operations._broadcast"):
+    with caplog.at_level(logging.ERROR, logger="tai42_skeleton.operations._broadcast"):
         asyncio.run(run())
 
     errors = [r for r in caplog.records if r.levelno == logging.ERROR]

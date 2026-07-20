@@ -13,7 +13,7 @@ from typing import cast
 import pytest
 import typer
 
-from tai_skeleton.cli.commands import _common
+from tai42_skeleton.cli.commands import _common
 
 
 def test_app_context_rejects_uninitialized_context() -> None:

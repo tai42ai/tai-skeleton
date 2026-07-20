@@ -12,17 +12,17 @@ import json
 
 import pytest
 from starlette.requests import Request
-from tai_contract.access_control import OWNER_USER_ID_CLAIM, registry
-from tai_contract.access_control.context import reset_request_user_id, set_request_user_id
-from tai_contract.access_control.identity import ApiKeyIdentityProvider, AuthIdentity, IdentityProvider
-from tai_kit.settings import reset_all_settings
+from tai42_contract.access_control import OWNER_USER_ID_CLAIM, registry
+from tai42_contract.access_control.context import reset_request_user_id, set_request_user_id
+from tai42_contract.access_control.identity import ApiKeyIdentityProvider, AuthIdentity, IdentityProvider
+from tai42_kit.settings import reset_all_settings
 
-import tai_skeleton.operations.api_keys as ops_api_keys
-import tai_skeleton.routers.api_keys as router
-import tai_skeleton.versioning as versioning_module
-from tai_skeleton.access_control import management
-from tai_skeleton.access_control import policy as policy_module
-from tai_skeleton.access_control import store as store_module
+import tai42_skeleton.operations.api_keys as ops_api_keys
+import tai42_skeleton.routers.api_keys as router
+import tai42_skeleton.versioning as versioning_module
+from tai42_skeleton.access_control import management
+from tai42_skeleton.access_control import policy as policy_module
+from tai42_skeleton.access_control import store as store_module
 from tests.access_control.conftest import FakeAccessControlPg, FakeRedis, make_client_ctx, make_pg_ctx
 from tests.access_control.test_policy_store import _MemStore
 
@@ -291,7 +291,7 @@ async def test_capabilities_reports_mintable(wired):
 
 
 async def test_list_roles_returns_seeded_roles(wired, monkeypatch):
-    from tai_skeleton.access_control.roles import seed_default_roles
+    from tai42_skeleton.access_control.roles import seed_default_roles
 
     # A shared store so the seed survives the handler's own ``role_store()`` rebuild.
     mem = _MemStore()

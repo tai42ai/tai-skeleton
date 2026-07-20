@@ -10,7 +10,7 @@ cleared here but EXCLUDED from the returned branch list — the caller removes t
 base separately and must never double-remove it.
 """
 
-from tai_skeleton.tools.registry import ToolRegistry
+from tai42_skeleton.tools.registry import ToolRegistry
 
 
 def _bind(reg: ToolRegistry, base: str, *branches: str) -> None:

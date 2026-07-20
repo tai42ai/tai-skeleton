@@ -24,9 +24,9 @@ from collections.abc import AsyncIterator
 from typing import Any
 
 from pydantic import BaseModel, Field, model_validator
-from tai_contract.agent import Agent
-from tai_contract.agent.events import MessageFinal, StreamEvent
-from tai_contract.app import tai_app
+from tai42_contract.agent import Agent
+from tai42_contract.agent.events import MessageFinal, StreamEvent
+from tai42_contract.app import tai42_app
 
 
 class _AuthorableInput(BaseModel):
@@ -67,7 +67,7 @@ class _AuthorableInput(BaseModel):
         return self
 
 
-@tai_app.agents.agent("authorable_agent")
+@tai42_app.agents.agent("authorable_agent")
 class AuthorableAgent(Agent):
     tool_name = "authorable_agent"
     tool_description = "A fake authorable agent."
@@ -102,7 +102,7 @@ class _RoleInput(BaseModel):
     text: str = ""
 
 
-@tai_app.agents.agent("role_agent")
+@tai42_app.agents.agent("role_agent")
 class RoleAgent(Agent):
     tool_name = "role_agent"
     tool_description = "A fake code role-agent (not authorable)."
@@ -121,7 +121,7 @@ class _LockedInput(BaseModel):
     user_message: str = ""
 
 
-@tai_app.agents.agent("locked_agent")
+@tai42_app.agents.agent("locked_agent")
 class LockedAgent(Agent):
     tool_name = "locked_agent"
     tool_description = "A fake non-spec-runnable agent that honors one baked field."
@@ -139,7 +139,7 @@ class LockedAgent(Agent):
         yield MessageFinal(text=f"secret={kwargs.get('secret_config')}")
 
 
-@tai_app.agents.agent("aliased_agent")
+@tai42_app.agents.agent("aliased_agent")
 class AliasedAgent(Agent):
     # Registered under ``aliased_agent`` but declaring a DIFFERENT ``tool_name`` —
     # the two name sets the collision guard must union.

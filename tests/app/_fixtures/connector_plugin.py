@@ -1,18 +1,18 @@
 """Fixture connector-plugin module.
 
 Mirrors a real connector plugin: at import time it calls
-``tai_app.connectors.register_connector(descriptor)``. Listed in a manifest
+``tai42_app.connectors.register_connector(descriptor)``. Listed in a manifest
 module list so every ``start()`` / reload re-imports it and re-runs the
 registration — the case that crashes a reload unless the provider registry is
 reset first.
 """
 
-from tai_contract.app import tai_app
-from tai_contract.connectors.providers import McpServerDescriptor, ProviderDescriptor, SubServiceDescriptor
+from tai42_contract.app import tai42_app
+from tai42_contract.connectors.providers import McpServerDescriptor, ProviderDescriptor, SubServiceDescriptor
 
 PROVIDER_ID = "fixture_conn"
 
-tai_app.connectors.register_connector(
+tai42_app.connectors.register_connector(
     ProviderDescriptor(
         id=PROVIDER_ID,
         display_name="Fixture Connector",

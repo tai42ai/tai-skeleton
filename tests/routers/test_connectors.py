@@ -10,8 +10,8 @@ from typing import cast
 
 import pytest
 from starlette.requests import Request
-from tai_contract.connectors.models import AuthHealthState
-from tai_contract.connectors.service import (
+from tai42_contract.connectors.models import AuthHealthState
+from tai42_contract.connectors.service import (
     AliasInUseError,
     CompleteConnectResult,
     DisconnectResult,
@@ -21,10 +21,10 @@ from tai_contract.connectors.service import (
     StartConnectResult,
 )
 
-import tai_skeleton.operations.connectors as conn_ops
-import tai_skeleton.routers.connectors as router
-from tai_skeleton.connectors.oauth import client as oauth_client
-from tai_skeleton.connectors.oauth import state
+import tai42_skeleton.operations.connectors as conn_ops
+import tai42_skeleton.routers.connectors as router
+from tai42_skeleton.connectors.oauth import client as oauth_client
+from tai42_skeleton.connectors.oauth import state
 
 # The mode-wrapped fan-out summary the service threads onto a mutating result; the
 # router/operation must surface it verbatim in the connector's HTTP response.

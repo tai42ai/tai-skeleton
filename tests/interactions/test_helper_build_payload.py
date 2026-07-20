@@ -8,10 +8,10 @@ from typing import cast
 
 import pytest
 from pydantic import BaseModel
-from tai_contract.interactions import AnswerFormat
+from tai42_contract.interactions import AnswerFormat
 
-from tai_skeleton.interactions import ask_user
-from tai_skeleton.interactions.helper import _build_payload
+from tai42_skeleton.interactions import ask_user
+from tai42_skeleton.interactions.helper import _build_payload
 
 
 class _Form(BaseModel):

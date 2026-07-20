@@ -10,7 +10,7 @@ import json
 
 import pytest
 
-from tai_skeleton.cli import render
+from tai42_skeleton.cli import render
 
 
 def test_strip_control_removes_escape_and_control_chars() -> None:

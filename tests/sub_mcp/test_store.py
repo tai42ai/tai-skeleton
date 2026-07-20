@@ -11,12 +11,12 @@ from __future__ import annotations
 
 import pytest
 from pydantic import ValidationError
-from tai_contract.sub_mcp import RouteConfig
-from tai_kit.settings import reset_all_settings
+from tai42_contract.sub_mcp import RouteConfig
+from tai42_kit.settings import reset_all_settings
 
-from tai_skeleton.sub_mcp import store as store_mod
-from tai_skeleton.sub_mcp.settings import SubMcpRedisSettings, SubMcpSettings, sub_mcp_settings
-from tai_skeleton.sub_mcp.store import (
+from tai42_skeleton.sub_mcp import store as store_mod
+from tai42_skeleton.sub_mcp.settings import SubMcpRedisSettings, SubMcpSettings, sub_mcp_settings
+from tai42_skeleton.sub_mcp.store import (
     InMemorySubMcpStore,
     RedisSubMcpStore,
     get_sub_mcp_store,

@@ -8,16 +8,16 @@ module so no single module is imported by two manifest sections.
 
 from __future__ import annotations
 
-from tai_contract.app import tai_app
+from tai42_contract.app import tai42_app
 
 
-@tai_app.tools.tool
+@tai42_app.tools.tool
 def weather(city: str, units: str = "metric") -> dict:
     """Report the weather for a city."""
     return {"city": city, "units": units}
 
 
-@tai_app.tools.tool
+@tai42_app.tools.tool
 def echo(text: str) -> str:
     """Echo the text back."""
     return text

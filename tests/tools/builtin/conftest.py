@@ -1,7 +1,7 @@
 """Test infrastructure for the builtin management tools.
 
-The builtin modules register through the ``tai_app`` handle at import time
-(``@tai_app.tools.tool``), exactly as external plugins do, so the handle must be
+The builtin modules register through the ``tai42_app`` handle at import time
+(``@tai42_app.tools.tool``), exactly as external plugins do, so the handle must be
 bound before those modules import. Binding the process app here — before the test
 modules are collected — lets each test import the builtin tool functions at module
 top level; an unstarted app has no manifest, so the decorator returns each tool
@@ -17,24 +17,24 @@ from __future__ import annotations
 from collections.abc import Iterator
 
 import pytest
-from tai_contract.app import tai_app
+from tai42_contract.app import tai42_app
 
-from tai_skeleton.app import instance
+from tai42_skeleton.app import instance
 
-tai_app.bind(instance.build_app())
+tai42_app.bind(instance.build_app())
 
 
 @pytest.fixture
 def bind_app() -> Iterator[object]:
-    """Yield a binder that installs a fake ``tai_app`` impl and restores the
+    """Yield a binder that installs a fake ``tai42_app`` impl and restores the
     previous one on teardown."""
-    previous = object.__getattribute__(tai_app, "_impl")
+    previous = object.__getattribute__(tai42_app, "_impl")
 
     def _bind(fake: object) -> object:
-        tai_app.bind(fake)
+        tai42_app.bind(fake)
         return fake
 
     try:
         yield _bind
     finally:
-        tai_app.bind(previous)
+        tai42_app.bind(previous)

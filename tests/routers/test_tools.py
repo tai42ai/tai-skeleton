@@ -1,6 +1,6 @@
 """Tool router: name listing, per-tool + bulk schema, and tool execution.
 
-Handlers are driven directly (the router-test pattern); the ``tai_app.tools``
+Handlers are driven directly (the router-test pattern); the ``tai42_app.tools``
 facet is faked by swapping the bound app impl for a stand-in exposing ``tools``.
 """
 
@@ -14,10 +14,10 @@ from typing import cast
 
 import pytest
 from starlette.requests import Request
-from tai_contract.app import tai_app
+from tai42_contract.app import tai42_app
 
-from tai_skeleton.routers import tools as router
-from tai_skeleton.tools.binding import UnknownToolError
+from tai42_skeleton.routers import tools as router
+from tai42_skeleton.tools.binding import UnknownToolError
 
 
 def _req(**path_params) -> Request:
@@ -81,7 +81,7 @@ class _FakeTools:
 @pytest.fixture
 def install(monkeypatch):
     def _install(fake_tools: _FakeTools):
-        monkeypatch.setattr(tai_app, "_impl", SimpleNamespace(tools=fake_tools))
+        monkeypatch.setattr(tai42_app, "_impl", SimpleNamespace(tools=fake_tools))
         return fake_tools
 
     return _install

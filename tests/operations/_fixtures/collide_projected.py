@@ -9,10 +9,10 @@ of the same name. The tool binding raises on the duplicate name at boot.
 
 from __future__ import annotations
 
-from tai_contract.app import tai_app
+from tai42_contract.app import tai42_app
 
 
-@tai_app.tools.tool
+@tai42_app.tools.tool
 def reload_config() -> str:
     """A rival hand-bound tool colliding with the projected ``reload_config`` op."""
     return "collision"

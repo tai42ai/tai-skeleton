@@ -4,7 +4,7 @@
 Does not undo the import-time constant capture in
 ``tools/adapters/mcp_tool_to_func.py`` — that needs a re-import, out of scope here.
 
-Also binds the process app singleton to the ``tai_app`` contract handle before
+Also binds the process app singleton to the ``tai42_app`` contract handle before
 the test modules are imported: the router modules (imported by
 ``test_universal_webhook``) register their routes through the handle at import
 time, exactly as external plugins do, and the runtime imports them only after
@@ -16,12 +16,12 @@ from __future__ import annotations
 from collections.abc import Iterator
 
 import pytest
-from tai_contract.app import tai_app
-from tai_kit.settings import reset_all_settings
+from tai42_contract.app import tai42_app
+from tai42_kit.settings import reset_all_settings
 
-from tai_skeleton.app import instance
+from tai42_skeleton.app import instance
 
-tai_app.bind(instance.build_app())
+tai42_app.bind(instance.build_app())
 
 
 @pytest.fixture(autouse=True)

@@ -14,8 +14,8 @@ from starlette.responses import PlainTextResponse
 from starlette.routing import Route
 from starlette.testclient import TestClient
 
-from tai_skeleton.middleware import rate_limit
-from tai_skeleton.settings.rate_limit import RateLimitSettings
+from tai42_skeleton.middleware import rate_limit
+from tai42_skeleton.settings.rate_limit import RateLimitSettings
 
 # Import the fake as a package-relative module (tests is a package).
 from tests._fakes.interactions_redis import FakeRedis
@@ -110,7 +110,7 @@ def test_rate_limit_config_owns_both_public_door_families():
     # The two public door families' limiter config lives on the app-level
     # ``RateLimitSettings`` (each with its own enable/limit/burst), and the
     # ``InteractionsSettings`` carries no limiter fields of its own.
-    from tai_skeleton.interactions.settings import InteractionsSettings
+    from tai42_skeleton.interactions.settings import InteractionsSettings
 
     rate_fields = set(RateLimitSettings.model_fields)
     for field in ("webhook_limit", "webhook_burst", "interactions_callback_limit", "interactions_callback_burst"):

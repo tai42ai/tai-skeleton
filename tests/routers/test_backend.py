@@ -1,7 +1,7 @@
 """Backend identity + the fleet doors: identity, the bus-backed worker census, and
 the fleet soft-restart.
 
-Handlers are driven directly (the router-test pattern); the ``tai_app.backends``
+Handlers are driven directly (the router-test pattern); the ``tai42_app.backends``
 facet is faked by swapping the bound app impl, and the worker bus is a
 :class:`FakeBus` set on the concrete app singleton. ``list_workers`` returns the bus
 census (no backend needed) and a census read that raises must propagate (a read that
@@ -16,10 +16,10 @@ from typing import cast
 
 import pytest
 from starlette.requests import Request
-from tai_contract.app import tai_app
+from tai42_contract.app import tai42_app
 
-from tai_skeleton.app import instance
-from tai_skeleton.routers import backend as router
+from tai42_skeleton.app import instance
+from tai42_skeleton.routers import backend as router
 from tests._fakes.bus import FakeBus
 
 
@@ -44,7 +44,7 @@ class _Admin:
 def install(monkeypatch):
     def _install(*, backend=None, admin=None, bus: FakeBus | None = None) -> FakeBus:
         monkeypatch.setattr(
-            tai_app, "_impl", SimpleNamespace(backends=SimpleNamespace(backend=backend), admin=admin or _Admin())
+            tai42_app, "_impl", SimpleNamespace(backends=SimpleNamespace(backend=backend), admin=admin or _Admin())
         )
         bus = bus or FakeBus()
         monkeypatch.setattr(instance.app, "_bus", bus)
@@ -183,8 +183,8 @@ async def test_reload_unknown_target_400_names_target(install):
 def test_tai_backend_still_resolves_to_launcher():
     # The ``fleet`` group name (not ``backend``) exists so the runtime launcher
     # mounted as ``tai backend`` is not clobbered — assert both stand.
-    from tai_skeleton.cli import backend as backend_launcher
-    from tai_skeleton.cli.app import app
+    from tai42_skeleton.cli import backend as backend_launcher
+    from tai42_skeleton.cli.app import app
 
     assert app.commands["backend"] is backend_launcher.main
     fleet_subcommands = getattr(app.commands["fleet"], "commands", None)

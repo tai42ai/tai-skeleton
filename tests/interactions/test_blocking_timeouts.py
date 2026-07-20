@@ -13,8 +13,8 @@ from typing import cast
 import pytest
 from redis.asyncio import Redis
 
-from tai_skeleton.interactions import settings as settings_module
-from tai_skeleton.interactions.store import InteractionStore
+from tai42_skeleton.interactions import settings as settings_module
+from tai42_skeleton.interactions.store import InteractionStore
 
 
 class _StallBlpopRedis:

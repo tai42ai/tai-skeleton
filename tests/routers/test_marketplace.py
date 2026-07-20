@@ -20,11 +20,11 @@ from typing import Any, cast
 import pytest
 from starlette.requests import Request
 
-import tai_skeleton.operations.marketplace as mkt_ops
-import tai_skeleton.routers.marketplace as router
-from tai_skeleton.app.reload_gate import reload_gate
-from tai_skeleton.marketplace.advisories import AdvisoryState
-from tai_skeleton.marketplace.errors import (
+import tai42_skeleton.operations.marketplace as mkt_ops
+import tai42_skeleton.routers.marketplace as router
+from tai42_skeleton.app.reload_gate import reload_gate
+from tai42_skeleton.marketplace.advisories import AdvisoryState
+from tai42_skeleton.marketplace.errors import (
     ArtifactIntegrityError,
     ContractIncompatibleError,
     InstallStateError,
@@ -40,7 +40,7 @@ from tai_skeleton.marketplace.errors import (
     RegistryUnreachableError,
     VersionRefusedError,
 )
-from tai_skeleton.marketplace.store import InstallRecord
+from tai42_skeleton.marketplace.store import InstallRecord
 
 
 def _get(path: str = "/", query: bytes = b"", **path_params: str) -> Request:

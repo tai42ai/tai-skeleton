@@ -14,10 +14,10 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from tai_skeleton.app import server as server_module
-from tai_skeleton.monitoring import get_monitoring, init_monitoring, reset_monitoring
-from tai_skeleton.tools import binding as binding_module
-from tai_skeleton.tools.binding import ToolBinding
+from tai42_skeleton.app import server as server_module
+from tai42_skeleton.monitoring import get_monitoring, init_monitoring, reset_monitoring
+from tai42_skeleton.tools import binding as binding_module
+from tai42_skeleton.tools.binding import ToolBinding
 
 
 @pytest.fixture

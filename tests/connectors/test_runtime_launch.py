@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 import pytest
-from tai_contract.connectors.providers import (
+from tai42_contract.connectors.providers import (
     ProviderDescriptor,
     SubServiceDescriptor,
 )
 
-from tai_skeleton.connectors.runtime.launch import resolve_mcp_server
+from tai42_skeleton.connectors.runtime.launch import resolve_mcp_server
 
 from .conftest import make_noauth_http_descriptor, make_noauth_stdio_descriptor
 

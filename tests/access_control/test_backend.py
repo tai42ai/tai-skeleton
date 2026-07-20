@@ -12,18 +12,18 @@ from starlette.authentication import (
     UnauthenticatedUser,
 )
 from starlette.requests import Request
-from tai_contract.access_control import OWNER_USER_ID_CLAIM
+from tai42_contract.access_control import OWNER_USER_ID_CLAIM
 
-from tai_skeleton.access_control import policy as policy_module
-from tai_skeleton.access_control import store as store_module
-from tai_skeleton.access_control.backend import (
+from tai42_skeleton.access_control import policy as policy_module
+from tai42_skeleton.access_control import store as store_module
+from tai42_skeleton.access_control.backend import (
     AccessControlAuthBackend,
     AuthorizationError,
     effective_scopes,
 )
-from tai_skeleton.access_control.roles import EDITOR_JQ
-from tai_skeleton.access_control.settings import AccessControlSettings
-from tai_skeleton.access_control.user import TaiUser
+from tai42_skeleton.access_control.roles import EDITOR_JQ
+from tai42_skeleton.access_control.settings import AccessControlSettings
+from tai42_skeleton.access_control.user import TaiUser
 
 from .conftest import FakeAccessControlPg, FakeRedis, make_client_ctx, make_pg_ctx
 

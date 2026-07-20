@@ -1,24 +1,24 @@
 """Conformance + behavior tests for the copied access_control feature.
 
 Conformance asserts the local implementations satisfy the
-``tai_contract.access_control`` protocols/ABCs they are meant to implement.
+``tai42_contract.access_control`` protocols/ABCs they are meant to implement.
 Behavior exercises the policy enforcer's jq evaluation on simple cases (no redis).
 """
 
 import pytest
 from starlette.authentication import AuthenticationError
-from tai_contract.access_control.identity import (
+from tai42_contract.access_control.identity import (
     AuthIdentity,
 )
-from tai_contract.access_control.identity import (
+from tai42_contract.access_control.identity import (
     IdentityProvider as ContractIdentityProvider,
 )
-from tai_contract.access_control.policy import PolicyEnforcer as ContractPolicyEnforcer
-from tai_contract.access_control.verifier import Verifier as ContractVerifier
+from tai42_contract.access_control.policy import PolicyEnforcer as ContractPolicyEnforcer
+from tai42_contract.access_control.verifier import Verifier as ContractVerifier
 
-from tai_skeleton.access_control.policy import PolicyEnforcer
-from tai_skeleton.access_control.settings import AccessControlSettings
-from tai_skeleton.access_control.verifier import AccessControlVerifier
+from tai42_skeleton.access_control.policy import PolicyEnforcer
+from tai42_skeleton.access_control.settings import AccessControlSettings
+from tai42_skeleton.access_control.verifier import AccessControlVerifier
 
 
 class _StubProvider(ContractIdentityProvider):

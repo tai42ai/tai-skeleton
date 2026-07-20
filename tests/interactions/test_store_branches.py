@@ -8,14 +8,14 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 
 from redis.exceptions import WatchError
-from tai_contract.interactions import (
+from tai42_contract.interactions import (
     AnswerFormat,
     InteractionRequest,
     InteractionResponse,
 )
 
-from tai_skeleton.interactions import InteractionStore
-from tai_skeleton.interactions import store as store_module
+from tai42_skeleton.interactions import InteractionStore
+from tai42_skeleton.interactions import store as store_module
 
 
 def _request(interaction_id: str, group_id: str, store: InteractionStore) -> InteractionRequest:

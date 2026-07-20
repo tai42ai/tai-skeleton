@@ -1,5 +1,5 @@
 name: Feature request
-description: Propose an addition or change to tai-skeleton
+description: Propose an addition or change to tai42-skeleton
 labels: ["enhancement"]
 body:
   - type: textarea
@@ -12,7 +12,7 @@ body:
   - type: input
     id: version
     attributes:
-      label: tai-skeleton version
+      label: tai42-skeleton version
       description: The version you are using, if relevant.
       placeholder: "0.1.0"
     validations:

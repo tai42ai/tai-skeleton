@@ -7,7 +7,7 @@ from __future__ import annotations
 from unittest.mock import MagicMock
 
 import pytest
-from tai_contract.monitoring import (
+from tai42_contract.monitoring import (
     Monitoring,
     MonitoringReader,
     MonitoringWriter,
@@ -15,7 +15,7 @@ from tai_contract.monitoring import (
     TraceNotFoundError,
 )
 
-from tai_skeleton.monitoring import (
+from tai42_skeleton.monitoring import (
     NoOpMonitoring,
     NoOpReader,
     NoOpSpan,

@@ -10,7 +10,7 @@ import sys
 
 import pytest
 
-from tai_skeleton.app.importer import (
+from tai42_skeleton.app.importer import (
     _stable_cycle_fallback,
     import_or_reload_package,
 )

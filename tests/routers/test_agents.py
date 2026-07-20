@@ -18,7 +18,7 @@ from pydantic import BaseModel
 from starlette.requests import Request
 from starlette.responses import Response, StreamingResponse
 
-from tai_skeleton.agent import (
+from tai42_skeleton.agent import (
     Agent,
     MessageDelta,
     MessageFinal,
@@ -27,10 +27,10 @@ from tai_skeleton.agent import (
     ToolCallStep,
     ToolResultStep,
 )
-from tai_skeleton.operations import agents as agent_ops
-from tai_skeleton.routers import agents as router
-from tai_skeleton.routers import interactions as interactions_router
-from tai_skeleton.tools.adapters.lc_tool_to_func import build_signature
+from tai42_skeleton.operations import agents as agent_ops
+from tai42_skeleton.routers import agents as router
+from tai42_skeleton.routers import interactions as interactions_router
+from tai42_skeleton.tools.adapters.lc_tool_to_func import build_signature
 
 
 class _NonJsonPayload:

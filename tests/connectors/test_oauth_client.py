@@ -10,11 +10,11 @@ from urllib.parse import parse_qs, urlparse
 
 import httpx
 import pytest
-from tai_contract.connectors.errors import OperatorMisconfiguredError
+from tai42_contract.connectors.errors import OperatorMisconfiguredError
 
-import tai_skeleton.connectors.oauth.client as client_mod
-from tai_skeleton.connectors.oauth import client
-from tai_skeleton.connectors.oauth.client import (
+import tai42_skeleton.connectors.oauth.client as client_mod
+from tai42_skeleton.connectors.oauth import client
+from tai42_skeleton.connectors.oauth.client import (
     CodeExchangeFailedError,
     RedirectUriNotAllowedError,
     RefreshTokenMissingError,
@@ -101,7 +101,7 @@ def test_validate_redirect_uri_rejects_unallowlisted_bridge_origin():
 
 
 def test_validate_redirect_uri_rejects_empty_allowlist(monkeypatch):
-    from tai_kit.settings import reset_all_settings
+    from tai42_kit.settings import reset_all_settings
 
     monkeypatch.setenv("CONNECTORS_REDIRECT_URI_ALLOWLIST", "")
     reset_all_settings()

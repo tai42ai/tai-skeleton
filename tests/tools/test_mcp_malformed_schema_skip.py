@@ -11,10 +11,10 @@ from typing import ClassVar, cast
 
 import mcp
 import pytest
-from tai_contract.manifest import MCPConfig, TaiMCPConfig
+from tai42_contract.manifest import MCPConfig, TaiMCPConfig
 
-from tai_skeleton.app.instance import app
-from tai_skeleton.manifest import Manifest
+from tai42_skeleton.app.instance import app
+from tai42_skeleton.manifest import Manifest
 
 
 class _GoodTool:
@@ -93,7 +93,7 @@ def test_malformed_schema_max_depth_env_surfaces_as_config_error(monkeypatch):
     # as every tool advertising an unusable schema. The depth setting is resolved
     # once, up front, OUTSIDE the guard, so a bad value fails before any tool is bound.
     from pydantic import ValidationError
-    from tai_kit.settings import reset_all_settings
+    from tai42_kit.settings import reset_all_settings
 
     async def run() -> None:
         async with app.app_context(Manifest.model_validate({})):

@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import pytest
 
-from tai_skeleton.core.registry.base_registry import BaseRegistry
+from tai42_skeleton.core.registry.base_registry import BaseRegistry
 
 
 def test_cannot_instantiate_without_validation() -> None:

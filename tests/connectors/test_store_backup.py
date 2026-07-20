@@ -18,19 +18,19 @@ from typing import Any
 import pytest
 from cryptography.exceptions import InvalidTag
 from psycopg.errors import UniqueViolation
-from tai_kit.clients.impl.postgres import PostgresClient
-from tai_kit.clients.impl.redis import RedisClient
-from tai_kit.settings import reset_all_settings
+from tai42_kit.clients.impl.postgres import PostgresClient
+from tai42_kit.clients.impl.redis import RedisClient
+from tai42_kit.settings import reset_all_settings
 
-import tai_skeleton.connectors.store.backup as store_backup
-from tai_skeleton.connectors.oauth import crypto
-from tai_skeleton.connectors.store.backup import (
+import tai42_skeleton.connectors.store.backup as store_backup
+from tai42_skeleton.connectors.oauth import crypto
+from tai42_skeleton.connectors.store.backup import (
     export_connector_catalog,
     export_connector_connections,
     import_connector_catalog,
     import_connector_connections,
 )
-from tai_skeleton.connectors.store.redis_pg import _ALIAS_UNIQUE_CONSTRAINT, RedisPgConnectorTokenStore
+from tai42_skeleton.connectors.store.redis_pg import _ALIAS_UNIQUE_CONSTRAINT, RedisPgConnectorTokenStore
 
 from .conftest import CID, CID2, make_noauth_http_descriptor, make_oauth_descriptor
 

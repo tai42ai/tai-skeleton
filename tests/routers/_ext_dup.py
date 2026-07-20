@@ -7,10 +7,10 @@ route cannot know which config to edit, so it raises."""
 
 from __future__ import annotations
 
-from tai_contract.app import tai_app
+from tai42_contract.app import tai42_app
 
 
-@tai_app.tools.tool
+@tai42_app.tools.tool
 def shout(text: str) -> str:
     """A second definition of ``shout`` from a rival module."""
     return text

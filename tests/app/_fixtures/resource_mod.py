@@ -7,7 +7,7 @@ clear both the ``Resource`` and the ``ResourceTemplate`` surface for the re-fire
 to stay idempotent.
 """
 
-from tai_skeleton.app.instance import app
+from tai42_skeleton.app.instance import app
 
 
 @app.fastmcp.resource("fixture://static")

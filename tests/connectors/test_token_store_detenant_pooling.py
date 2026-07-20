@@ -21,12 +21,12 @@ import pathlib
 from contextlib import asynccontextmanager
 
 import pytest
-from tai_contract.connectors.store import ConnectorTokenStore
-from tai_kit.clients.impl.postgres import PostgresClient
-from tai_kit.clients.impl.redis import RedisClient
+from tai42_contract.connectors.store import ConnectorTokenStore
+from tai42_kit.clients.impl.postgres import PostgresClient
+from tai42_kit.clients.impl.redis import RedisClient
 
-import tai_skeleton.connectors.store.redis_pg as redis_pg
-from tai_skeleton.connectors.store.redis_pg import RedisPgConnectorTokenStore
+import tai42_skeleton.connectors.store.redis_pg as redis_pg
+from tai42_skeleton.connectors.store.redis_pg import RedisPgConnectorTokenStore
 
 _CID = "11111111-1111-4111-8111-111111111111"
 _CONNECTORS_DIR = pathlib.Path(redis_pg.__file__).resolve().parents[1]

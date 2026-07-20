@@ -1,7 +1,7 @@
 """Focused tests for the manifest impl: load from an in-memory dict, derived-map
 building, and the include/exclude filter predicates."""
 
-from tai_skeleton.manifest import Manifest
+from tai42_skeleton.manifest import Manifest
 
 
 def _manifest() -> Manifest:
@@ -105,7 +105,7 @@ def test_find_title_longest_prefix_and_fallback():
 
 
 def test_replace_mcp_rebuilds_maps_and_tools_list():
-    from tai_contract.manifest import TaiMCPConfig
+    from tai42_contract.manifest import TaiMCPConfig
 
     m = _manifest()
     new_mcp = TaiMCPConfig.model_validate(
@@ -158,7 +158,7 @@ def test_derived_maps_are_frozensets():
 
 
 def test_replace_mcp_clears_stale_resolved_entries():
-    from tai_contract.manifest import TaiMCPConfig
+    from tai42_contract.manifest import TaiMCPConfig
 
     m = _manifest()
     # Resolve both an include and an exclude decision under the current title.
@@ -181,7 +181,7 @@ def test_replace_mcp_clears_stale_resolved_entries():
 
 
 def test_replace_mcp_drops_resolved_for_vanished_title():
-    from tai_contract.manifest import TaiMCPConfig
+    from tai42_contract.manifest import TaiMCPConfig
 
     m = _manifest()
     # Resolve decisions under the current title, then replace with a DIFFERENT

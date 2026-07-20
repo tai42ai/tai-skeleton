@@ -21,10 +21,10 @@ import fakeredis
 import pytest
 from fakeredis import aioredis
 from redis.exceptions import ConnectionError as RedisConnectionError
-from tai_contract.errors import ClientDisconnectedError
+from tai42_contract.errors import ClientDisconnectedError
 
-import tai_skeleton.app.bus as bus_module
-from tai_skeleton.app.bus import (
+import tai42_skeleton.app.bus as bus_module
+from tai42_skeleton.app.bus import (
     FleetOrigin,
     FleetResult,
     LocalApplyResult,
@@ -36,7 +36,7 @@ from tai_skeleton.app.bus import (
     _merge_terminal,
     make_origin,
 )
-from tai_skeleton.app.bus_settings import BusRedisSettings, BusSettings
+from tai42_skeleton.app.bus_settings import BusRedisSettings, BusSettings
 
 
 @pytest.fixture
@@ -63,7 +63,7 @@ def wire_bus_client(monkeypatch: pytest.MonkeyPatch, server: fakeredis.FakeServe
 def wire_pooled_bus_client(monkeypatch: pytest.MonkeyPatch, server: fakeredis.FakeServer) -> None:
     """Route the bus's ``client_ctx`` through a handle that models the REAL pooled
     wrapper, not the raw driver: a severed connection inside the body surfaces as
-    ``ClientDisconnectedError``, because ``tai_kit``'s ``client_ctx`` evicts the dead
+    ``ClientDisconnectedError``, because ``tai42_kit``'s ``client_ctx`` evicts the dead
     client and re-raises the disconnection wrapped in that type. This is the exact shape
     a live bus-Redis outage takes; the raw-``ConnectionError`` fixture bypasses the
     wrapper and so never exercises the wrapped transport path.

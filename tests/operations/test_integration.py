@@ -8,14 +8,14 @@ import asyncio
 
 import pytest
 
-from tai_skeleton.app.instance import app
-from tai_skeleton.app.reload_gate import reload_gate
-from tai_skeleton.app.route_registry import load_api_routes
-from tai_skeleton.authz.middleware import AuthzMiddleware
-from tai_skeleton.authz.resolver import resolve_base_operation
-from tai_skeleton.cli.openapi import build_openapi_spec
-from tai_skeleton.manifest import Manifest
-from tai_skeleton.operations.registry import operation_registry
+from tai42_skeleton.app.instance import app
+from tai42_skeleton.app.reload_gate import reload_gate
+from tai42_skeleton.app.route_registry import load_api_routes
+from tai42_skeleton.authz.middleware import AuthzMiddleware
+from tai42_skeleton.authz.resolver import resolve_base_operation
+from tai42_skeleton.cli.openapi import build_openapi_spec
+from tai42_skeleton.manifest import Manifest
+from tai42_skeleton.operations.registry import operation_registry
 
 
 @pytest.fixture(autouse=True)
@@ -106,7 +106,7 @@ def _skeleton_manifest() -> Manifest:
     system-kinds router mounted so the projected op carries its route template."""
     return Manifest.model_validate(
         {
-            "routers_modules": ["tai_skeleton.routers.system_kinds"],
+            "routers_modules": ["tai42_skeleton.routers.system_kinds"],
             "api_tools": {"enabled": True},
         }
     )

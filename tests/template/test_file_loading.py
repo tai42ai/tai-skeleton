@@ -10,7 +10,7 @@ from types import SimpleNamespace
 import pytest
 from fastmcp.utilities.types import Audio, Image
 
-from tai_skeleton.template import file_loading as fl
+from tai42_skeleton.template import file_loading as fl
 
 
 class _FakeMagika:

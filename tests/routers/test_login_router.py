@@ -15,16 +15,16 @@ from starlette.applications import Starlette
 from starlette.requests import Request
 from starlette.routing import Route
 from starlette.testclient import TestClient
-from tai_contract.access_control.identity import ApiKeyIdentityProvider, AuthIdentity
-from tai_contract.accounts import registry as accounts_registry
-from tai_contract.accounts.models import FormField, FormMethod, LoginMethod
-from tai_contract.accounts.provider import AccountsProvider
+from tai42_contract.access_control.identity import ApiKeyIdentityProvider, AuthIdentity
+from tai42_contract.accounts import registry as accounts_registry
+from tai42_contract.accounts.models import FormField, FormMethod, LoginMethod
+from tai42_contract.accounts.provider import AccountsProvider
 
-import tai_skeleton.routers.api_keys as api_keys_router
-import tai_skeleton.routers.login as login_router
-from tai_skeleton.access_control import verifier as verifier_module
-from tai_skeleton.access_control.adapter import AuthAdapter
-from tai_skeleton.access_control.settings import AccessControlSettings
+import tai42_skeleton.routers.api_keys as api_keys_router
+import tai42_skeleton.routers.login as login_router
+from tai42_skeleton.access_control import verifier as verifier_module
+from tai42_skeleton.access_control.adapter import AuthAdapter
+from tai42_skeleton.access_control.settings import AccessControlSettings
 
 
 class _FakeAccounts(AccountsProvider):
@@ -222,10 +222,10 @@ class _ClaimProvider(ApiKeyIdentityProvider):
 def _claim_exchange_client(monkeypatch, *, seeded: dict[str, str], valid: set[str]) -> TestClient:
     import json as _json
 
-    from tai_contract.access_control import registry as id_registry
-    from tai_kit.utils.data.string_util import hash_api_key
+    from tai42_contract.access_control import registry as id_registry
+    from tai42_kit.utils.data.string_util import hash_api_key
 
-    from tai_skeleton.access_control import claim_links as claim_links_module
+    from tai42_skeleton.access_control import claim_links as claim_links_module
     from tests.access_control.conftest import FakeRedis, make_client_ctx
 
     settings = AccessControlSettings()
@@ -279,7 +279,7 @@ def test_claim_exchange_ignores_garbage_credential_on_public_path(monkeypatch):
 
 
 def test_claim_route_registered_public():
-    from tai_skeleton.app.route_registry import load_api_routes
+    from tai42_skeleton.app.route_registry import load_api_routes
 
     by_pair = {(method, meta.path): meta for meta in load_api_routes() for method in meta.methods}
     meta = by_pair[("POST", "/api/login/claim")]
@@ -287,7 +287,7 @@ def test_claim_route_registered_public():
 
 
 async def test_claim_route_enumerated_in_boot_public_log(caplog):
-    from tai_skeleton.access_control.startup import check_always_public_routes
+    from tai42_skeleton.access_control.startup import check_always_public_routes
 
     with caplog.at_level("INFO"):
         await check_always_public_routes()

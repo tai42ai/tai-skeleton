@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from starlette.routing import Route
 
-import tai_skeleton.routers.connectors as router
+import tai42_skeleton.routers.connectors as router
 from tests.routers._auth_boundary import AUTHED, boundary_client
 
 _ROUTES = [
@@ -96,7 +96,7 @@ _REGISTERED_AUTHED = {
 
 
 def test_registered_routes_match_declared_auth_stance():
-    from tai_skeleton.app.route_registry import load_api_routes
+    from tai42_skeleton.app.route_registry import load_api_routes
 
     actual = {
         (meta.path, meta.methods): meta.authed for meta in load_api_routes() if meta.path.startswith("/api/connectors/")
@@ -108,7 +108,7 @@ def test_oauth_complete_registered_route_requires_auth():
     """The concrete ``oauth/complete`` registration — the one the running server
     actually mounts — carries authed=True, so the OAuth-bridge XHR that POSTs it
     must present the session credential."""
-    from tai_skeleton.app.route_registry import load_api_routes
+    from tai42_skeleton.app.route_registry import load_api_routes
 
     meta = next(m for m in load_api_routes() if m.path == "/api/connectors/oauth/complete" and "POST" in m.methods)
     assert meta.authed is True

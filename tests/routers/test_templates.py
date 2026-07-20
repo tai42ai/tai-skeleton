@@ -11,11 +11,11 @@ import pytest
 from jinja2 import TemplateSyntaxError
 from starlette.requests import Request
 
-import tai_skeleton.operations.templates as templates_ops
-import tai_skeleton.routers.templates as router
-import tai_skeleton.template.path_guard as path_guard
-from tai_skeleton.template import TemplateNotFoundError
-from tai_skeleton.template.path_guard import UnsafeTemplatePathError
+import tai42_skeleton.operations.templates as templates_ops
+import tai42_skeleton.routers.templates as router
+import tai42_skeleton.template.path_guard as path_guard
+from tai42_skeleton.template import TemplateNotFoundError
+from tai42_skeleton.template.path_guard import UnsafeTemplatePathError
 
 
 def _req(body=None) -> Request:
@@ -64,9 +64,9 @@ def manager(monkeypatch):
     tm = _FakeResourceManager()
     fake_app = SimpleNamespace(storage=SimpleNamespace(resource_manager=tm))
     # The handlers are thin adapters over operations.templates; the business logic
-    # reads ``tai_app`` from the OP module, so the fake is installed there (the
-    # same module-local ``tai_app`` symbol the handlers resolve at call time).
-    monkeypatch.setattr(templates_ops, "tai_app", fake_app)
+    # reads ``tai42_app`` from the OP module, so the fake is installed there (the
+    # same module-local ``tai42_app`` symbol the handlers resolve at call time).
+    monkeypatch.setattr(templates_ops, "tai42_app", fake_app)
     return tm
 
 

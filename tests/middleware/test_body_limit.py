@@ -14,9 +14,9 @@ import pytest
 from starlette.requests import Request
 from starlette.types import Receive, Scope, Send
 
-from tai_skeleton.middleware import body_limit
-from tai_skeleton.middleware.body_limit import BodyLimitMiddleware, _BodyTooLarge
-from tai_skeleton.settings.body_limit import BodyLimitSettings
+from tai42_skeleton.middleware import body_limit
+from tai42_skeleton.middleware.body_limit import BodyLimitMiddleware, _BodyTooLarge
+from tai42_skeleton.settings.body_limit import BodyLimitSettings
 
 
 def _patch_cap(monkeypatch, cap: int) -> None:
@@ -166,7 +166,7 @@ async def test_over_cap_to_json_route_returns_413_not_400(monkeypatch):
     # over-cap escape must NOT be a ValueError subclass, or it would be swallowed
     # into a 400; it is a 413 instead. Driven over a bare ASGI wrapper (no
     # Starlette error middleware) so the escape reaches BodyLimitMiddleware cleanly.
-    from tai_skeleton.routers.backup import import_backup
+    from tai42_skeleton.routers.backup import import_backup
 
     _patch_cap(monkeypatch, 10)
 

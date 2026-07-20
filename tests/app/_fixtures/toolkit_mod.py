@@ -1,8 +1,8 @@
-"""Fixture toolkit module: ``@tai_app.toolkit`` adapts each LangChain tool the
+"""Fixture toolkit module: ``@tai42_app.toolkit`` adapts each LangChain tool the
 toolkit yields into a bound MCP tool (named ``<prefix>_<tool>``)."""
 
 from langchain_core.tools import StructuredTool
-from tai_contract.app import tai_app
+from tai42_contract.app import tai42_app
 
 
 def _echo(value: int) -> int:
@@ -25,7 +25,7 @@ class _Kit:
         ]
 
 
-@tai_app.tools.toolkit
+@tai42_app.tools.toolkit
 def widgets():
     """A toolkit yielding ``echo`` and ``double`` tools."""
     return _Kit()

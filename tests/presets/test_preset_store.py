@@ -12,22 +12,22 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
-from tai_contract.agent.base import PresetSpec
-from tai_contract.presets.errors import (
+from tai42_contract.agent.base import PresetSpec
+from tai42_contract.presets.errors import (
     PresetExistsError,
     PresetNameConflictError,
     PresetNotFoundError,
     PresetVersionNotFoundError,
 )
-from tai_contract.versioning import VersionedStore
-from tai_contract.versioning.errors import (
+from tai42_contract.versioning import VersionedStore
+from tai42_contract.versioning.errors import (
     DocumentExistsError,
     DocumentNotFoundError,
     DocumentVersionNotFoundError,
 )
-from tai_contract.versioning.models import DocumentRecord, DocumentVersion
+from tai42_contract.versioning.models import DocumentRecord, DocumentVersion
 
-from tai_skeleton.presets.store import PresetStoreView
+from tai42_skeleton.presets.store import PresetStoreView
 
 
 class _MemStore(VersionedStore):

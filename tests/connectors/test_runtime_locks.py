@@ -7,8 +7,8 @@ from contextlib import asynccontextmanager
 
 import pytest
 
-import tai_skeleton.connectors.runtime.locks as locks
-from tai_skeleton.connectors.runtime.locks import (
+import tai42_skeleton.connectors.runtime.locks as locks
+from tai42_skeleton.connectors.runtime.locks import (
     _acquire,
     _lock_key,
     _refresh_cooldown_key,

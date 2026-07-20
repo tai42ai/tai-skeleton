@@ -19,9 +19,9 @@ from collections.abc import AsyncIterator
 from typing import Any
 
 from pydantic import BaseModel
-from tai_contract.agent import Agent
-from tai_contract.agent.events import MessageFinal, StreamEvent, StructuredFinal
-from tai_contract.app import tai_app
+from tai42_contract.agent import Agent
+from tai42_contract.agent.events import MessageFinal, StreamEvent, StructuredFinal
+from tai42_contract.app import tai42_app
 
 
 class _StructuredInput(BaseModel):
@@ -29,7 +29,7 @@ class _StructuredInput(BaseModel):
     response_format: dict[str, Any] | None = None
 
 
-@tai_app.agents.agent("structured_agent")
+@tai42_app.agents.agent("structured_agent")
 class StructuredAgent(Agent):
     tool_name = "structured_agent"
     tool_description = "A fake agent that advertises response_format and forces structured output."
@@ -63,7 +63,7 @@ class _PlainInput(BaseModel):
     user_message: str = ""
 
 
-@tai_app.agents.agent("plain_agent")
+@tai42_app.agents.agent("plain_agent")
 class PlainAgent(Agent):
     tool_name = "plain_agent"
     tool_description = "A fake agent with no response_format (the voting-agent shape)."

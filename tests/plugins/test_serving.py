@@ -7,9 +7,9 @@ import json
 
 import pytest
 
-import tai_skeleton.plugins.registry as reg
-from tai_skeleton.plugins.registry import StudioPluginError, StudioPluginRegistry, build_registry
-from tai_skeleton.plugins.serving import (
+import tai42_skeleton.plugins.registry as reg
+from tai42_skeleton.plugins.registry import StudioPluginError, StudioPluginRegistry, build_registry
+from tai42_skeleton.plugins.serving import (
     IMPORTMAP_ANCHOR,
     asset_content_type,
     generate_nonce,

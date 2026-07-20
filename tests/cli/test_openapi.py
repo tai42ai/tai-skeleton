@@ -18,10 +18,10 @@ from click.testing import CliRunner
 from openapi_spec_validator import validate
 from pydantic import BaseModel
 
-from tai_skeleton.app.reload_gate import REJECT_MESSAGE
-from tai_skeleton.app.route_registry import RouteMetadata, load_api_routes
-from tai_skeleton.cli import app as app_module
-from tai_skeleton.cli.openapi import _assign_component, _openapi_path, _register_model, build_openapi_spec
+from tai42_skeleton.app.reload_gate import REJECT_MESSAGE
+from tai42_skeleton.app.route_registry import RouteMetadata, load_api_routes
+from tai42_skeleton.cli import app as app_module
+from tai42_skeleton.cli.openapi import _assign_component, _openapi_path, _register_model, build_openapi_spec
 
 
 @pytest.fixture(scope="module")
@@ -325,7 +325,7 @@ def test_spec_validates_against_openapi_31(spec: dict) -> None:
 def test_emission_touches_no_db_or_redis(monkeypatch: pytest.MonkeyPatch) -> None:
     """Building the spec must not open a client — patch the pooled-client seam to
     raise, then prove emission still succeeds and validates."""
-    import tai_kit.clients as clients
+    import tai42_kit.clients as clients
 
     def _forbidden(*args: object, **kwargs: object) -> object:
         raise AssertionError("spec emission must not open a database/Redis client")
@@ -347,7 +347,7 @@ def test_emission_runs_in_a_bare_process_without_db_or_redis_env() -> None:
     }
     code = (
         "import json;"
-        "from tai_skeleton.cli.openapi import build_openapi_spec;"
+        "from tai42_skeleton.cli.openapi import build_openapi_spec;"
         "from openapi_spec_validator import validate;"
         "s = build_openapi_spec();"
         "validate(s);"

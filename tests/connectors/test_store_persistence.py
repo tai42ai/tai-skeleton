@@ -6,11 +6,11 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 from cryptography.exceptions import InvalidTag
-from tai_contract.connectors.models import ConnectionRecord
+from tai42_contract.connectors.models import ConnectionRecord
 
-from tai_skeleton.connectors.oauth import crypto
-from tai_skeleton.connectors.store import persistence
-from tai_skeleton.connectors.store.persistence import (
+from tai42_skeleton.connectors.oauth import crypto
+from tai42_skeleton.connectors.store import persistence
+from tai42_skeleton.connectors.store.persistence import (
     ConnectionNotFoundError,
     load_record,
     load_record_or_none,
@@ -51,7 +51,7 @@ def _encrypted_record() -> tuple[bytes, ConnectionRecord]:
 
 def test_session_expires_at_for_caps_with_ttl(monkeypatch):
     # Inject a known TTL rather than depend on the ambient prod default.
-    from tai_kit.settings import reset_all_settings
+    from tai42_kit.settings import reset_all_settings
 
     monkeypatch.setenv("CONNECTORS_MAX_SESSION_TTL", "3600")  # 1 hour, in seconds
     reset_all_settings()

@@ -14,12 +14,12 @@ from typing import cast
 import pytest
 from pydantic import BaseModel
 from pydantic import ValidationError as PydanticValidationError
-from tai_contract.interactions import InteractionResponse
+from tai42_contract.interactions import InteractionResponse
 
-from tai_skeleton.interactions import InteractionStore, ask_user
-from tai_skeleton.interactions import helper as helper_module
-from tai_skeleton.interactions.helper import InteractionLimitError, InteractionTimeoutError
-from tai_skeleton.interactions.settings import InteractionsSettings
+from tai42_skeleton.interactions import InteractionStore, ask_user
+from tai42_skeleton.interactions import helper as helper_module
+from tai42_skeleton.interactions.helper import InteractionLimitError, InteractionTimeoutError
+from tai42_skeleton.interactions.settings import InteractionsSettings
 from tests._helpers import await_add_event
 
 

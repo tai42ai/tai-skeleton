@@ -14,7 +14,7 @@ import pytest
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 
-from tai_skeleton.app.route_registry import DeclaredRouteMetadata, RouteRegistry, load_api_routes
+from tai42_skeleton.app.route_registry import DeclaredRouteMetadata, RouteRegistry, load_api_routes
 
 
 async def _plain(request: Request) -> Response:

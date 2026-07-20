@@ -10,12 +10,12 @@ from typing import cast
 import pytest
 from pydantic import SecretStr
 from starlette.requests import Request
-from tai_contract.app import tai_app
-from tai_kit.settings import SettingsClassInfo, SettingsFieldInfo, TaiBaseSettings
+from tai42_contract.app import tai42_app
+from tai42_kit.settings import SettingsClassInfo, SettingsFieldInfo, TaiBaseSettings
 
-from tai_skeleton.app import instance
-from tai_skeleton.operations import config as config_ops
-from tai_skeleton.routers import config as router
+from tai42_skeleton.app import instance
+from tai42_skeleton.operations import config as config_ops
+from tai42_skeleton.routers import config as router
 from tests._fakes.bus import FakeBus
 
 
@@ -117,7 +117,7 @@ def install(monkeypatch):
             admin=admin,
             backends=SimpleNamespace(backend=None),
         )
-        monkeypatch.setattr(tai_app, "_impl", impl)
+        monkeypatch.setattr(tai42_app, "_impl", impl)
         bus = FakeBus(origin="serve-x")
         monkeypatch.setattr(instance.app, "_bus", bus)
         return SimpleNamespace(manager=manager, admin=admin, bus=bus)
@@ -143,7 +143,7 @@ async def test_read_env_missing_file_yields_empty_env(monkeypatch):
             raise FileNotFoundError
 
     impl = SimpleNamespace(config=SimpleNamespace(config_manager=_Missing()), admin=None)
-    monkeypatch.setattr(tai_app, "_impl", impl)
+    monkeypatch.setattr(tai42_app, "_impl", impl)
     monkeypatch.delenv("TAI_ENV_SECRET_KEYS", raising=False)
     resp = await router.read_env(_req())
     assert resp.status_code == 200
@@ -232,7 +232,7 @@ async def test_settings_schema_missing_env_is_empty_not_500(monkeypatch):
             raise FileNotFoundError
 
     impl = SimpleNamespace(config=SimpleNamespace(config_manager=_Missing()), admin=None)
-    monkeypatch.setattr(tai_app, "_impl", impl)
+    monkeypatch.setattr(tai42_app, "_impl", impl)
     monkeypatch.delenv("DEFAULT_X", raising=False)
     info = SettingsClassInfo(
         name="Demo",

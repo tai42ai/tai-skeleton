@@ -11,10 +11,10 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 import pytest
-from tai_contract.app import tai_app
+from tai42_contract.app import tai42_app
 
-from tai_skeleton.operations import NotFoundError, NotSupportedError
-from tai_skeleton.operations import schedules as schedules_ops
+from tai42_skeleton.operations import NotFoundError, NotSupportedError
+from tai42_skeleton.operations import schedules as schedules_ops
 
 
 class _FakeTools:
@@ -37,7 +37,7 @@ class _FakeTools:
 @pytest.fixture
 def install(monkeypatch: pytest.MonkeyPatch):
     def _install(fake: _FakeTools) -> _FakeTools:
-        monkeypatch.setattr(tai_app, "_impl", SimpleNamespace(tools=fake))
+        monkeypatch.setattr(tai42_app, "_impl", SimpleNamespace(tools=fake))
         return fake
 
     return _install

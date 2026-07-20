@@ -9,17 +9,17 @@ from typing import cast
 import pytest
 from fastmcp.server.auth import AccessToken
 from starlette.middleware.authentication import AuthenticationMiddleware
-from tai_contract.access_control import OWNER_USER_ID_CLAIM
+from tai42_contract.access_control import OWNER_USER_ID_CLAIM
 
-from tai_skeleton.access_control.adapter import handle_auth_error
-from tai_skeleton.access_control.backend import AccessControlAuthBackend
-from tai_skeleton.access_control.middleware import ResourceGuardMiddleware
-from tai_skeleton.access_control.settings import AccessControlSettings
-from tai_skeleton.access_control.verifier import AccessControlVerifier
-from tai_skeleton.authz import check, synthesize_path
-from tai_skeleton.authz.identity import INTERNAL_PRINCIPAL, CallerIdentity, resolve_caller_identity
-from tai_skeleton.operations import OperationRegistry, operation
-from tai_skeleton.operations.errors import PermissionDenied
+from tai42_skeleton.access_control.adapter import handle_auth_error
+from tai42_skeleton.access_control.backend import AccessControlAuthBackend
+from tai42_skeleton.access_control.middleware import ResourceGuardMiddleware
+from tai42_skeleton.access_control.settings import AccessControlSettings
+from tai42_skeleton.access_control.verifier import AccessControlVerifier
+from tai42_skeleton.authz import check, synthesize_path
+from tai42_skeleton.authz.identity import INTERNAL_PRINCIPAL, CallerIdentity, resolve_caller_identity
+from tai42_skeleton.operations import OperationRegistry, operation
+from tai42_skeleton.operations.errors import PermissionDenied
 
 
 def _op(reg, route="/api/things/wipe", method="POST"):

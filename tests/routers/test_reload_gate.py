@@ -23,22 +23,22 @@ from typing import Any, cast
 import pytest
 from fastmcp.exceptions import ToolError
 from starlette.requests import Request
-from tai_contract.app import tai_app
+from tai42_contract.app import tai42_app
 
-from tai_skeleton.app import instance
-from tai_skeleton.app.reload_gate import REJECT_MESSAGE, ReloadGate, reload_gate
-from tai_skeleton.app.server import TaiMCP
-from tai_skeleton.app.sessions import ReloadRejectionMiddleware
-from tai_skeleton.routers import agents as agents_router
-from tai_skeleton.routers import backup as backup_router
-from tai_skeleton.routers import config as config_router
-from tai_skeleton.routers import health as health_router
-from tai_skeleton.routers import manifest as manifest_router
-from tai_skeleton.routers import presets as presets_router
-from tai_skeleton.routers import schedules as schedules_router
-from tai_skeleton.routers import sub_mcp as sub_mcp_router
-from tai_skeleton.routers import tool_runs as tool_runs_router
-from tai_skeleton.routers import tools as tools_router
+from tai42_skeleton.app import instance
+from tai42_skeleton.app.reload_gate import REJECT_MESSAGE, ReloadGate, reload_gate
+from tai42_skeleton.app.server import TaiMCP
+from tai42_skeleton.app.sessions import ReloadRejectionMiddleware
+from tai42_skeleton.routers import agents as agents_router
+from tai42_skeleton.routers import backup as backup_router
+from tai42_skeleton.routers import config as config_router
+from tai42_skeleton.routers import health as health_router
+from tai42_skeleton.routers import manifest as manifest_router
+from tai42_skeleton.routers import presets as presets_router
+from tai42_skeleton.routers import schedules as schedules_router
+from tai42_skeleton.routers import sub_mcp as sub_mcp_router
+from tai42_skeleton.routers import tool_runs as tool_runs_router
+from tai42_skeleton.routers import tools as tools_router
 from tests._fakes.bus import FakeBus
 
 
@@ -140,7 +140,7 @@ async def test_gated_routes_reject_while_reloading(monkeypatch: pytest.MonkeyPat
     # Released: a run surface is past the gate again — the request reaches normal
     # handling (here a 400 for the missing tool name), not the 503 rejection.
     assert not reload_gate.locked
-    monkeypatch.setattr(tai_app, "_impl", SimpleNamespace(tools=_FakeTools({})))
+    monkeypatch.setattr(tai42_app, "_impl", SimpleNamespace(tools=_FakeTools({})))
     resp = await tools_router.run_tool(_body_req(b"{}", "/api/run-tool"))
     assert resp.status_code == 400
 
@@ -151,7 +151,7 @@ async def test_gated_routes_reject_while_reloading(monkeypatch: pytest.MonkeyPat
 async def test_serving_loop_not_frozen_during_reload(monkeypatch: pytest.MonkeyPatch) -> None:
     """While a reload holds the gate and sleeps on its worker thread, /health and a
     read-only GET both answer 200 on the still-running serving loop."""
-    monkeypatch.setattr(tai_app, "_impl", SimpleNamespace(tools=_FakeTools({"a": object(), "b": object()})))
+    monkeypatch.setattr(tai42_app, "_impl", SimpleNamespace(tools=_FakeTools({"a": object(), "b": object()})))
     loop_thread = threading.get_ident()
     entered = threading.Event()
     release = threading.Event()
@@ -260,7 +260,7 @@ async def test_write_env_reloads_through_gate_same_result_shape(monkeypatch: pyt
     manager = _FakeConfigManager()
     admin = _FakeAdmin(manager)
     monkeypatch.setattr(
-        tai_app,
+        tai42_app,
         "_impl",
         SimpleNamespace(
             config=SimpleNamespace(config_manager=manager),

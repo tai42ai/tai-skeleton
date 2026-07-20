@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import pytest
 
-from tai_skeleton.template.settings import TemplateCacheSettings, template_cache_settings
+from tai42_skeleton.template.settings import TemplateCacheSettings, template_cache_settings
 
 
 def test_defaults() -> None:

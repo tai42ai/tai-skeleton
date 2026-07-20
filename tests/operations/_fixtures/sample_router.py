@@ -6,11 +6,11 @@ of the product route set so it never disturbs the byte-identical spec pin.
 from __future__ import annotations
 
 from pydantic import BaseModel
-from tai_contract.app import tai_app
+from tai42_contract.app import tai42_app
 
-from tai_skeleton.operations import operation, register_operation_route
-from tai_skeleton.operations.decorator import operation_metadata_of
-from tai_skeleton.operations.errors import NotFoundError
+from tai42_skeleton.operations import operation, register_operation_route
+from tai42_skeleton.operations.decorator import operation_metadata_of
+from tai42_skeleton.operations.errors import NotFoundError
 
 
 class GreetBody(BaseModel):
@@ -26,7 +26,7 @@ async def sample_greet(name: str) -> dict:
 
 
 register_operation_route(
-    tai_app,
+    tai42_app,
     operation_metadata_of(sample_greet),
     path="/api/sample/greet",
     method="POST",

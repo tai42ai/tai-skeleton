@@ -9,17 +9,17 @@ Behavior: ``prepare_backend_kwargs`` injects the tool name, and
 from __future__ import annotations
 
 import pytest
-from tai_contract.app import tai_app
-from tai_contract.backend import Backend as ContractBackend
+from tai42_contract.app import tai42_app
+from tai42_contract.backend import Backend as ContractBackend
 
-from tai_skeleton import backend as _skeleton_backend
-from tai_skeleton.backend import (
+from tai42_skeleton import backend as _skeleton_backend
+from tai42_skeleton.backend import (
     CallbackSchema,
     callback_execution,
     prepare_backend_kwargs,
 )
 
-# The seam re-exports the contract ``Backend`` ABC through ``tai_skeleton``;
+# The seam re-exports the contract ``Backend`` ABC through ``tai42_skeleton``;
 # reference it via the module so the identity check below stays meaningful.
 Backend = _skeleton_backend.Backend
 
@@ -83,12 +83,12 @@ class _FakeApp:
 @pytest.fixture
 def app():
     fake = _FakeApp()
-    previous = object.__getattribute__(tai_app, "_impl")
-    tai_app.bind(fake)
+    previous = object.__getattribute__(tai42_app, "_impl")
+    tai42_app.bind(fake)
     try:
         yield fake
     finally:
-        tai_app.bind(previous)
+        tai42_app.bind(previous)
 
 
 async def test_prepare_backend_kwargs_injects_tool_name() -> None:

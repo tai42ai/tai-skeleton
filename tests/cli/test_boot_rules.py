@@ -17,13 +17,13 @@ from collections.abc import Iterator
 from typing import TYPE_CHECKING, cast
 
 import pytest
-from tai_kit.settings import reset_all_settings
+from tai42_kit.settings import reset_all_settings
 
-from tai_skeleton.app import boot_rules
-from tai_skeleton.cli import mcp_app
+from tai42_skeleton.app import boot_rules
+from tai42_skeleton.cli import mcp_app
 
 if TYPE_CHECKING:
-    from tai_skeleton.manifest import Manifest
+    from tai42_skeleton.manifest import Manifest
 
 
 @pytest.fixture(autouse=True)

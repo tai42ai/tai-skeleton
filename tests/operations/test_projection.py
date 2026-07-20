@@ -8,12 +8,12 @@ import asyncio
 
 import pytest
 from fastmcp.exceptions import ToolError
-from tai_contract.manifest import ApiToolsConfig
+from tai42_contract.manifest import ApiToolsConfig
 
-from tai_skeleton.app.reload_gate import reload_gate
-from tai_skeleton.operations import OperationRegistry, operation
-from tai_skeleton.operations.errors import ConflictError
-from tai_skeleton.operations.projection import is_tier1, is_tier2, project_operations
+from tai42_skeleton.app.reload_gate import reload_gate
+from tai42_skeleton.operations import OperationRegistry, operation
+from tai42_skeleton.operations.errors import ConflictError
+from tai42_skeleton.operations.projection import is_tier1, is_tier2, project_operations
 
 
 class _RecordingTools:
@@ -159,9 +159,9 @@ def test_boot_projection_is_one_to_one_over_every_eligible_op():
     exactly ONE projected tool — no op yields two tools, no eligible op is missing —
     and tier-1 (``run_tool`` + any meta-executor) never projects even when every op
     is explicitly included."""
-    from tai_skeleton.app.instance import app
-    from tai_skeleton.manifest import Manifest
-    from tai_skeleton.operations.registry import operation_registry
+    from tai42_skeleton.app.instance import app
+    from tai42_skeleton.manifest import Manifest
+    from tai42_skeleton.operations.registry import operation_registry
 
     async def run():
         async with app.app_context(Manifest.model_validate({"api_tools": {"enabled": True}})):

@@ -30,13 +30,13 @@ import logging
 import pkgutil
 
 import pytest
-from tai_contract.manifest import ApiToolsConfig
+from tai42_contract.manifest import ApiToolsConfig
 
-import tai_skeleton.routers as _routers_pkg
-from tai_skeleton.app.instance import app
-from tai_skeleton.manifest import Manifest
-from tai_skeleton.operations.projection import is_tier1, is_tier2, project_operations
-from tai_skeleton.operations.registry import operation_registry
+import tai42_skeleton.routers as _routers_pkg
+from tai42_skeleton.app.instance import app
+from tai42_skeleton.manifest import Manifest
+from tai42_skeleton.operations.projection import is_tier1, is_tier2, project_operations
+from tai42_skeleton.operations.registry import operation_registry
 
 # Infra router modules that carry NO projectable operation (metrics/health/native
 # helpers). Excluded from the boot list so the stack loads only the operation-bearing
@@ -234,7 +234,7 @@ def test_d1_tier2_absent_by_default_but_projects_when_included():
 
 def test_d1_tier1_blocked_even_when_explicitly_included(caplog):
     async def run():
-        with caplog.at_level(logging.WARNING, logger="tai_skeleton.operations.projection"):
+        with caplog.at_level(logging.WARNING, logger="tai42_skeleton.operations.projection"):
             async with app.app_context(_manifest(include=["run_tool", "submit_run"])):
                 live = await app.tools.get_tools()
                 # Neither meta-executor is projected despite the explicit include.
@@ -275,7 +275,7 @@ def test_d1_get_me_is_caller_context_tier1_never_projectable(caplog):
 
         # Even when explicitly included it stays off the surface, with a loud log naming
         # it a caller-context identity op (not a meta-executor — the reason is accurate).
-        with caplog.at_level(logging.WARNING, logger="tai_skeleton.operations.projection"):
+        with caplog.at_level(logging.WARNING, logger="tai42_skeleton.operations.projection"):
             async with app.app_context(_manifest(include=["get_me"])):
                 live = await app.tools.get_tools()
                 assert "get_me" not in live
@@ -312,7 +312,7 @@ def test_d1_user_tools_curation_coexists_with_api_tools():
 
             # user_tools curation is preserved and surfaced to the flow builder
             # (the read-time view over the registered set).
-            from tai_skeleton.operations.manifest import get_manifest
+            from tai42_skeleton.operations.manifest import get_manifest
 
             got = await get_manifest()
             assert got["user_tools"] == ["list_hooks", "remove_tool"]  # sorted

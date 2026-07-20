@@ -4,9 +4,9 @@ the contract ``Storage`` ABC, and the registry is dead by default."""
 from __future__ import annotations
 
 import pytest
-from tai_contract.storage import Storage
+from tai42_contract.storage import Storage
 
-from tai_skeleton.storage import StorageRegistry
+from tai42_skeleton.storage import StorageRegistry
 
 
 class _InMemoryStorage(Storage):

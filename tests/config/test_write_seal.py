@@ -1,11 +1,11 @@
 """The config-manager raw-write seal.
 
 Every manifest / env mutation must cross the one pipeline
-(:class:`~tai_skeleton.config.service.ConfigService`), so feature code must never call
+(:class:`~tai42_skeleton.config.service.ConfigService`), so feature code must never call
 the config manager's raw write seams directly — ``mutate_manifest``,
 ``replace_manifest``, ``write_manifest``, and ``write_env`` — only the config layer
 (``config/``, including ``ConfigService``) and the config managers themselves may.
-This test statically scans the shipped ``tai_skeleton`` feature modules and asserts
+This test statically scans the shipped ``tai42_skeleton`` feature modules and asserts
 ZERO direct calls, so a converged writer cannot quietly regress to a raw seam.
 
 The config manager's raw write seams are instance methods, reachable in source only as
@@ -21,7 +21,7 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
-import tai_skeleton
+import tai42_skeleton
 
 # The config layer owns these seams (``ConfigService`` and the file config manager
 # live here), so it is the only package allowed to drive them directly.
@@ -30,11 +30,11 @@ _ALLOWED_PACKAGE = "config"
 # The four raw config-manager write seams ConfigService persists through.
 _SEALED_METHODS = frozenset({"mutate_manifest", "replace_manifest", "write_manifest", "write_env"})
 
-_PACKAGE_ROOT = Path(tai_skeleton.__file__).parent
+_PACKAGE_ROOT = Path(tai42_skeleton.__file__).parent
 
 
 def _feature_modules() -> list[Path]:
-    """Every shipped ``tai_skeleton`` module OUTSIDE the config layer."""
+    """Every shipped ``tai42_skeleton`` module OUTSIDE the config layer."""
     config_dir = _PACKAGE_ROOT / _ALLOWED_PACKAGE
     return [path for path in _PACKAGE_ROOT.rglob("*.py") if config_dir not in path.parents]
 
@@ -53,7 +53,7 @@ def _sealed_call_sites(path: Path) -> list[tuple[int, str]]:
 def test_feature_modules_never_call_write_manifest_or_write_env() -> None:
     modules = _feature_modules()
     # The scan must have something to scan — a mis-resolved root would vacuously pass.
-    assert modules, "no feature modules discovered under the tai_skeleton package"
+    assert modules, "no feature modules discovered under the tai42_skeleton package"
 
     violations: list[str] = []
     for path in modules:

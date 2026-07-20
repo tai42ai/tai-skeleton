@@ -8,9 +8,9 @@ A missing env var raises loudly (the door maps that to a fail-closed 500).
 from __future__ import annotations
 
 import pytest
-from tai_contract.webhooks import WebhookVerificationError
+from tai42_contract.webhooks import WebhookVerificationError
 
-from tai_skeleton.webhooks.builtin.shared_secret import SharedSecretVerifier
+from tai42_skeleton.webhooks.builtin.shared_secret import SharedSecretVerifier
 
 _CONFIG = {"header": "X-Webhook-Token", "secret_env": "WH_SECRET"}
 

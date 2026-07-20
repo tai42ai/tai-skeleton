@@ -27,7 +27,7 @@ from typing import Any
 import pytest
 from psycopg.errors import UniqueViolation
 from redis.exceptions import WatchError
-from tai_kit.clients.impl.postgres import Json, PostgresClient
+from tai42_kit.clients.impl.postgres import Json, PostgresClient
 
 
 class FakeRedis:
@@ -351,7 +351,7 @@ class _FakePipeline:
 
 
 def make_client_ctx(fake: FakeRedis):
-    """A drop-in for ``tai_kit.clients.client_ctx`` yielding ``fake`` for any
+    """A drop-in for ``tai42_kit.clients.client_ctx`` yielding ``fake`` for any
     client class, ignoring the settings/pool/fresh arguments."""
 
     @asynccontextmanager
@@ -373,7 +373,7 @@ def _isolate_identity_registry():
     next. The skeleton's interim ``redis`` registration (registered at the provider
     module's import) is captured by the baseline snapshot and restored, so tests
     that build the real ``AuthAdapter`` still resolve ``auth_providers=["redis"]``."""
-    from tai_contract.access_control import registry
+    from tai42_contract.access_control import registry
 
     saved = dict(registry._REGISTRY)
     try:
@@ -396,7 +396,7 @@ class _FakeResourceManager:
 
 
 class _FakeStorage:
-    """The ``tai_app.storage`` facet: exposes the template manager, matching the
+    """The ``tai42_app.storage`` facet: exposes the template manager, matching the
     real ``AppStorage`` shape the auth backend reaches through."""
 
     def __init__(self) -> None:
@@ -404,7 +404,7 @@ class _FakeStorage:
 
 
 class _FakeApp:
-    """Minimal ``tai_app`` impl exposing the members the auth backend reaches."""
+    """Minimal ``tai42_app`` impl exposing the members the auth backend reaches."""
 
     def __init__(self) -> None:
         self.storage = _FakeStorage()
@@ -412,16 +412,16 @@ class _FakeApp:
 
 @pytest.fixture
 def bound_app():
-    """Bind a fake app onto the global ``tai_app`` handle for the test, then
+    """Bind a fake app onto the global ``tai42_app`` handle for the test, then
     restore the unbound state so other suites still see the loud pre-bind error."""
-    from tai_contract.app import tai_app
+    from tai42_contract.app import tai42_app
 
     app = _FakeApp()
-    tai_app.bind(app)
+    tai42_app.bind(app)
     try:
         yield app
     finally:
-        tai_app.bind(None)
+        tai42_app.bind(None)
 
 
 # -- Fake Postgres for the access-control policy store -----------------------
@@ -701,7 +701,7 @@ def make_pg_ctx(fake: FakeAccessControlPg):
 @pytest.fixture
 def pg(monkeypatch) -> FakeAccessControlPg:
     """A fake Postgres wired over the store module's ``client_ctx`` seam."""
-    import tai_skeleton.access_control.store as store_module
+    import tai42_skeleton.access_control.store as store_module
 
     fake = FakeAccessControlPg()
     monkeypatch.setattr(store_module, "client_ctx", make_pg_ctx(fake))

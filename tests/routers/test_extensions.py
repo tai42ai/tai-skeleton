@@ -8,9 +8,9 @@ from typing import cast
 
 import pytest
 from starlette.requests import Request
-from tai_contract.app import tai_app
+from tai42_contract.app import tai42_app
 
-from tai_skeleton.routers import extensions as router
+from tai42_skeleton.routers import extensions as router
 
 
 def _req() -> Request:
@@ -32,7 +32,7 @@ class _FakeExtensions:
 @pytest.fixture
 def install(monkeypatch):
     def _install(items):
-        monkeypatch.setattr(tai_app, "_impl", SimpleNamespace(extensions=_FakeExtensions(items)))
+        monkeypatch.setattr(tai42_app, "_impl", SimpleNamespace(extensions=_FakeExtensions(items)))
 
     return _install
 

@@ -15,9 +15,9 @@ from typing import Any
 import httpx
 from click.testing import CliRunner, Result
 
-from tai_skeleton.cli import app as app_module
-from tai_skeleton.cli.client import ApiClient
-from tai_skeleton.cli.context import AppContext
+from tai42_skeleton.cli import app as app_module
+from tai42_skeleton.cli.client import ApiClient
+from tai42_skeleton.cli.context import AppContext
 
 Handler = Callable[[httpx.Request], httpx.Response]
 

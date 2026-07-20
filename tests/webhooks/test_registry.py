@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from tai_skeleton.webhooks.registry import WebhookVerifierRegistry
+from tai42_skeleton.webhooks.registry import WebhookVerifierRegistry
 
 
 class _V:
@@ -41,35 +41,35 @@ def test_reset_clears() -> None:
 
 
 def test_facet_registers_and_resolves_through_app() -> None:
-    from tai_contract.app import tai_app
+    from tai42_contract.app import tai42_app
 
-    from tai_skeleton.app.instance import build_app
+    from tai42_skeleton.app.instance import build_app
 
     app = build_app()
-    tai_app.bind(app)
+    tai42_app.bind(app)
     app._webhook_verifier_registry.reset()
     try:
         v = _V()
-        tai_app.webhook_verifiers.register("facet-prov", v)
-        assert tai_app.webhook_verifiers.get("facet-prov") is v
+        tai42_app.webhook_verifiers.register("facet-prov", v)
+        assert tai42_app.webhook_verifiers.get("facet-prov") is v
     finally:
         app._webhook_verifier_registry.reset()
 
 
 def test_shared_secret_lifecycle_module_registers() -> None:
-    from tai_contract.app import tai_app
+    from tai42_contract.app import tai42_app
 
-    from tai_skeleton.app.instance import build_app
+    from tai42_skeleton.app.instance import build_app
 
     app = build_app()
-    tai_app.bind(app)
+    tai42_app.bind(app)
     app._webhook_verifier_registry.reset()
     try:
         # The manifest loads the lifecycle module via ``import_or_reload_package``
         # (import-only key); running it registers ``shared_secret``.
-        from tai_skeleton.app.importer import import_or_reload_package
+        from tai42_skeleton.app.importer import import_or_reload_package
 
-        import_or_reload_package("tai_skeleton.webhooks.builtin.shared_secret")
+        import_or_reload_package("tai42_skeleton.webhooks.builtin.shared_secret")
         assert "shared_secret" in app._webhook_verifier_registry.names()
     finally:
         app._webhook_verifier_registry.reset()

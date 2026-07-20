@@ -9,7 +9,7 @@ from typing import ClassVar
 
 import pytest
 
-from tai_skeleton.manifest import Manifest
+from tai42_skeleton.manifest import Manifest
 
 
 def _manifest() -> Manifest:

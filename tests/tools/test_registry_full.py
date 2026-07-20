@@ -8,8 +8,8 @@ from __future__ import annotations
 
 import pytest
 
-from tai_skeleton.exceptions.exceptions import TaiValidationError
-from tai_skeleton.tools.registry import ToolRegistry
+from tai42_skeleton.exceptions.exceptions import TaiValidationError
+from tai42_skeleton.tools.registry import ToolRegistry
 
 
 def test_requested_tools_is_copied_not_aliased():

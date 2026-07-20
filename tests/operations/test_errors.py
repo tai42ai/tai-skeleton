@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from tai_skeleton.operations.errors import (
+from tai42_skeleton.operations.errors import (
     BadRequestError,
     ConflictError,
     NotFoundError,

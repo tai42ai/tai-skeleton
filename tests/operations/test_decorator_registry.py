@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import pytest
 
-from tai_skeleton.operations import OperationRegistry, operation
-from tai_skeleton.operations.decorator import operation_metadata_of
-from tai_skeleton.operations.errors import NotFoundError
+from tai42_skeleton.operations import OperationRegistry, operation
+from tai42_skeleton.operations.decorator import operation_metadata_of
+from tai42_skeleton.operations.errors import NotFoundError
 
 
 def test_decorator_defaults_name_to_function_and_records_metadata():
@@ -113,8 +113,8 @@ def test_reregister_replays_a_stable_snapshot_without_reimporting_leaves():
     projection reads."""
     import sys
 
-    from tai_skeleton.operations import operation_leaf_modules, reregister_operations
-    from tai_skeleton.operations.registry import operation_registry
+    from tai42_skeleton.operations import operation_leaf_modules, reregister_operations
+    from tai42_skeleton.operations.registry import operation_registry
 
     # Prime the snapshot: the first call re-imports the leaves; every later call replays.
     reregister_operations()

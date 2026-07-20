@@ -17,8 +17,8 @@ import re
 
 import mcp.types
 
-import tai_skeleton.app.instance  # noqa: F401 — bind app
-from tai_skeleton.connectors.token_injection import (
+import tai42_skeleton.app.instance  # noqa: F401 — bind app
+from tai42_skeleton.connectors.token_injection import (
     _CONNECTOR_ERROR_FRAMING_RE,
     CONNECTOR_ERROR_PREFIX,
     extract_connector_error_payload,

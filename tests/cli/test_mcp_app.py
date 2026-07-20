@@ -24,10 +24,10 @@ from click.testing import CliRunner
 from starlette.routing import Mount
 from starlette.testclient import TestClient
 
-import tai_skeleton.cli.mcp_app as mcp_app
-from tai_skeleton.connectors import meta_log_redactor
+import tai42_skeleton.cli.mcp_app as mcp_app
+from tai42_skeleton.connectors import meta_log_redactor
 
-_LOGGING_RELOAD_KEY = "tai_skeleton.app.instance.apply_logging_settings"
+_LOGGING_RELOAD_KEY = "tai42_skeleton.app.instance.apply_logging_settings"
 
 
 @pytest.fixture(autouse=True)
@@ -50,7 +50,7 @@ def _bus_configured(monkeypatch: pytest.MonkeyPatch):
     require the worker bus for. Report it configured so the launch wiring under test
     runs (nothing here opens a real bus — uvicorn.run and the in-process servers are
     faked); the busless refusals have their own suite."""
-    from tai_kit.settings import reset_all_settings
+    from tai42_kit.settings import reset_all_settings
 
     monkeypatch.setenv("TAI_BUS_REDIS_URL", "redis://localhost:6379/0")
     reset_all_settings()
@@ -669,8 +669,8 @@ def test_run_mcp_app_activates_multiproc_env_before_wipe(monkeypatch: pytest.Mon
     # The multiproc dir env must be published BEFORE the wipe is imported/called —
     # importing the wipe's module is the first thing that pulls in prometheus_client
     # (which freezes its value backend from the env). This pins that ordering.
-    import tai_skeleton.routers.metrics_settings as ms
-    import tai_skeleton.routers.prometheus as prom
+    import tai42_skeleton.routers.metrics_settings as ms
+    import tai42_skeleton.routers.prometheus as prom
 
     monkeypatch.setattr(mcp_app.sys, "platform", "linux")
     monkeypatch.delenv("TAI_RUN_MODE", raising=False)
@@ -712,7 +712,7 @@ def test_run_mcp_app_tcp_path_calls_uvicorn_run(monkeypatch: pytest.MonkeyPatch)
 
     assert rc == 0
     target, kwargs = recorded[0]
-    assert target == "tai_skeleton.cli.mcp_app:create_app"
+    assert target == "tai42_skeleton.cli.mcp_app:create_app"
     assert kwargs["factory"] is True
     assert kwargs["workers"] == 3
     assert kwargs["host"] == host
@@ -849,7 +849,7 @@ def test_run_mcp_app_merges_uvicorn_kwargs(monkeypatch: pytest.MonkeyPatch) -> N
 
 def test_run_mcp_app_sets_graceful_shutdown_default(monkeypatch: pytest.MonkeyPatch) -> None:
     # The normal (uvicorn.run) path carries the settings-backed default.
-    from tai_kit.settings import reset_all_settings
+    from tai42_kit.settings import reset_all_settings
 
     monkeypatch.setattr(mcp_app.sys, "platform", "linux")
     monkeypatch.delenv("TAI_RUN_MODE", raising=False)
@@ -900,7 +900,7 @@ def test_cli_graceful_shutdown_extra_arg_overrides_setting(monkeypatch: pytest.M
 
 
 def test_run_mcp_app_graceful_shutdown_env_override(monkeypatch: pytest.MonkeyPatch) -> None:
-    from tai_kit.settings import reset_all_settings
+    from tai42_kit.settings import reset_all_settings
 
     monkeypatch.setattr(mcp_app.sys, "platform", "linux")
     monkeypatch.delenv("TAI_RUN_MODE", raising=False)
@@ -955,7 +955,7 @@ def test_cli_forwards_parsed_arguments(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_cli_manifest_default_comes_from_tai_manifest_path_env(monkeypatch: pytest.MonkeyPatch) -> None:
     """TAI_MANIFEST_PATH is the single manifest env var: with no --manifest-path
     flag, the CLI resolves its default from it (via CoreSettings) end-to-end."""
-    from tai_skeleton.settings import cache
+    from tai42_skeleton.settings import cache
 
     monkeypatch.setenv("TAI_MANIFEST_PATH", "/etc/tai/from-env.yaml")
     cache.manifest_path.cache_clear()

@@ -7,15 +7,15 @@ from __future__ import annotations
 from typing import Any
 
 from pydantic import BaseModel
-from tai_contract.agent import Agent
-from tai_contract.app import tai_app
+from tai42_contract.agent import Agent
+from tai42_contract.app import tai42_app
 
 
 class _BadInput(BaseModel):
     known: str = ""
 
 
-@tai_app.agents.agent("bad_bakeable_agent")
+@tai42_app.agents.agent("bad_bakeable_agent")
 class BadBakeableAgent(Agent):
     tool_name = "bad_bakeable_agent"
     tool_description = "Declares a preset_bakeable field that is not on its ToolInput."

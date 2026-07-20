@@ -1,33 +1,33 @@
-# Contributing to tai-skeleton
+# Contributing to tai42-skeleton
 
-`tai-skeleton` is the framework body that implements `tai-contract`: the concrete
+`tai42-skeleton` is the framework body that implements `tai42-contract`: the concrete
 `TaiMCP` server and the runtime engines (tool registry + adapters, agent registry,
 OAuth connector engine, access-control middleware, hooks router, template/storage
-manager, manifest loader, transport layer) behind the protocols `tai-contract`
-declares. The app is constructed once as `tai_skeleton.app.instance.app` (a
-`TaiMCP`) and exposed as the `tai_app` contract handle; tools, agents, and
-extensions register against it (e.g. the `tai_app.bind` / `@app.tool` decorators).
-Providers ship as separate plugins that register through `tai_app` when the
+manager, manifest loader, transport layer) behind the protocols `tai42-contract`
+declares. The app is constructed once as `tai42_skeleton.app.instance.app` (a
+`TaiMCP`) and exposed as the `tai42_app` contract handle; tools, agents, and
+extensions register against it (e.g. the `tai42_app.bind` / `@app.tool` decorators).
+Providers ship as separate plugins that register through `tai42_app` when the
 manifest loads them — no plugin imports the skeleton.
 
 The hard rule (the leaf rule): **among tai-* packages it depends only on
-`tai-contract` and `tai-kit`.** `tai-contract` is the pure interface it
-implements; `tai-kit` is the generic leaf helpers, settings primitives, pooled
+`tai42-contract` and `tai42-kit`.** `tai42-contract` is the pure interface it
+implements; `tai42-kit` is the generic leaf helpers, settings primitives, pooled
 clients, and LLM factories it builds on. It imports no other tai-* package.
 
 ## Ground rules
 
-- **Among tai-* packages, import `tai_contract` and `tai_kit` only.** Nothing
+- **Among tai-* packages, import `tai42_contract` and `tai42_kit` only.** Nothing
   else (no other tai-* package, no downstream plugins):
   ```bash
-  grep -rnE '(from|import)\s+tai_' src/ | grep -vE 'tai_contract|tai_kit|tai_skeleton'   # expect no output
+  grep -rnE '(from|import)\s+tai_' src/ | grep -vE 'tai42_contract|tai42_kit|tai42_skeleton'   # expect no output
   ```
 - **Providers stay out of the core.** OAuth connectors, storage backends, config
   providers, worker backends, and monitoring exporters ship as plugins that
-  register through `tai_app` at manifest load — they are never imported by the
+  register through `tai42_app` at manifest load — they are never imported by the
   skeleton.
 - **Optional client drivers stay optional.** Redis and Postgres reach the engine
-  through `tai-kit[redis,postgres]`; the skeleton never imports their drivers
+  through `tai42-kit[redis,postgres]`; the skeleton never imports their drivers
   directly.
 - **Errors surface loudly.** A missing module, a malformed config entry, or a
   failed sub-step raises and propagates — no silent skip, swallow, or degrade.
@@ -35,7 +35,7 @@ clients, and LLM factories it builds on. It imports no other tai-* package.
 
 ## Layout
 
-Each `tai_skeleton.<feature>` package implements the matching `tai-contract`
+Each `tai42_skeleton.<feature>` package implements the matching `tai42-contract`
 protocol (where one exists):
 
 - `tools` — tool registry + adapters (MCP tool ↔ callable)
@@ -73,8 +73,8 @@ remote/OpenAPI subcommands), `core`,
 
 ## Dev
 
-The dev venv resolves `tai-contract`, `tai-kit`, `tai-toolbox`, and
-`tai-identity-redis` from sibling checkouts (see `[tool.uv.sources]`):
+The dev venv resolves `tai42-contract`, `tai42-kit`, `tai42-toolbox`, and
+`tai42-identity-redis` from sibling checkouts (see `[tool.uv.sources]`):
 
 ```bash
 uv sync --extra dev

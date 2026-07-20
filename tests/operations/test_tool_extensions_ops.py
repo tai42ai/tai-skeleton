@@ -11,13 +11,13 @@ from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
-from tai_contract.app import tai_app
-from tai_kit.settings import reset_all_settings
+from tai42_contract.app import tai42_app
+from tai42_kit.settings import reset_all_settings
 
-from tai_skeleton.app import instance
-from tai_skeleton.manifest import Manifest
-from tai_skeleton.operations import BadRequestError
-from tai_skeleton.operations import tool_extensions as ops
+from tai42_skeleton.app import instance
+from tai42_skeleton.manifest import Manifest
+from tai42_skeleton.operations import BadRequestError
+from tai42_skeleton.operations import tool_extensions as ops
 from tests._fakes.bus import FakeBus
 
 
@@ -99,7 +99,7 @@ async def test_set_tool_extensions_backend_without_bus_maps_to_400(monkeypatch):
             admin=_ReloadAdmin(),
             backends=SimpleNamespace(backend=None),
         )
-        monkeypatch.setattr(tai_app, "_impl", impl)
+        monkeypatch.setattr(tai42_app, "_impl", impl)
         monkeypatch.setattr(instance.app, "_bus", FakeBus())
 
         with pytest.raises(BadRequestError, match="TAI_BUS_REDIS_URL"):

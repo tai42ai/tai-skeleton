@@ -15,13 +15,13 @@ from datetime import UTC, datetime
 from types import SimpleNamespace
 
 import pytest
-from tai_contract.app import tai_app
+from tai42_contract.app import tai42_app
 
-from tai_skeleton.operations import BadRequestError, ForbiddenError, NotFoundError, UnavailableError
-from tai_skeleton.operations import tool_runs as ops
-from tai_skeleton.operations.decorator import operation_metadata_of
-from tai_skeleton.operations.tool_runs import ToolRunStore
-from tai_skeleton.routers.tool_runs_settings import ToolRunsSettings
+from tai42_skeleton.operations import BadRequestError, ForbiddenError, NotFoundError, UnavailableError
+from tai42_skeleton.operations import tool_runs as ops
+from tai42_skeleton.operations.decorator import operation_metadata_of
+from tai42_skeleton.operations.tool_runs import ToolRunStore
+from tai42_skeleton.routers.tool_runs_settings import ToolRunsSettings
 from tests._fakes.tool_runs_redis import FakeRedis
 
 
@@ -55,7 +55,7 @@ def wired(monkeypatch):
 
     def install(registered: set[str] | None = None) -> _FakeTools:
         tools = _FakeTools(registered)
-        monkeypatch.setattr(tai_app, "_impl", SimpleNamespace(tools=tools))
+        monkeypatch.setattr(tai42_app, "_impl", SimpleNamespace(tools=tools))
         return tools
 
     yield SimpleNamespace(

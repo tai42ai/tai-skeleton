@@ -9,15 +9,15 @@ from __future__ import annotations
 
 import asyncio
 
-from tai_skeleton.app.instance import app
-from tai_skeleton.manifest import Manifest
+from tai42_skeleton.app.instance import app
+from tai42_skeleton.manifest import Manifest
 
 BUILTIN_TOOLS: dict[str, list[str]] = {
-    "tai_skeleton.tools.builtin.file_loader": ["file_loader"],
-    "tai_skeleton.tools.builtin.interactions": ["ask_user"],
+    "tai42_skeleton.tools.builtin.file_loader": ["file_loader"],
+    "tai42_skeleton.tools.builtin.interactions": ["ask_user"],
 }
 
-BUILTIN_EXTENSION_MODULE = "tai_skeleton.extensions.builtin.monitor"
+BUILTIN_EXTENSION_MODULE = "tai42_skeleton.extensions.builtin.monitor"
 
 
 def test_manifest_registers_every_builtin_tool_and_extension() -> None:

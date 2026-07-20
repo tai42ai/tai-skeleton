@@ -6,8 +6,8 @@ from contextlib import asynccontextmanager
 
 import pytest
 
-import tai_skeleton.connectors.store.sources_store as sources_store
-from tai_skeleton.connectors.store.sources_store import AllowedSource, fetch_allowed_sources
+import tai42_skeleton.connectors.store.sources_store as sources_store
+from tai42_skeleton.connectors.store.sources_store import AllowedSource, fetch_allowed_sources
 
 
 class _FakeCursor:

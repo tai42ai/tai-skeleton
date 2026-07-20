@@ -11,9 +11,9 @@ import pytest
 from fastmcp.exceptions import ToolError
 from fastmcp.server.middleware import MiddlewareContext
 
-from tai_skeleton.access_control.settings import AccessControlSettings
-from tai_skeleton.authz.middleware import AuthzMiddleware
-from tai_skeleton.operations import OperationRegistry, operation
+from tai42_skeleton.access_control.settings import AccessControlSettings
+from tai42_skeleton.authz.middleware import AuthzMiddleware
+from tai42_skeleton.operations import OperationRegistry, operation
 
 
 @dataclass
@@ -86,9 +86,9 @@ async def _call(mw: AuthzMiddleware, name: str):
 def test_projected_op_denied_without_identity(monkeypatch):
     import sys
 
-    import tai_skeleton.authz.resolver as resolver_mod
+    import tai42_skeleton.authz.resolver as resolver_mod
 
-    check_mod = sys.modules["tai_skeleton.authz.check"]
+    check_mod = sys.modules["tai42_skeleton.authz.check"]
 
     reg = _op_registry()
     monkeypatch.setattr(resolver_mod, "operation_registry", reg)
@@ -102,9 +102,9 @@ def test_projected_op_denied_without_identity(monkeypatch):
 def test_projected_op_allowed_when_access_control_disabled(monkeypatch):
     import sys
 
-    import tai_skeleton.authz.resolver as resolver_mod
+    import tai42_skeleton.authz.resolver as resolver_mod
 
-    check_mod = sys.modules["tai_skeleton.authz.check"]
+    check_mod = sys.modules["tai42_skeleton.authz.check"]
 
     reg = _op_registry()
     monkeypatch.setattr(resolver_mod, "operation_registry", reg)
@@ -119,9 +119,9 @@ def test_projected_op_allowed_when_access_control_disabled(monkeypatch):
 def test_non_operation_tool_passes_through(monkeypatch):
     import sys
 
-    import tai_skeleton.authz.resolver as resolver_mod
+    import tai42_skeleton.authz.resolver as resolver_mod
 
-    check_mod = sys.modules["tai_skeleton.authz.check"]
+    check_mod = sys.modules["tai42_skeleton.authz.check"]
 
     reg = _op_registry()
     monkeypatch.setattr(resolver_mod, "operation_registry", reg)
@@ -141,10 +141,10 @@ def test_preset_over_projected_op_resolves_and_runs_authz_on_base(monkeypatch):
     parity with dispatching the base op directly (real check, no identity)."""
     import sys
 
-    import tai_skeleton.authz.middleware as mw_mod
-    import tai_skeleton.authz.resolver as resolver_mod
+    import tai42_skeleton.authz.middleware as mw_mod
+    import tai42_skeleton.authz.resolver as resolver_mod
 
-    check_mod = sys.modules["tai_skeleton.authz.check"]
+    check_mod = sys.modules["tai42_skeleton.authz.check"]
 
     reg = _op_registry()
     monkeypatch.setattr(resolver_mod, "operation_registry", reg)
@@ -182,9 +182,9 @@ def test_preset_over_projected_op_allowed_when_access_control_disabled(monkeypat
     projected op passes straight through to ``call_next`` — exactly as the base op."""
     import sys
 
-    import tai_skeleton.authz.resolver as resolver_mod
+    import tai42_skeleton.authz.resolver as resolver_mod
 
-    check_mod = sys.modules["tai_skeleton.authz.check"]
+    check_mod = sys.modules["tai42_skeleton.authz.check"]
 
     reg = _op_registry()
     monkeypatch.setattr(resolver_mod, "operation_registry", reg)
@@ -198,7 +198,7 @@ def test_preset_over_projected_op_allowed_when_access_control_disabled(monkeypat
 
 
 def test_authz_middleware_installed_on_main_server():
-    from tai_skeleton.app.instance import app
+    from tai42_skeleton.app.instance import app
 
     assert any(isinstance(m, AuthzMiddleware) for m in app._fast_mcp.middleware)
 
@@ -206,10 +206,10 @@ def test_authz_middleware_installed_on_main_server():
 async def test_authz_middleware_installed_on_sub_mcp_app(monkeypatch):
     """Every sub-MCP FastMCP built by ``_build_sub_app`` re-adds ``AuthzMiddleware``
     (the main server's middleware never reaches a sub-mount)."""
-    import tai_skeleton.app.sub_mcp_app as sub_mod
-    from tai_skeleton.app.instance import app
-    from tai_skeleton.app.sub_mcp_app import SubMcpAppRouter
-    from tai_skeleton.manifest import Manifest
+    import tai42_skeleton.app.sub_mcp_app as sub_mod
+    from tai42_skeleton.app.instance import app
+    from tai42_skeleton.app.sub_mcp_app import SubMcpAppRouter
+    from tai42_skeleton.manifest import Manifest
 
     instances: list = []
     real_fastmcp = sub_mod.FastMCP

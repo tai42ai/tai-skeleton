@@ -11,9 +11,9 @@ import pytest
 from fastmcp.utilities.types import Image
 from starlette.requests import Request
 
-import tai_skeleton.operations.resources as resources_ops
-import tai_skeleton.routers.resources as router
-from tai_skeleton.template.media import MediaBlock
+import tai42_skeleton.operations.resources as resources_ops
+import tai42_skeleton.routers.resources as router
+from tai42_skeleton.template.media import MediaBlock
 
 
 def _req(body: dict | None = None) -> Request:
@@ -46,7 +46,7 @@ class _ResourceManager:
 def bind(monkeypatch):
     def _bind(manager: _ResourceManager) -> _ResourceManager:
         fake_app = SimpleNamespace(storage=SimpleNamespace(resource_manager=manager))
-        monkeypatch.setattr(resources_ops, "tai_app", fake_app)
+        monkeypatch.setattr(resources_ops, "tai42_app", fake_app)
         return manager
 
     return _bind

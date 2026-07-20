@@ -7,11 +7,11 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 import pytest
-from tai_contract.app import tai_app
+from tai42_contract.app import tai42_app
 
-from tai_skeleton.sub_mcp import service
-from tai_skeleton.sub_mcp import store as store_mod
-from tai_skeleton.sub_mcp.store import InMemorySubMcpStore
+from tai42_skeleton.sub_mcp import service
+from tai42_skeleton.sub_mcp import store as store_mod
+from tai42_skeleton.sub_mcp.store import InMemorySubMcpStore
 
 
 class _FakeRouter:
@@ -25,7 +25,7 @@ class _FakeRouter:
         if self._register_error is not None:
             raise self._register_error
         self.registered.append((slug, tools, transport))
-        from tai_contract.sub_mcp import RouteConfig
+        from tai42_contract.sub_mcp import RouteConfig
 
         self.routes[slug] = RouteConfig(tools=tools, transport=transport)
 
@@ -36,12 +36,12 @@ class _FakeRouter:
 
 @pytest.fixture
 def wired(monkeypatch):
-    """Install a fresh in-memory store + a fake router behind ``tai_app``."""
+    """Install a fresh in-memory store + a fake router behind ``tai42_app``."""
 
     def _wire(router: _FakeRouter) -> InMemorySubMcpStore:
         fresh = InMemorySubMcpStore()
         monkeypatch.setattr(store_mod, "_IN_MEMORY_STORE", fresh)
-        monkeypatch.setattr(tai_app, "_impl", SimpleNamespace(sub_app=SimpleNamespace(mcp_sub_app_router=router)))
+        monkeypatch.setattr(tai42_app, "_impl", SimpleNamespace(sub_app=SimpleNamespace(mcp_sub_app_router=router)))
         return fresh
 
     return _wire
@@ -88,7 +88,7 @@ async def test_invalid_transport_never_reaches_the_store(wired):
 
 
 async def test_unregister_removes_from_store_and_router(wired):
-    from tai_contract.sub_mcp import RouteConfig
+    from tai42_contract.sub_mcp import RouteConfig
 
     router = _FakeRouter(routes={"weather": RouteConfig(tools=["get_forecast"])})
     store = wired(router)
@@ -100,7 +100,7 @@ async def test_unregister_removes_from_store_and_router(wired):
 
 
 async def test_unregister_store_only_slug_returns_true(wired):
-    from tai_contract.sub_mcp import RouteConfig
+    from tai42_contract.sub_mcp import RouteConfig
 
     router = _FakeRouter()
     store = wired(router)

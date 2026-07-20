@@ -5,17 +5,17 @@ from __future__ import annotations
 import re
 
 import pytest
-from tai_contract.connectors.errors import OperatorMisconfiguredError
+from tai42_contract.connectors.errors import OperatorMisconfiguredError
 
-from tai_skeleton.connectors.providers import registry
-from tai_skeleton.connectors.providers.registry import (
+from tai42_skeleton.connectors.providers import registry
+from tai42_skeleton.connectors.providers.registry import (
     SEED_CATEGORY_IDS,
     get_provider,
     list_providers,
     register_connector,
     set_catalog,
 )
-from tai_skeleton.sql.schema import load_ddl
+from tai42_skeleton.sql.schema import load_ddl
 
 from .conftest import make_noauth_http_descriptor, make_oauth_descriptor
 

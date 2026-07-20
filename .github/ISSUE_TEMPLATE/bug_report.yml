@@ -1,5 +1,5 @@
 name: Bug report
-description: Report a defect in tai-skeleton (the extended MCP server framework implementing tai-contract)
+description: Report a defect in tai42-skeleton (the extended MCP server framework implementing tai42-contract)
 labels: ["bug"]
 body:
   - type: textarea
@@ -20,7 +20,7 @@ body:
   - type: input
     id: version
     attributes:
-      label: tai-skeleton version
+      label: tai42-skeleton version
       placeholder: "0.1.0"
     validations:
       required: true

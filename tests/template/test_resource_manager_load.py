@@ -8,12 +8,12 @@ import base64
 
 import pytest
 from fastmcp.utilities.types import Image
-from tai_contract.storage import ObjectStat, Storage
+from tai42_contract.storage import ObjectStat, Storage
 
-from tai_skeleton.storage import StorageRegistry
-from tai_skeleton.template import ResourceManager
-from tai_skeleton.template import resource_manager as rm_mod
-from tai_skeleton.template.media import MediaBlock
+from tai42_skeleton.storage import StorageRegistry
+from tai42_skeleton.template import ResourceManager
+from tai42_skeleton.template import resource_manager as rm_mod
+from tai42_skeleton.template.media import MediaBlock
 
 # A 1x1 transparent PNG — real bytes so Magika classifies it as an image.
 _PNG = base64.b64decode(

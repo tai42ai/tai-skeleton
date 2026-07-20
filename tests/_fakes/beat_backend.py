@@ -1,7 +1,7 @@
 """A manifest ``backend_module`` fixture: registers a launch-recording backend.
 
 Importing this module registers :class:`LaunchRecordingBackend` through the
-``tai_app`` handle at import time, exactly as a real backend plugin module does —
+``tai42_app`` handle at import time, exactly as a real backend plugin module does —
 so it only works when the app is already bound when the import runs. Each
 ``launch`` call appends its args to the class-level ``launched`` list, letting a
 test assert a non-worker (beat/flower-style) invocation reached the registered
@@ -12,11 +12,11 @@ from __future__ import annotations
 
 from typing import Any, ClassVar
 
-from tai_contract.app import tai_app
-from tai_contract.backend import Backend
+from tai42_contract.app import tai42_app
+from tai42_contract.backend import Backend
 
 
-@tai_app.backends.register_backend
+@tai42_app.backends.register_backend
 class LaunchRecordingBackend(Backend):
     # Class-level so the test reads the record without holding the instance the
     # registration decorator constructed.

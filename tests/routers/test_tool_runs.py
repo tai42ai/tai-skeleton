@@ -3,7 +3,7 @@ supervisor's terminal writes, and the one-way ``lost`` reconciliation.
 
 Handlers are driven directly (the router-test pattern). Redis is a focused
 in-memory fake yielded at the router's ``client_ctx`` seam (submit, GET, list,
-and the spawned supervisor all share the one store); the ``tai_app.tools`` facet
+and the spawned supervisor all share the one store); the ``tai42_app.tools`` facet
 is a stand-in whose ``run_tool`` records its call (incl. ``offload_sync``) and
 returns/raises/gates on demand.
 """
@@ -22,22 +22,22 @@ from unittest.mock import MagicMock
 
 import pytest
 from starlette.requests import Request
-from tai_contract.access_control import OWNER_USER_ID_CLAIM
-from tai_contract.access_control.context import reset_request_user_id, set_request_user_id
-from tai_contract.app import tai_app
+from tai42_contract.access_control import OWNER_USER_ID_CLAIM
+from tai42_contract.access_control.context import reset_request_user_id, set_request_user_id
+from tai42_contract.app import tai42_app
 
-from tai_skeleton.access_control.request_scopes import (
+from tai42_skeleton.access_control.request_scopes import (
     reset_request_identity_claims,
     set_request_identity_claims,
 )
-from tai_skeleton.app import server as server_module
-from tai_skeleton.operations import tool_runs as ops
-from tai_skeleton.operations.tool_runs import ToolRunStore
-from tai_skeleton.routers import tool_runs as router
-from tai_skeleton.routers import tools as tools_router
-from tai_skeleton.routers.tool_runs_settings import ToolRunsSettings
-from tai_skeleton.tools import binding as binding_module
-from tai_skeleton.tools.binding import ToolBinding
+from tai42_skeleton.app import server as server_module
+from tai42_skeleton.operations import tool_runs as ops
+from tai42_skeleton.operations.tool_runs import ToolRunStore
+from tai42_skeleton.routers import tool_runs as router
+from tai42_skeleton.routers import tools as tools_router
+from tai42_skeleton.routers.tool_runs_settings import ToolRunsSettings
+from tai42_skeleton.tools import binding as binding_module
+from tai42_skeleton.tools.binding import ToolBinding
 from tests._fakes.tool_runs_redis import FakeRedis
 
 # -- request builders --------------------------------------------------------
@@ -134,7 +134,7 @@ def wired(monkeypatch):
 
     def install_tools(registered: set[str] | None = None) -> _FakeTools:
         tools = _FakeTools(registered)
-        monkeypatch.setattr(tai_app, "_impl", SimpleNamespace(tools=tools))
+        monkeypatch.setattr(tai42_app, "_impl", SimpleNamespace(tools=tools))
         return tools
 
     yield SimpleNamespace(
@@ -754,7 +754,7 @@ async def test_slow_sync_tool_over_liveness_ttl_is_not_marked_lost(monkeypatch):
         time.sleep(2.0)
         return {"echo": x}
 
-    monkeypatch.setattr(tai_app, "_impl", SimpleNamespace(tools=_real_binding_for(slow_sync)))
+    monkeypatch.setattr(tai42_app, "_impl", SimpleNamespace(tools=_real_binding_for(slow_sync)))
 
     try:
         run_id = _json(await router.submit_run(_post(b'{"tool_name": "slow", "arguments": {"x": 9}}')))["data"][

@@ -9,12 +9,12 @@ from typing import Any
 from urllib.parse import parse_qs, urlparse
 
 import pytest
-from tai_contract.connectors.providers import (
+from tai42_contract.connectors.providers import (
     McpServerDescriptor,
     ProviderDescriptor,
     SubServiceDescriptor,
 )
-from tai_contract.connectors.service import (
+from tai42_contract.connectors.service import (
     AliasInUseError,
     CompleteConnectResult,
     FlowOperation,
@@ -22,12 +22,12 @@ from tai_contract.connectors.service import (
     StartConnectResult,
 )
 
-import tai_skeleton.connectors.service.connection_service as cs
-from tai_skeleton.connectors.oauth import client as oauth_client
-from tai_skeleton.connectors.oauth.client import TokenResponse
-from tai_skeleton.connectors.oauth.state import OAuthFlowState
-from tai_skeleton.connectors.oauth.state import decode as decode_state
-from tai_skeleton.connectors.service.connection_service import (
+import tai42_skeleton.connectors.service.connection_service as cs
+from tai42_skeleton.connectors.oauth import client as oauth_client
+from tai42_skeleton.connectors.oauth.client import TokenResponse
+from tai42_skeleton.connectors.oauth.state import OAuthFlowState
+from tai42_skeleton.connectors.oauth.state import decode as decode_state
+from tai42_skeleton.connectors.service.connection_service import (
     ConcurrentConnectionUpdateError,
     ConnectionNotFoundError,
     _extract_account_identity,
@@ -61,7 +61,7 @@ _FANOUT = {"mode": "local-only", "note": "no worker bus configured; only this wo
 
 
 class _Applied:
-    """The :class:`~tai_skeleton.config.service.ApplyResult` stand-in the fake pipeline
+    """The :class:`~tai42_skeleton.config.service.ApplyResult` stand-in the fake pipeline
     returns — only the ``fanout`` summary the connection service reads off it."""
 
     fanout = _FANOUT
@@ -86,7 +86,7 @@ class _FakeConfigService:
     def seed(self, *, descriptor, enabled_sub_services, alias, connection_id) -> None:
         """Pre-populate the document with a connection's managed entries so a later
         remove/toggle-off can be observed leaving."""
-        from tai_skeleton.connectors.service.manifest_writer import add_managed_entries
+        from tai42_skeleton.connectors.service.manifest_writer import add_managed_entries
 
         add_managed_entries(
             self.doc,
@@ -185,7 +185,7 @@ def harness(monkeypatch, oauth_client_env):
 
     async def fake_load(cid, *, include_expired=False):
         if cid not in records or (cid in store.expired and not include_expired):
-            from tai_skeleton.connectors.store.persistence import ConnectionNotFoundError
+            from tai42_skeleton.connectors.store.persistence import ConnectionNotFoundError
 
             raise ConnectionNotFoundError(cid)
         return records[cid]
@@ -260,7 +260,7 @@ def test_validate_return_url_rejects_bad(bad):
 
 
 def test_validate_sub_services_empty_raises():
-    from tai_skeleton.connectors.service.connection_service import _validate_sub_services
+    from tai42_skeleton.connectors.service.connection_service import _validate_sub_services
 
     with pytest.raises(ValueError, match="non-empty"):
         _validate_sub_services(make_oauth_descriptor(), [])
@@ -1016,7 +1016,7 @@ async def test_disconnect_purges_expired_connection(harness, monkeypatch):
     )
 
     # Sanity: the default serving load no longer surfaces the record.
-    from tai_skeleton.connectors.store.persistence import ConnectionNotFoundError
+    from tai42_skeleton.connectors.store.persistence import ConnectionNotFoundError
 
     with pytest.raises(ConnectionNotFoundError):
         await cs_mod.load_record(CID)
@@ -1081,7 +1081,7 @@ async def test_disconnect_under_lock_blocks_patch_from_stranding(harness, monkey
 async def test_start_connect_rejects_websocket_sub_service(harness):
     """A websocket sub-service probes healthy but every managed call raises, so a
     Connect for it is rejected at validation (fail-loud) before any OAuth flow."""
-    from tai_contract.connectors.providers import (
+    from tai42_contract.connectors.providers import (
         McpServerDescriptor,
         ProviderDescriptor,
         SubServiceDescriptor,

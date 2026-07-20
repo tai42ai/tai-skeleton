@@ -16,21 +16,21 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
-from tai_contract.app import tai_app
-from tai_contract.manifest import ApiToolsConfig
+from tai42_contract.app import tai42_app
+from tai42_contract.manifest import ApiToolsConfig
 
-from tai_skeleton.app import instance
-from tai_skeleton.app.bus import LocalApplyResult, OpOutcome
-from tai_skeleton.operations import (
+from tai42_skeleton.app import instance
+from tai42_skeleton.app.bus import LocalApplyResult, OpOutcome
+from tai42_skeleton.operations import (
     BadRequestError,
     NotFoundError,
     OperationFailed,
     OperationRegistry,
     operation_metadata_of,
 )
-from tai_skeleton.operations import tools as tools_ops
-from tai_skeleton.operations.projection import project_operations
-from tai_skeleton.tools.binding import UnknownToolError
+from tai42_skeleton.operations import tools as tools_ops
+from tai42_skeleton.operations.projection import project_operations
+from tai42_skeleton.tools.binding import UnknownToolError
 from tests._fakes.bus import FakeBus
 
 
@@ -71,7 +71,7 @@ def _install(
     bus: FakeBus | None = None,
 ) -> FakeBus:
     impl = SimpleNamespace(tools=tools, admin=admin, backends=SimpleNamespace(backend=None))
-    monkeypatch.setattr(tai_app, "_impl", impl)
+    monkeypatch.setattr(tai42_app, "_impl", impl)
     bus = bus or FakeBus()
     monkeypatch.setattr(instance.app, "_bus", bus)
     return bus
@@ -113,7 +113,7 @@ async def test_run_tool_resolve_unrelated_runtime_error_propagates(monkeypatch: 
         async def get_tool(self, key: str) -> object:
             raise RuntimeError("registry backend unreachable")
 
-    monkeypatch.setattr(tai_app, "_impl", SimpleNamespace(tools=_Reg()))
+    monkeypatch.setattr(tai42_app, "_impl", SimpleNamespace(tools=_Reg()))
     with pytest.raises(RuntimeError, match="registry backend unreachable"):
         await tools_ops.run_tool("calc", {})
 
@@ -215,7 +215,7 @@ async def test_tool_schema_unknown_is_404(monkeypatch: pytest.MonkeyPatch) -> No
         async def get_tools(self) -> dict:
             return {}
 
-    monkeypatch.setattr(tai_app, "_impl", SimpleNamespace(tools=_Reg()))
+    monkeypatch.setattr(tai42_app, "_impl", SimpleNamespace(tools=_Reg()))
     with pytest.raises(NotFoundError, match="not registered"):
         await tools_ops.tool_schema("ghost")
 

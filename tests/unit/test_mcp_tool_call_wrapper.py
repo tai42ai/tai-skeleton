@@ -16,31 +16,31 @@ import logging
 from unittest.mock import AsyncMock, patch
 
 import pytest
-from tai_contract.connectors.models import ConnectorRef
-from tai_contract.errors import ClientDisconnectedError
-from tai_contract.manifest import MCPConfig, TaiMCPConfig
+from tai42_contract.connectors.models import ConnectorRef
+from tai42_contract.errors import ClientDisconnectedError
+from tai42_contract.manifest import MCPConfig, TaiMCPConfig
 
 # Import the app first so ``app`` is bound, so the adapter import
 # chain resolves against a constructed app.
-import tai_skeleton.app.instance  # noqa: F401
-from tai_skeleton.connectors.runtime.resolver import (
+import tai42_skeleton.app.instance  # noqa: F401
+from tai42_skeleton.connectors.runtime.resolver import (
     ConnectorReconnectRequiredError,
     ManagedAuth,
 )
-from tai_skeleton.connectors.token_injection import (
+from tai42_skeleton.connectors.token_injection import (
     CONNECTOR_ERROR_PREFIX,
     CONNECTOR_META_TOKEN_KEY,
     extract_connector_error_payload,
 )
-from tai_skeleton.tools.adapters.mcp_tool_to_func import (
+from tai42_skeleton.tools.adapters.mcp_tool_to_func import (
     _build_output_schema,
     mcp_tool_call_wrapper,
 )
 
 CONN_ID = "11111111-1111-1111-1111-111111111111"
 
-_RESOLVER = "tai_skeleton.connectors.token_injection.resolve_managed_auth"
-_REFRESHER = "tai_skeleton.connectors.token_injection.force_refresh"
+_RESOLVER = "tai42_skeleton.connectors.token_injection.resolve_managed_auth"
+_REFRESHER = "tai42_skeleton.connectors.token_injection.force_refresh"
 
 
 def _managed_config() -> TaiMCPConfig:
@@ -138,7 +138,7 @@ def _trivial_input_model():
     return _NoArgs
 
 
-_CLIENT = "tai_skeleton.tools.adapters.mcp_tool_to_func.FastMCPClient"
+_CLIENT = "tai42_skeleton.tools.adapters.mcp_tool_to_func.FastMCPClient"
 
 
 async def _run_wrapper(*, client: _FakeMcpClient, config: TaiMCPConfig):

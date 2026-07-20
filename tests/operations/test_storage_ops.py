@@ -11,13 +11,13 @@ import mimetypes
 from types import SimpleNamespace
 
 import pytest
-from tai_contract.manifest import ApiToolsConfig
-from tai_contract.storage import ObjectStat, Storage
+from tai42_contract.manifest import ApiToolsConfig
+from tai42_contract.storage import ObjectStat, Storage
 
-from tai_skeleton.app import instance
-from tai_skeleton.operations import NotSupportedError, OperationRegistry, operation_metadata_of
-from tai_skeleton.operations.projection import project_operations
-from tai_skeleton.operations.storage import (
+from tai42_skeleton.app import instance
+from tai42_skeleton.operations import NotSupportedError, OperationRegistry, operation_metadata_of
+from tai42_skeleton.operations.projection import project_operations
+from tai42_skeleton.operations.storage import (
     delete_resource,
     list_resources,
     storage_info,
@@ -92,7 +92,7 @@ async def test_storage_info_absent(install) -> None:
 
 async def test_upload_resource_requires_exactly_one_content(install) -> None:
     install(_FakeStorage())
-    from tai_skeleton.operations import BadRequestError
+    from tai42_skeleton.operations import BadRequestError
 
     with pytest.raises(BadRequestError, match="exactly one"):
         await upload_resource("a", content_text="t", content_base64="eA==")
@@ -102,7 +102,7 @@ async def test_upload_resource_requires_exactly_one_content(install) -> None:
 
 async def test_upload_resource_rejects_traversal(install) -> None:
     install(_FakeStorage())
-    from tai_skeleton.operations import BadRequestError
+    from tai42_skeleton.operations import BadRequestError
 
     with pytest.raises(BadRequestError, match=r"\.\."):
         await upload_resource("a/../x", content_text="t")
@@ -112,7 +112,7 @@ async def test_upload_resource_rejects_non_string_content(install) -> None:
     # The HTTP extractor passes the raw body through; the op guards non-string
     # content that the MCP tool schema (str | None) would already reject.
     install(_FakeStorage())
-    from tai_skeleton.operations import BadRequestError
+    from tai42_skeleton.operations import BadRequestError
 
     with pytest.raises(BadRequestError, match="'content_text' must be a string"):
         await upload_resource("a", content_text=123)  # type: ignore[arg-type]
@@ -122,7 +122,7 @@ async def test_upload_resource_rejects_non_string_content(install) -> None:
 
 async def test_delete_resource_missing_is_not_found(install) -> None:
     install(_FakeStorage())
-    from tai_skeleton.operations import NotFoundError
+    from tai42_skeleton.operations import NotFoundError
 
     with pytest.raises(NotFoundError):
         await delete_resource("nope.txt")

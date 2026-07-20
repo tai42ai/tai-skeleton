@@ -12,9 +12,9 @@ from typing import cast
 import pytest
 from starlette.requests import Request
 
-from tai_skeleton.interactions.settings import InteractionsSettings
-from tai_skeleton.interactions.store import InteractionStore
-from tai_skeleton.routers import interactions as router
+from tai42_skeleton.interactions.settings import InteractionsSettings
+from tai42_skeleton.interactions.store import InteractionStore
+from tai42_skeleton.routers import interactions as router
 
 
 class _StallTailRedis:

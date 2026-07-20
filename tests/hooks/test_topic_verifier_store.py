@@ -6,9 +6,9 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from tai_skeleton.hooks.managers.in_memory_hooks_manager import InMemoryHooksManager
-from tai_skeleton.hooks.managers.redis_hooks_manager import RedisHooksManager
-from tai_skeleton.hooks.settings import HooksSettings
+from tai42_skeleton.hooks.managers.in_memory_hooks_manager import InMemoryHooksManager
+from tai42_skeleton.hooks.managers.redis_hooks_manager import RedisHooksManager
+from tai42_skeleton.hooks.settings import HooksSettings
 
 _BINDING = {"verifier": "shared_secret", "config": {"header": "X-Token", "secret_env": "WH_SECRET"}}
 
@@ -18,7 +18,7 @@ def _in_memory() -> InMemoryHooksManager:
 
 
 def _redis(fake_redis, monkeypatch, make_ctx) -> RedisHooksManager:
-    from tai_skeleton.hooks.managers import redis_hooks_manager
+    from tai42_skeleton.hooks.managers import redis_hooks_manager
 
     monkeypatch.setattr(redis_hooks_manager, "client_ctx", make_ctx(fake_redis))
     # A redis_url makes HooksSettings.in_memory False; the connection is faked.

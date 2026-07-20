@@ -11,8 +11,8 @@ import io
 
 import pytest
 
-from tai_skeleton.cli import context
-from tai_skeleton.settings.cache import app_args_settings
+from tai42_skeleton.cli import context
+from tai42_skeleton.settings.cache import app_args_settings
 
 
 @pytest.fixture

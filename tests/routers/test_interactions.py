@@ -21,9 +21,9 @@ from typing import Any, cast
 import pytest
 from pydantic import ValidationError
 from starlette.requests import Request
-from tai_contract.access_control import OWNER_USER_ID_CLAIM
-from tai_contract.access_control.context import reset_request_user_id, set_request_user_id
-from tai_contract.interactions import (
+from tai42_contract.access_control import OWNER_USER_ID_CLAIM
+from tai42_contract.access_control.context import reset_request_user_id, set_request_user_id
+from tai42_contract.interactions import (
     AnswerFormat,
     InteractionRequest,
     InteractionResponse,
@@ -31,15 +31,15 @@ from tai_contract.interactions import (
     MediaKind,
 )
 
-from tai_skeleton.access_control.request_scopes import (
+from tai42_skeleton.access_control.request_scopes import (
     reset_request_identity_claims,
     set_request_identity_claims,
 )
-from tai_skeleton.interactions import InteractionStore, ask_user
-from tai_skeleton.interactions import helper as helper_module
-from tai_skeleton.interactions.settings import InteractionsSettings
-from tai_skeleton.operations import interactions as ops
-from tai_skeleton.routers import interactions as router
+from tai42_skeleton.interactions import InteractionStore, ask_user
+from tai42_skeleton.interactions import helper as helper_module
+from tai42_skeleton.interactions.settings import InteractionsSettings
+from tai42_skeleton.operations import interactions as ops
+from tai42_skeleton.routers import interactions as router
 from tests._helpers import await_add_event
 
 
@@ -1345,14 +1345,14 @@ class _FakeVerifier:
 
 @pytest.fixture
 def verifier_registry():
-    """The process app's verifier registry with ``tai_app`` bound to it; the
+    """The process app's verifier registry with ``tai42_app`` bound to it; the
     callback route resolves verifiers from here. Cleared after the test."""
-    from tai_contract.app import tai_app
+    from tai42_contract.app import tai42_app
 
-    from tai_skeleton.app.instance import build_app
+    from tai42_skeleton.app.instance import build_app
 
     app = build_app()
-    tai_app.bind(app)
+    tai42_app.bind(app)
     reg = app._webhook_verifier_registry
     try:
         yield reg
@@ -1385,7 +1385,7 @@ async def test_callback_bound_verifies_before_record(wired, verifier_registry):
 
 
 async def test_callback_bound_verify_failure_401_ticket_unconsumed(wired, verifier_registry):
-    from tai_contract.webhooks import WebhookVerificationError
+    from tai42_contract.webhooks import WebhookVerificationError
 
     verifier_registry.register("prov", _FakeVerifier(raise_exc=WebhookVerificationError("bad sig")))
     iid = await _seed(wired, verifier=_BINDING)

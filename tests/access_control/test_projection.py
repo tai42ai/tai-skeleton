@@ -15,18 +15,18 @@ from types import SimpleNamespace
 
 import pytest
 from starlette.authentication import AuthenticationError
-from tai_contract.access_control import OWNER_USER_ID_CLAIM
-from tai_contract.access_control.models import JqAuthContext
+from tai42_contract.access_control import OWNER_USER_ID_CLAIM
+from tai42_contract.access_control.models import JqAuthContext
 
-from tai_skeleton.access_control import management as management_module
-from tai_skeleton.access_control import policy as policy_module
-from tai_skeleton.access_control import projection
-from tai_skeleton.access_control import verifier as verifier_module
-from tai_skeleton.access_control.policy import PolicyEnforcer
-from tai_skeleton.access_control.projection import build_projection
-from tai_skeleton.access_control.roles import EDITOR_JQ, VIEWER_JQ
-from tai_skeleton.access_control.settings import access_control_settings
-from tai_skeleton.access_control.verifier import AccessControlVerifier
+from tai42_skeleton.access_control import management as management_module
+from tai42_skeleton.access_control import policy as policy_module
+from tai42_skeleton.access_control import projection
+from tai42_skeleton.access_control import verifier as verifier_module
+from tai42_skeleton.access_control.policy import PolicyEnforcer
+from tai42_skeleton.access_control.projection import build_projection
+from tai42_skeleton.access_control.roles import EDITOR_JQ, VIEWER_JQ
+from tai42_skeleton.access_control.settings import access_control_settings
+from tai42_skeleton.access_control.verifier import AccessControlVerifier
 
 from .conftest import FakeAccessControlPg, FakeRedis, make_client_ctx
 
@@ -275,7 +275,7 @@ async def test_templated_route_projects_as_pattern_not_concrete(env: _Env):
 async def test_non_sampleable_pattern_is_excluded_and_logged(env: _Env, caplog):
     env.pg.add_policy("u1", scopes=["s"])
     env.pg.add_route("/api/br", "s", pattern=r"^(a)\1$")  # backreference — no representative
-    with caplog.at_level("INFO", logger="tai_skeleton.access_control.projection"):
+    with caplog.at_level("INFO", logger="tai42_skeleton.access_control.projection"):
         result = await build_projection("u1", ["s"], {})
     assert result.route_patterns == []
     assert "non-sampleable" in caplog.text

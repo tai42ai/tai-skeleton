@@ -15,9 +15,9 @@ from starlette.requests import Request
 from starlette.routing import Route
 from starlette.testclient import TestClient
 
-import tai_skeleton.plugins.registry as reg
-import tai_skeleton.routers.plugins as router
-from tai_skeleton.plugins.registry import build_registry, set_current_registry
+import tai42_skeleton.plugins.registry as reg
+import tai42_skeleton.routers.plugins as router
+from tai42_skeleton.plugins.registry import build_registry, set_current_registry
 
 
 def _req(**path_params) -> Request:

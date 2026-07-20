@@ -20,8 +20,8 @@ from typing import Any
 
 import pytest
 
-from tai_skeleton.app import instance
-from tai_skeleton.manifest import Manifest
+from tai42_skeleton.app import instance
+from tai42_skeleton.manifest import Manifest
 
 _MEDIA_MODULE = "tests.app._fixtures.media_tools"
 _PNG_B64 = base64.b64encode(b"\x89PNG\r\n\x1a\n").decode()

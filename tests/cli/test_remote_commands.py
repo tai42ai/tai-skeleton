@@ -710,7 +710,7 @@ def test_keys_claim_link_posts_body_and_prints_path(monkeypatch: pytest.MonkeyPa
 def test_keys_claim_link_reads_key_from_hidden_prompt(monkeypatch: pytest.MonkeyPatch) -> None:
     # With the positional key omitted the command reads it from a HIDDEN prompt so the
     # secret never lands in shell history; the prompted key rides the POST body.
-    from tai_skeleton.cli.commands import keys as keys_module
+    from tai42_skeleton.cli.commands import keys as keys_module
 
     prompt_call: dict = {}
 

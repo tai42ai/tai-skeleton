@@ -12,15 +12,15 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
-from tai_contract.versioning import VersionedStore
-from tai_contract.versioning.errors import (
+from tai42_contract.versioning import VersionedStore
+from tai42_contract.versioning.errors import (
     DocumentExistsError,
     DocumentNotFoundError,
     DocumentVersionNotFoundError,
 )
-from tai_contract.versioning.models import DocumentRecord, DocumentVersion
+from tai42_contract.versioning.models import DocumentRecord, DocumentVersion
 
-from tai_skeleton.access_control.policy_store import AcPolicyStore
+from tai42_skeleton.access_control.policy_store import AcPolicyStore
 
 
 class _MemStore(VersionedStore):

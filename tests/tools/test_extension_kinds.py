@@ -14,9 +14,9 @@ import asyncio
 
 import pytest
 
-from tai_skeleton.app.instance import app
-from tai_skeleton.exceptions.exceptions import TaiValidationError
-from tai_skeleton.manifest import Manifest
+from tai42_skeleton.app.instance import app
+from tai42_skeleton.exceptions.exceptions import TaiValidationError
+from tai42_skeleton.manifest import Manifest
 
 
 @pytest.fixture(autouse=True)

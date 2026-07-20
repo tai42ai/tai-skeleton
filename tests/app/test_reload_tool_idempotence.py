@@ -5,7 +5,7 @@ channels, connectors, identity providers, and the tool/prompt/resource/template
 surface — is reset inside ``start()`` right before ``_initialize_components``
 re-imports the manifest modules and re-fires its registration decorator, so the
 re-registration always lands in a clean surface. A module-level
-``@tai_app.tools.tool`` (or a prompt / resource / templated resource registered
+``@tai42_app.tools.tool`` (or a prompt / resource / templated resource registered
 through ``app.fastmcp`` in a manifest module) re-fires on every reload; the reset
 makes that re-fire's ``add_*`` idempotent under the server-wide
 ``on_duplicate="error"`` rather than a duplicate crash.
@@ -20,10 +20,10 @@ from __future__ import annotations
 
 import asyncio
 
-from tai_skeleton.app.instance import app
-from tai_skeleton.manifest import Manifest
+from tai42_skeleton.app.instance import app
+from tai42_skeleton.manifest import Manifest
 
-# A tool module (``@tai_app.tools.tool greet``) plus lifecycle modules that
+# A tool module (``@tai42_app.tools.tool greet``) plus lifecycle modules that
 # register a prompt, a static resource, and a templated resource on import — each
 # re-fires its decorator on every ``start()`` reimport, covering all four
 # component kinds ``_reset_component_surface`` clears.

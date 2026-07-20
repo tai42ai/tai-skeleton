@@ -1,4 +1,4 @@
-"""Public ASGI factory (`tai_skeleton.asgi.create_app`).
+"""Public ASGI factory (`tai42_skeleton.asgi.create_app`).
 
 Covers argument validation, the manifest-env lifespan stamp (and its restore,
 including a stamp failure rolling the one-app claim back), transport selection,
@@ -24,8 +24,8 @@ from starlette.applications import Starlette
 from starlette.routing import Mount
 from starlette.testclient import TestClient
 
-import tai_skeleton.asgi as asgi
-import tai_skeleton.cli.mcp_app as mcp_app
+import tai42_skeleton.asgi as asgi
+import tai42_skeleton.cli.mcp_app as mcp_app
 
 _HTTP_SCOPE = {
     "type": "http",
@@ -418,7 +418,7 @@ def test_factory_boot_leaves_host_logger_record_unredacted(patch_factory_seam, r
     never widens that to process scope (only the CLI seams do). The real
     ``build_app`` → default-scope install wire is pinned separately in the
     instance suite — this suite fakes ``build_app``."""
-    from tai_skeleton.connectors import meta_log_redactor
+    from tai42_skeleton.connectors import meta_log_redactor
 
     saved_factory = logging.getLogRecordFactory()
     saved_scope = meta_log_redactor._SCOPE
@@ -431,7 +431,7 @@ def test_factory_boot_leaves_host_logger_record_unredacted(patch_factory_seam, r
         with TestClient(asgi.create_app()):
             pass
 
-        secret = '{"tai_hub.access_token": "HOST-SECRET"}'
+        secret = '{"tai42_hub.access_token": "HOST-SECRET"}'
         rec = logging.getLogRecordFactory()("myhost.app", logging.INFO, __file__, 1, secret, None, None)
         assert "HOST-SECRET" in rec.getMessage()
     finally:

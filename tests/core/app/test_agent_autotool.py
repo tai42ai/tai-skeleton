@@ -1,4 +1,4 @@
-"""The ``@tai_app.agent`` decorator auto-generates a JSON ``run`` tool.
+"""The ``@tai42_app.agent`` decorator auto-generates a JSON ``run`` tool.
 
 An ``agents:`` manifest module is imported at startup; its decorated agent is
 registered for in-process ``get_agent`` AND gets a synthesized tool whose
@@ -9,8 +9,8 @@ namespace).
 
 import asyncio
 
-from tai_skeleton.app.instance import app
-from tai_skeleton.manifest import Manifest
+from tai42_skeleton.app.instance import app
+from tai42_skeleton.manifest import Manifest
 
 _MANIFEST = {
     "agents": [

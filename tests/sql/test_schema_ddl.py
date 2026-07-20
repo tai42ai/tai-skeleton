@@ -7,7 +7,7 @@ keyed by `connection_id` alone, with no tenant / client partition column.
 
 import re
 
-from tai_skeleton.sql.schema import load_ddl
+from tai42_skeleton.sql.schema import load_ddl
 
 
 def _connector_connections_block(ddl: str) -> str:

@@ -16,15 +16,15 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from tai_skeleton.marketplace import advisories
-from tai_skeleton.marketplace.advisories import AdvisoryState, current, refresh
-from tai_skeleton.marketplace.errors import (
+from tai42_skeleton.marketplace import advisories
+from tai42_skeleton.marketplace.advisories import AdvisoryState, current, refresh
+from tai42_skeleton.marketplace.errors import (
     ListingNotFoundError,
     RegistryResponseError,
     RegistryUnreachableError,
 )
-from tai_skeleton.marketplace.settings import marketplace_settings
-from tai_skeleton.marketplace.store import InstallRecord
+from tai42_skeleton.marketplace.settings import marketplace_settings
+from tai42_skeleton.marketplace.store import InstallRecord
 
 
 def _record(ref: str, version: str) -> InstallRecord:
@@ -118,7 +118,7 @@ async def test_refresh_skips_a_vanished_listing_with_warning(
         {"tai42/gone": ListingNotFoundError("marketplace listing not found: tai42/gone"), "tai42/live": live_rows}
     )
     _wire(monkeypatch, store, registry)
-    with caplog.at_level(logging.WARNING, logger="tai_skeleton.marketplace.advisories"):
+    with caplog.at_level(logging.WARNING, logger="tai42_skeleton.marketplace.advisories"):
         state = await refresh()
     # The vanished ref is skipped (WARNING names it); the other ref's advisory lands.
     assert [a["summary"] for a in state.advisories] == ["live adv"]
@@ -145,7 +145,7 @@ async def test_refresh_skips_a_single_malformed_advisory_row_with_warning(
     ]
     registry = _FakeRegistry({"tai42/toolbox": rows})
     _wire(monkeypatch, store, registry)
-    with caplog.at_level(logging.WARNING, logger="tai_skeleton.marketplace.advisories"):
+    with caplog.at_level(logging.WARNING, logger="tai42_skeleton.marketplace.advisories"):
         state = await refresh()
     assert [a["summary"] for a in state.advisories] == ["good"]
     assert any("malformed affected_versions" in r.getMessage() for r in caplog.records)
@@ -202,7 +202,7 @@ async def test_start_poll_disabled_starts_nothing_and_logs_nothing(
     monkeypatch.setenv("MARKETPLACE_ADVISORIES_POLL", "false")
     marketplace_settings.cache_clear()
     try:
-        with caplog.at_level(logging.INFO, logger="tai_skeleton.marketplace.advisories"):
+        with caplog.at_level(logging.INFO, logger="tai42_skeleton.marketplace.advisories"):
             advisories.start_poll()
         assert advisories._poll_task is None
         assert caplog.records == []
@@ -218,7 +218,7 @@ async def test_start_poll_enabled_logs_url_and_interval_and_remembers_loop(
     monkeypatch.setenv("MARKETPLACE_ADVISORIES_INTERVAL_S", "1800")
     marketplace_settings.cache_clear()
     try:
-        with caplog.at_level(logging.INFO, logger="tai_skeleton.marketplace.advisories"):
+        with caplog.at_level(logging.INFO, logger="tai42_skeleton.marketplace.advisories"):
             advisories.start_poll()
         assert advisories._serving_loop is asyncio.get_running_loop()
         assert advisories._poll_task is not None
@@ -308,7 +308,7 @@ async def test_poll_loop_survives_one_failing_refresh(
     monkeypatch.setattr(advisories.asyncio, "sleep", _fake_sleep)
     monkeypatch.setattr(advisories, "refresh", _boom)
     with (
-        caplog.at_level(logging.WARNING, logger="tai_skeleton.marketplace.advisories"),
+        caplog.at_level(logging.WARNING, logger="tai42_skeleton.marketplace.advisories"),
         pytest.raises(asyncio.CancelledError),
     ):
         await advisories._poll_loop()
@@ -340,7 +340,7 @@ async def test_poll_loop_warns_on_high_or_critical_advisory(
     monkeypatch.setattr(advisories.asyncio, "sleep", _fake_sleep)
     monkeypatch.setattr(advisories, "refresh", _fresh)
     with (
-        caplog.at_level(logging.WARNING, logger="tai_skeleton.marketplace.advisories"),
+        caplog.at_level(logging.WARNING, logger="tai42_skeleton.marketplace.advisories"),
         pytest.raises(asyncio.CancelledError),
     ):
         await advisories._poll_loop()

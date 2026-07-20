@@ -12,12 +12,12 @@ import asyncio
 from unittest.mock import AsyncMock
 
 import pytest
-from tai_contract.manifest import TaiMCPConfig
+from tai42_contract.manifest import TaiMCPConfig
 
-from tai_skeleton.app.lifecycle import TaiMCPLifecycleMixin
-from tai_skeleton.exceptions.exceptions import TaiValidationError
-from tai_skeleton.manifest import Manifest
-from tai_skeleton.tools.registry import ToolRegistry
+from tai42_skeleton.app.lifecycle import TaiMCPLifecycleMixin
+from tai42_skeleton.exceptions.exceptions import TaiValidationError
+from tai42_skeleton.manifest import Manifest
+from tai42_skeleton.tools.registry import ToolRegistry
 
 
 class _NoManifestConfig:
