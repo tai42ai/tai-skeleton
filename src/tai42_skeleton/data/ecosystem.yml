@@ -304,24 +304,24 @@ entries:
 # package -> repository mapping (the single source of the repo column). Every
 # package named in `entries` MUST appear here.
 packages:
-  tai42-skeleton: tai42-skeleton
-  tai42-toolbox: tai42-toolbox
-  tai42-agents: tai42-agents
-  tai42-storage-s3: tai42-storage-s3
-  tai42-storage-github: tai42-storage-github
-  tai42-storage-local: tai42-storage-local
-  tai42-webhook-verifier-github: tai42-webhook-verifier-github
-  tai42-connector-google: tai42-connector-google
-  tai42-connector-atlassian: tai42-connector-atlassian
-  tai42-config-k8s: tai42-config-k8s
-  tai42-channel-telegram: tai42-channel-telegram
-  tai42-channel-slack: tai42-channel-slack
-  tai42-channel-twilio: tai42-channel-twilio
-  tai42-identity-redis: tai42-identity-redis
-  tai42-accounts-postgres: tai42-accounts-postgres
-  tai42-accounts-oidc: tai42-accounts-oidc
-  tai42-identity-oidc: tai42-identity-oidc
-  tai42-backend-arq: tai42-backend-arq
-  tai42-backend-celery: tai42-backend-celery
-  tai42-backend-rq: tai42-backend-rq
-  tai42-monitoring-langfuse: tai42-monitoring-langfuse
+  tai42-skeleton: tai-skeleton
+  tai42-toolbox: tai-toolbox
+  tai42-agents: tai-agents
+  tai42-storage-s3: tai-storage-s3
+  tai42-storage-github: tai-storage-github
+  tai42-storage-local: tai-storage-local
+  tai42-webhook-verifier-github: tai-webhook-verifier-github
+  tai42-connector-google: tai-connector-google
+  tai42-connector-atlassian: tai-connector-atlassian
+  tai42-config-k8s: tai-config-k8s
+  tai42-channel-telegram: tai-channel-telegram
+  tai42-channel-slack: tai-channel-slack
+  tai42-channel-twilio: tai-channel-twilio
+  tai42-identity-redis: tai-identity-redis
+  tai42-accounts-postgres: tai-accounts-postgres
+  tai42-accounts-oidc: tai-accounts-oidc
+  tai42-identity-oidc: tai-identity-oidc
+  tai42-backend-arq: tai-backend-arq
+  tai42-backend-celery: tai-backend-celery
+  tai42-backend-rq: tai-backend-rq
+  tai42-monitoring-langfuse: tai-monitoring-langfuse
