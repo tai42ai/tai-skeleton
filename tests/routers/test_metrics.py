@@ -182,7 +182,7 @@ def test_counter_from_spawned_process_is_visible_to_scrape(monkeypatch: pytest.M
 
         # The env (set by the parent below) must have frozen the mmap backend.
         assert ValueClass.__name__ == "MmapedValue", ValueClass.__name__
-        counter = Counter("tai42_worker_probe_total", "cross-process probe", ["runtime"])
+        counter = Counter("tai_worker_probe_total", "cross-process probe", ["runtime"])
         counter.labels(runtime="worker").inc(3)
         """
     )
@@ -202,9 +202,9 @@ def test_counter_from_spawned_process_is_visible_to_scrape(monkeypatch: pytest.M
     monkeypatch.setenv("PROMETHEUS_MULTIPROC_DIR", str(mp_dir))
     exposition = render_multiproc_metrics().decode()
 
-    assert "tai42_worker_probe_total" in exposition
+    assert "tai_worker_probe_total" in exposition
     assert 'runtime="worker"' in exposition
-    assert 'tai42_worker_probe_total{runtime="worker"} 3.0' in exposition
+    assert 'tai_worker_probe_total{runtime="worker"} 3.0' in exposition
 
 
 def test_backend_main_activates_multiproc_before_prometheus_import_in_clean_env() -> None:

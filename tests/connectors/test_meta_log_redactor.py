@@ -21,7 +21,7 @@ from tai42_skeleton.connectors.meta_log_redactor import (
     install_meta_log_redactor,
 )
 
-_META = "tai42_hub.access_token"
+_META = "tai_hub.access_token"
 _REDACT = "**********"
 _SECRET = "AT-12345-supersecret"
 _PATTERN = _build_redactor_regex(_META)
@@ -263,13 +263,13 @@ def test_noop_when_key_absent():
 
 
 def test_regex_compiles_for_keys_with_dots():
-    # The default meta key is ``tai42_hub.access_token`` — a literal dot in the
+    # The default meta key is ``tai_hub.access_token`` — a literal dot in the
     # regex would match any char. Confirm ``re.escape`` is applied so the dot is
     # escaped.
     pattern = _build_redactor_regex(_META)
     assert pattern.search(f'"{_META}": "x"') is not None
     # A key that DIFFERS only in the dot position must NOT match.
-    assert pattern.search('"tai42_hubXaccess_token": "x"') is None
+    assert pattern.search('"tai_hubXaccess_token": "x"') is None
 
 
 def test_redacts_no_auth_http_header_values():
@@ -471,11 +471,11 @@ def test_install_chains_prior_factory():
 
 
 def test_install_defaults_meta_key_from_settings():
-    # No meta_key -> settings default (tai42_hub.access_token). Process scope so the
+    # No meta_key -> settings default (tai_hub.access_token). Process scope so the
     # bare-named record below is in scope regardless of the logger family.
     install_meta_log_redactor(scope="process")
     factory = logging.getLogRecordFactory()
-    rec = factory("t", logging.INFO, __file__, 1, '{"tai42_hub.access_token": "SECRETVAL"}', None, None)
+    rec = factory("t", logging.INFO, __file__, 1, '{"tai_hub.access_token": "SECRETVAL"}', None, None)
     assert "SECRETVAL" not in rec.getMessage()
     assert _REDACT in rec.getMessage()
 

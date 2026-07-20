@@ -216,7 +216,7 @@ def test_build_app_installs_redactor_at_tai_scope(monkeypatch):
         instance.build_app()
 
         factory = logging.getLogRecordFactory()
-        secret = '{"_meta": {"tai42_hub.access_token": "WIRE-SECRET"}}'
+        secret = '{"_meta": {"tai_hub.access_token": "WIRE-SECRET"}}'
         tai42_rec = factory("tai42_skeleton.connectors", logging.INFO, __file__, 1, secret, None, None)
         host_rec = factory("myhost.app", logging.INFO, __file__, 1, secret, None, None)
         assert "WIRE-SECRET" not in tai42_rec.getMessage()

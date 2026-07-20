@@ -28,7 +28,7 @@ body:
     id: environment
     attributes:
       label: Environment
-      description: Python version, OS, transport (HTTP or stdio), tai-contract/tai-kit versions, and any plugins loaded by the manifest.
+      description: Python version, OS, transport (HTTP or stdio), tai42-contract/tai42-kit versions, and any plugins loaded by the manifest.
       placeholder: "Python 3.13.x, macOS 15, TAI_TRANSPORT=stdio"
     validations:
       required: true

@@ -261,7 +261,7 @@ class ConnectorAdapterSettings(TaiBaseSettings):
     model_config = SettingsConfigDict(env_prefix="CONNECTORS_")
 
     #: JSON-RPC ``_meta`` key the adapter writes the per-call access token into.
-    meta_token_key: str = "tai42_hub.access_token"
+    meta_token_key: str = "tai_hub.access_token"
     #: Prefix the connector servers stamp on ``ToolError`` strings to carry a
     #: structured payload; the adapter strips it before JSON-decoding.
     error_prefix: str = "tai-hub-err:"

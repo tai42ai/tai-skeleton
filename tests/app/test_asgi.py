@@ -431,7 +431,7 @@ def test_factory_boot_leaves_host_logger_record_unredacted(patch_factory_seam, r
         with TestClient(asgi.create_app()):
             pass
 
-        secret = '{"tai42_hub.access_token": "HOST-SECRET"}'
+        secret = '{"tai_hub.access_token": "HOST-SECRET"}'
         rec = logging.getLogRecordFactory()("myhost.app", logging.INFO, __file__, 1, secret, None, None)
         assert "HOST-SECRET" in rec.getMessage()
     finally:

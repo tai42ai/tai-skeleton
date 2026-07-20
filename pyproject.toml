@@ -178,7 +178,7 @@ fail_under = 96
 [tool.uv]
 cache-keys = [{ file = "pyproject.toml" }]
 
-# Dev-only: resolve the sibling packages (the tai-contract/tai-kit foundation and
+# Dev-only: resolve the sibling packages (the tai42-contract/tai42-kit foundation and
 # the tai42-toolbox contrib extra) from local checkouts. The published version
 # floors in [project].dependencies / [project.optional-dependencies] are what the
 # shipped wheel declares; these source overrides are not part of wheel metadata.

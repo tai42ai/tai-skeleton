@@ -224,7 +224,7 @@ def test_connector_store_settings_is_cached():
 
 def test_adapter_settings_defaults():
     s = ConnectorAdapterSettings()
-    assert s.meta_token_key == "tai42_hub.access_token"
+    assert s.meta_token_key == "tai_hub.access_token"
     assert s.error_prefix == "tai-hub-err:"
 
 
