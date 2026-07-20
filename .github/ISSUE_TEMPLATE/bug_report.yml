@@ -1,0 +1,34 @@
+name: Bug report
+description: Report a defect in tai-skeleton (the extended MCP server framework implementing tai-contract)
+labels: ["bug"]
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: What happened, and what did you expect instead?
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction
+      description: Minimal steps to reproduce — ideally a stripped-down manifest plus the commands or code that trigger the problem.
+      render: shell
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: tai-skeleton version
+      placeholder: "0.1.0"
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Python version, OS, transport (HTTP or stdio), tai-contract/tai-kit versions, and any plugins loaded by the manifest.
+      placeholder: "Python 3.13.x, macOS 15, TAI_TRANSPORT=stdio"
+    validations:
+      required: true

@@ -1,0 +1,225 @@
+"""The hook firing path in ``BaseHooksManager``: condition evaluation (rendered
+via the bound template manager), expr -> tool-input mapping + tool dispatch,
+worker-limited fan-out, per-hook failure isolation, and jq validation at
+registration. Plus the abstract-method contract that blocks constructing the base
+directly.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import logging
+
+import pytest
+from tai_contract.hooks import HookParams
+
+from tai_skeleton.hooks.managers.base_hooks_manager import BaseHooksManager
+from tai_skeleton.hooks.managers.in_memory_hooks_manager import InMemoryHooksManager
+from tai_skeleton.hooks.settings import HooksSettings
+
+
+def _settings(**kw) -> HooksSettings:
+    return HooksSettings(**kw)
+
+
+async def test_on_event_fires_tool_with_merged_expr_and_kwargs(make_app):
+    app = make_app()
+    manager = InMemoryHooksManager(_settings())
+    await manager.register(
+        HookParams(
+            name="ship",
+            topic="orders",
+            tool="ship_tool",
+            condition='.status == "paid"',
+            expr="{id: .id}",
+            tool_kwargs={"extra": 1},
+        )
+    )
+
+    await manager.on_event("orders", {"id": 7, "status": "paid"})
+
+    assert app.tools.runs == [("ship_tool", {"id": 7, "extra": 1})]
+
+
+async def test_on_event_without_expr_uses_tool_kwargs_only(make_app):
+    app = make_app()
+    manager = InMemoryHooksManager(_settings())
+    await manager.register(
+        HookParams(
+            name="noexpr",
+            topic="t",
+            tool="noop",
+            tool_kwargs={"k": "v"},
+        )
+    )
+
+    await manager.on_event("t", {"anything": True})
+
+    assert app.tools.runs == [("noop", {"k": "v"})]
+
+
+async def test_on_event_skips_hook_when_condition_false(make_app):
+    app = make_app()
+    manager = InMemoryHooksManager(_settings())
+    await manager.register(
+        HookParams(
+            name="cond",
+            topic="t",
+            tool="noop",
+            condition='.status == "paid"',
+        )
+    )
+
+    await manager.on_event("t", {"status": "unpaid"})
+
+    assert app.tools.runs == []
+
+
+async def test_on_event_raises_when_condition_errors_at_runtime(make_app):
+    app = make_app()
+    manager = InMemoryHooksManager(_settings())
+    # Compiles at register time, raises at evaluation (string -> number).
+    await manager.register(
+        HookParams(
+            name="bad-runtime",
+            topic="t",
+            tool="noop",
+            condition=".x | tonumber",
+        )
+    )
+
+    # A fire-time jq evaluation error must surface loudly, not silently skip the
+    # hook (a skip is indistinguishable from a cleanly-false condition).
+    with pytest.raises(ValueError, match="cannot be parsed as a number"):
+        await manager.on_event("t", {"x": "not-a-number"})
+
+    assert app.tools.runs == []
+
+
+async def test_on_event_no_hooks_for_topic_is_noop(make_app):
+    app = make_app()
+    manager = InMemoryHooksManager(_settings())
+    await manager.on_event("unknown-topic", {"a": 1})
+    assert app.tools.runs == []
+
+
+def _track_peak_concurrency(app):
+    """Wrap the fake tool so it records in-flight concurrency: it yields once
+    (so concurrently-scheduled hooks overlap) and tracks the peak number running
+    at the same time. Returns the mutable ``{"peak": ...}`` record."""
+    state = {"in_flight": 0, "peak": 0}
+    original_run_tool = app.tools.run_tool
+
+    async def tracking_run_tool(name, tool_input):
+        state["in_flight"] += 1
+        state["peak"] = max(state["peak"], state["in_flight"])
+        try:
+            await asyncio.sleep(0)  # yield so co-scheduled hooks can overlap
+            return await original_run_tool(name, tool_input)
+        finally:
+            state["in_flight"] -= 1
+
+    app.tools.run_tool = tracking_run_tool
+    return state
+
+
+async def test_on_event_bounds_fanout_at_max_workers(make_app):
+    app = make_app()
+    manager = InMemoryHooksManager(_settings(max_workers=2))
+    for name in ("a", "b", "c", "d"):
+        await manager.register(HookParams(name=name, topic="t", tool=f"tool_{name}"))
+
+    state = _track_peak_concurrency(app)
+
+    await manager.on_event("t", {})
+
+    assert {name for name, _ in app.tools.runs} == {"tool_a", "tool_b", "tool_c", "tool_d"}
+    # The manager-wide semaphore held concurrency to max_workers; the peak never
+    # exceeded 2.
+    assert state["peak"] <= 2
+
+
+async def test_semaphore_bounds_total_across_concurrent_events(make_app):
+    # ONE semaphore per manager, created at construction, bounds the TOTAL
+    # in-flight hook executions across ALL events: two topics firing at once
+    # share the max_workers=2 bound instead of each fanning out its own 2.
+    app = make_app()
+    manager = InMemoryHooksManager(_settings(max_workers=2))
+    for name in ("a", "b"):
+        await manager.register(HookParams(name=f"t1-{name}", topic="t1", tool=f"tool_t1_{name}"))
+        await manager.register(HookParams(name=f"t2-{name}", topic="t2", tool=f"tool_t2_{name}"))
+
+    state = _track_peak_concurrency(app)
+
+    await asyncio.gather(manager.on_event("t1", {}), manager.on_event("t2", {}))
+
+    assert {name for name, _ in app.tools.runs} == {"tool_t1_a", "tool_t1_b", "tool_t2_a", "tool_t2_b"}
+    # A per-event semaphore would allow a peak of 4 (2 per event); the global
+    # bound caps the whole manager at 2.
+    assert state["peak"] <= 2
+
+
+async def test_on_event_isolates_a_failing_hook(make_app, caplog):
+    # One hook's tool raises; the other still runs and the gather does not crash.
+    app = make_app(raise_tools={"boom"})
+    manager = InMemoryHooksManager(_settings())
+    await manager.register(HookParams(name="bad", topic="t", tool="boom"))
+    await manager.register(HookParams(name="good", topic="t", tool="ok"))
+
+    with caplog.at_level(logging.ERROR):
+        await manager.on_event("t", {})
+
+    ran = {name for name, _ in app.tools.runs}
+    assert ran == {"boom", "ok"}
+    # Isolation must not be silent: the failing hook's error is logged loudly.
+    assert any(rec.levelno == logging.ERROR and "bad" in rec.getMessage() for rec in caplog.records)
+
+
+async def test_condition_rendered_via_template_id(make_app):
+    # condition_id resolves through the template manager to a real jq expression.
+    app = make_app(by_id={"cond-tmpl": ".ok == true"})
+    manager = InMemoryHooksManager(_settings())
+    await manager.register(
+        HookParams(
+            name="byid",
+            topic="t",
+            tool="noop",
+            condition_id="cond-tmpl",
+        )
+    )
+
+    await manager.on_event("t", {"ok": True})
+    assert app.tools.runs == [("noop", {})]
+
+    app.tools.runs.clear()
+    await manager.on_event("t", {"ok": False})
+    assert app.tools.runs == []
+
+
+def test_validate_jq_accepts_valid_expr_and_condition():
+    BaseHooksManager.validate_jq_fields(HookParams(name="ok", topic="t", tool="noop", condition=".a", expr=".b"))
+    # Nothing to validate when both inline fields are absent.
+    BaseHooksManager.validate_jq_fields(HookParams(name="ok2", topic="t", tool="noop"))
+
+
+def test_validate_jq_rejects_bad_expr():
+    bad = HookParams(name="bad", topic="t", tool="noop", expr="this is ( not jq")
+    with pytest.raises(ValueError, match="expr is not valid jq"):
+        BaseHooksManager.validate_jq_fields(bad)
+
+
+def test_base_manager_cannot_be_constructed():
+    # ``BaseHooksManager`` is an ABC: a backend that forgets one of the eight
+    # abstract ops fails at CONSTRUCTION (TypeError), not deferred to call time.
+    with pytest.raises(TypeError):
+        BaseHooksManager(_settings())  # type: ignore[abstract]
+
+
+def test_partial_subclass_is_abstract():
+    # A subclass implementing only some ops is still abstract and cannot be built.
+    class _Partial(BaseHooksManager):
+        async def register(self, params):  # type: ignore[override]
+            return True
+
+    with pytest.raises(TypeError):
+        _Partial(_settings())  # type: ignore[abstract]

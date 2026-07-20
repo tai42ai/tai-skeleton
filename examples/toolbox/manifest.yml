@@ -1,0 +1,34 @@
+# Toolbox starter manifest: batteries from the tai-toolbox contrib package.
+#
+# Everything here is an installed-package import path (tai-toolbox ships the
+# modules), so no PYTHONPATH is needed — but tai-toolbox must be installed:
+# `pip install tai-skeleton[toolbox]` (see README.md next to this file).
+#
+# Importing each module runs its `@tai_app.*` registration decorators. A module
+# whose required toolbox extra is missing fails LOUDLY at import with a
+# `pip install 'tai-toolbox[extra]'` hint — never a silent skip.
+
+# --- Composition tool extensions --------------------------------------------
+# Each entry imports the extension module, registering the extension so a tool
+# can branch into a variant by attaching it through the `extensions` map below.
+extensions_modules:
+  - tai_toolbox.extensions.batch   # Transformer; extra-free — imports on the base install.
+  - tai_toolbox.extensions.chain   # Transformer; needs the `chain` extra: pip install 'tai-toolbox[chain]' (jq).
+
+# --- Toolbox tools ----------------------------------------------------------
+# `include` names the tool(s) to expose from each module (SELECTION only). The
+# separate `extensions` map ATTACHES an extension to a selected tool, branching
+# it into that extension's variant (batch -> `<tool>_batch`, chain ->
+# `<tool>_chain`); each value is a list of combos, one branch per combo.
+tools:
+  - title: toolbox
+    module: tai_toolbox.tools.generate_uuid   # extra-free.
+    include:
+      - generate_uuid          # the plain tool
+    extensions:
+      generate_uuid:
+        - [batch]              # branches into generate_uuid_batch (run many at once)
+        - [chain]              # branches into generate_uuid_chain (transform + call a next tool)
+  - title: toolbox-time
+    module: tai_toolbox.tools.current_time_info   # extra-free; a second registered tool a chain can call.
+    include: [current_time_info]

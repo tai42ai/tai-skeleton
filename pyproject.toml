@@ -1,0 +1,200 @@
+[build-system]
+requires = ["setuptools>=77", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tai-skeleton"
+version = "0.1.0"
+description = "Open-source implementation of tai-contract: the extended MCP server hosting tools, agents, extensions, connectors, hooks, and storage for the TAI ecosystem."
+readme = "README.md"
+requires-python = ">=3.13"
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
+authors = [
+    { name = "tai42", email = "oss@tai42.ai" },
+]
+keywords = ["mcp", "orchestrator", "tools", "agents", "extensions", "llm"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.13",
+    "Operating System :: OS Independent",
+    "Typing :: Typed",
+]
+dependencies = [
+    # The pure interface contract this package implements.
+    "tai-contract>=0.1,<0.2",
+    # Generic leaf helpers + pooled-client framework. Extras: the LLM stack
+    # (agent facets, checkpoint/store registries), jq (hooks + policy
+    # conditions), uvicorn (CLI arg parsing), redis/postgres drivers.
+    "tai-kit[llm,jq,uvicorn,redis,postgres]>=0.1,<0.2",
+    # Direct third-party deps imported by the orchestrator + copied-in impl.
+    "click>=8.3",
+    # The unified ``tai`` CLI. Typer builds on click, so it composes with the
+    # existing click launcher commands re-homed as ``tai`` subcommands.
+    "typer>=0.12",
+    "fastmcp>=3.2,<4",
+    "mcp>=1",
+    "httpx>=0.28",
+    "PyYAML>=6.0",
+    "pyaml-env>=1.2",
+    "ruamel.yaml>=0.18",
+    "python-dotenv>=1.2",
+    "makefun>=1.16",
+    "pydantic-settings>=2.13",
+    "pydantic>=2.12",
+    "pydantic-core>=2",
+    "cachetools>=7.0",
+    "async-lru>=2.3",
+    "langchain-core>=1.2,<2",
+    "prometheus-client>=0.24",
+    "fastapi>=0.135",
+    "starlette>=0.40",
+    "uvicorn>=0.43",
+    "redis>=5",
+    # uvicorn runtime accelerators — not imported directly; uvicorn loads them at
+    # serve time for the websocket protocol, a faster event loop, and faster HTTP
+    # parsing.
+    "wsproto>=1.3",
+    "uvloop>=0.22; sys_platform != 'win32'",
+    "httptools>=0.7",
+    # Copied-in impl deps: template rendering (jinja2/jinja2schema), connector
+    # token crypto (cryptography), hooks payload parsing (xmltodict).
+    "jinja2>=3.1",
+    "jinja2schema>=0.1.4",
+    "cryptography>=44",
+    "xmltodict>=0.14",
+    # Callback-answer validation in the interactions router (imported directly).
+    "jsonschema>=4",
+    # Validates the emitted document in ``tai openapi --check`` — a shipped command,
+    # so its validator is a runtime dep, not dev-only (the schema ships with the
+    # library, so the check stays offline).
+    "openapi-spec-validator>=0.9",
+    # PEP 440 version/specifier parsing for the marketplace installer
+    # (update-availability comparison, advisory range matching, pin validation).
+    "packaging>=24",
+    # The marketplace installer shells out to `sys.executable -m pip`;
+    # uv-managed venvs do not ship pip, so the skeleton declares it.
+    "pip>=25",
+]
+
+[project.urls]
+Homepage = "https://tai42.ai"
+Repository = "https://github.com/tai42ai/tai-skeleton"
+Issues = "https://github.com/tai42ai/tai-skeleton/issues"
+Changelog = "https://github.com/tai42ai/tai-skeleton/blob/main/CHANGELOG.md"
+
+[project.entry-points.console_scripts]
+tai = "tai_skeleton.cli.app:app"
+
+[project.optional-dependencies]
+# Batteries: the tai-toolbox contrib package — composition tool extensions
+# (chain, batch) and a collection of generic tools — loaded from the manifest,
+# never imported by skeleton code. Toolbox's own extras still gate its heavier
+# modules. Loose pin: track compatibility, don't pin the patch.
+toolbox = ["tai-toolbox>=0.1,<0.2"]
+
+# File loading + media: opt-in backing deps for the ResourceManager type-detect
+# registry (``load_file``) and the ``file_loader`` builtin. A module whose dep is
+# missing raises a loud "install tai-skeleton[files]" hint at import, never a
+# silent skip. Magika sniffs content; the rest are per-type text extractors.
+files = [
+    "magika>=0.6",
+    "pandas>=2.2",
+    "langchain-community>=0.3",
+    "pypdf>=5",
+    "docx2txt>=0.9",
+    "openpyxl>=3.1",
+    "tabulate>=0.9",
+    "beautifulsoup4>=4.12",
+    "python-pptx>=1",
+    "striprtf>=0.0.26",
+    "odfpy>=1.4",
+    "ebooklib>=0.18",
+]
+
+dev = [
+    # Install the toolbox + files extras so the toolbox starter example boots and
+    # the resource-loading suite runs under test.
+    "tai-skeleton[toolbox,files]",
+    # The redis-backed identity provider plugin. Not a runtime dep of the skeleton
+    # (which ships NO concrete identity provider) — a deployment names it in its
+    # manifest — but the test suite and the example manifest register it as the
+    # default "redis" provider, so it is installed for dev/test.
+    "tai-identity-redis>=0.1,<0.2",
+    "pytest>=8",
+    "pytest-asyncio>=1.3",
+    "pytest-cov>=5",
+    "ruff>=0.6",
+    "pyright>=1.1.389",
+    "fakeredis[lua]>=2.21",
+]
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["tai_skeleton*"]
+
+[tool.setuptools.package-data]
+tai_skeleton = ["py.typed", "data/*.yml", "sql/resources/*.sql"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+testpaths = ["tests"]
+xfail_strict = true
+# Warnings are errors so a real bug (e.g. an un-awaited coroutine) fails the
+# suite instead of scrolling past. The one ignore is a third-party test-infra
+# deprecation (starlette's TestClient asking for the ``httpx2`` backend), not
+# our code — matched narrowly so it can't mask our own warnings.
+filterwarnings = [
+    "error",
+    "ignore:Using `httpx` with `starlette.testclient`:starlette.exceptions.StarletteDeprecationWarning",
+    # Third-party deprecation emitted at import by the optional ``files`` extra's
+    # langchain-community loaders, not our code — matched narrowly so it can't mask
+    # our own warnings.
+    "ignore:`langchain-community` is being sunset:DeprecationWarning",
+    # An agent run tool presents a concrete per-field signature whose optional
+    # parameters default to the ``_UNSET`` sentinel (agent/binding.py), so a
+    # wrapper/transformer extension composes over a real signature. Deriving a JSON
+    # schema from that signature deliberately excludes the non-serializable sentinel
+    # default; pydantic flags the omission with this warning. Matched narrowly (this
+    # message + category only) so it cannot mask any other schema-generation warning.
+    "ignore:Default value .* is not JSON serializable; excluding default:pydantic.json_schema.PydanticJsonSchemaWarning",
+]
+
+[tool.coverage.run]
+source = ["tai_skeleton"]
+
+[tool.coverage.report]
+fail_under = 96
+
+[tool.uv]
+cache-keys = [{ file = "pyproject.toml" }]
+
+# Dev-only: resolve the sibling packages (the tai-contract/tai-kit foundation and
+# the tai-toolbox contrib extra) from local checkouts. The published version
+# floors in [project].dependencies / [project.optional-dependencies] are what the
+# shipped wheel declares; these source overrides are not part of wheel metadata.
+[tool.uv.sources]
+tai-contract = { path = "../tai-contract", editable = true }
+tai-kit = { path = "../tai-kit", editable = true }
+tai-toolbox = { path = "../tai-toolbox", editable = true }
+tai-identity-redis = { path = "../tai-identity-redis", editable = true }
+
+[tool.ruff]
+src = ["src"]
+target-version = "py313"
+line-length = 120
+
+[tool.ruff.lint]
+select = ["E", "W", "F", "I", "UP", "B", "C4", "SIM", "PIE", "PT", "RUF"]
+
+[tool.pyright]
+include = ["src", "tests"]
+pythonVersion = "3.13"
+typeCheckingMode = "basic"
+reportMissingImports = "warning"
