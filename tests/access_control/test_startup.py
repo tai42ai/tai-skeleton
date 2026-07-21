@@ -23,6 +23,7 @@ import tai42_skeleton.access_control.startup as startup
 from tai42_skeleton.access_control.startup import (
     check_accounts_providers_configured,
     check_always_public_routes,
+    check_fenced_routes_resolvable,
     check_spa_shell_public,
     probe_identity_provider,
     seed_roles,
@@ -315,3 +316,37 @@ async def test_spa_check_passes_acknowledged_templated_route(monkeypatch: pytest
         await check_spa_shell_public()  # no raise
     assert "/universal_webhook/{topic}" in caplog.text
     assert "/{spa_path:path}" in caplog.text
+
+
+# -- fenced-route resolvability boot guarantee -------------------------------
+
+
+async def test_check_fenced_routes_resolvable_passes_on_real_surface() -> None:
+    # Every registered fenced/secret route resolves back to itself through the gate's
+    # resolver, so the real surface passes the boot guarantee.
+    from tai42_skeleton.access_control.role_gate import reset_route_index
+
+    reset_route_index()
+    await check_fenced_routes_resolvable()
+
+
+async def test_check_fenced_routes_resolvable_raises_when_a_fence_does_not_resolve(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # If a REGISTERED fenced/secret route fails to resolve, the fence would silently fail
+    # open — the boot must refuse. Force the resolver to miss on one real fenced route.
+    from tai42_skeleton.access_control import role_gate
+    from tai42_skeleton.app import route_registry as rr
+
+    rr.load_all_routes()
+    target = next(m for m in rr.route_registry.routes() if m.action in ("fenced", "secret"))
+    original = role_gate.resolve_route_meta
+
+    def _fake_resolve(path, method):
+        if path == target.path:
+            return None
+        return original(path, method)
+
+    monkeypatch.setattr(role_gate, "resolve_route_meta", _fake_resolve)
+    with pytest.raises(RuntimeError, match="fail open"):
+        await check_fenced_routes_resolvable()

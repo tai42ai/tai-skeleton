@@ -73,6 +73,7 @@ list_templates = register_operation_route(
     operation_metadata_of(_list_templates_op),
     path="/api/templates",
     method="GET",
+    action="read",
 )
 
 get_template = register_operation_route(
@@ -81,6 +82,7 @@ get_template = register_operation_route(
     path="/api/template",
     method="POST",
     context_extractor=_extract_fetch,
+    action="write",
 )
 
 upload_template = register_operation_route(
@@ -89,6 +91,7 @@ upload_template = register_operation_route(
     path="/api/upload-template",
     method="POST",
     context_extractor=_extract_upload,
+    action="write",
 )
 
 delete_template = register_operation_route(
@@ -97,6 +100,7 @@ delete_template = register_operation_route(
     path="/api/delete-template",
     method="POST",
     context_extractor=_extract_delete,
+    action="write",
 )
 
 render_template = register_operation_route(
@@ -105,6 +109,7 @@ render_template = register_operation_route(
     path="/api/render-template",
     method="POST",
     context_extractor=_extract_render,
+    action="write",
 )
 
 clear_templates_cache = register_operation_route(
@@ -112,4 +117,5 @@ clear_templates_cache = register_operation_route(
     operation_metadata_of(_clear_templates_cache_op),
     path="/api/clear-templates-cache",
     method="POST",
+    action="write",
 )

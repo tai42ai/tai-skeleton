@@ -214,6 +214,7 @@ list_presets = register_operation_route(
     operation_metadata_of(_list_presets_op),
     path="/api/presets",
     method="GET",
+    action="read",
 )
 
 create_preset = register_operation_route(
@@ -222,6 +223,7 @@ create_preset = register_operation_route(
     path="/api/presets",
     method="POST",
     context_extractor=_extract_create,
+    action="write",
 )
 
 get_preset = register_operation_route(
@@ -229,6 +231,7 @@ get_preset = register_operation_route(
     operation_metadata_of(_get_preset_op),
     path="/api/presets/{name}",
     method="GET",
+    action="read",
 )
 
 list_versions = register_operation_route(
@@ -236,6 +239,7 @@ list_versions = register_operation_route(
     operation_metadata_of(_list_versions_op),
     path="/api/presets/{name}/versions",
     method="GET",
+    action="read",
 )
 
 get_version = register_operation_route(
@@ -243,6 +247,7 @@ get_version = register_operation_route(
     operation_metadata_of(_get_version_op),
     path="/api/presets/{name}/versions/{version}",
     method="GET",
+    action="read",
 )
 
 save_version = register_operation_route(
@@ -251,6 +256,7 @@ save_version = register_operation_route(
     path="/api/presets/{name}/versions",
     method="POST",
     context_extractor=_extract_save_version,
+    action="write",
 )
 
 rollback_preset = register_operation_route(
@@ -259,6 +265,7 @@ rollback_preset = register_operation_route(
     path="/api/presets/{name}/rollback",
     method="POST",
     context_extractor=_extract_rollback,
+    action="write",
 )
 
 rename_preset = register_operation_route(
@@ -267,6 +274,7 @@ rename_preset = register_operation_route(
     path="/api/presets/{name}/rename",
     method="POST",
     context_extractor=_extract_rename,
+    action="write",
 )
 
 delete_preset = register_operation_route(
@@ -274,6 +282,7 @@ delete_preset = register_operation_route(
     operation_metadata_of(_delete_preset_op),
     path="/api/presets/{name}",
     method="DELETE",
+    action="write",
 )
 
 preset_referees = register_operation_route(
@@ -281,6 +290,7 @@ preset_referees = register_operation_route(
     operation_metadata_of(_preset_referees_op),
     path="/api/presets/{name}/referees",
     method="GET",
+    action="read",
 )
 
 validate_preset = register_operation_route(
@@ -289,6 +299,7 @@ validate_preset = register_operation_route(
     path="/api/presets/validate",
     method="POST",
     context_extractor=_extract_validate,
+    action="write",
 )
 
 set_preset_version_tags = register_operation_route(
@@ -297,4 +308,5 @@ set_preset_version_tags = register_operation_route(
     path="/api/presets/{name}/versions/{version}/tags",
     method="PUT",
     context_extractor=_extract_version_tags,
+    action="write",
 )

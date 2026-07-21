@@ -203,6 +203,10 @@ class _FakeCursor:
                 ver = pg.version_row(doc["id"], doc["active_version"])
                 if ver is not None:
                     self._one = (ver["body"],)
+        elif norm.startswith("SELECT body FROM versioned_document_versions"):
+            doc_id, version = params
+            ver = pg.version_row(doc_id, version)
+            self._one = None if ver is None else (ver["body"],)
         elif norm.startswith("SELECT version, body, tags, created_at FROM versioned_document_versions"):
             (doc_id,) = params
             self._all = [

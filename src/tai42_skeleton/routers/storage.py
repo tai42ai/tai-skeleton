@@ -72,6 +72,7 @@ storage_info = register_operation_route(
     operation_metadata_of(_storage_info_op),
     path="/api/storage",
     method="GET",
+    action="read",
 )
 
 list_resources = register_operation_route(
@@ -79,6 +80,7 @@ list_resources = register_operation_route(
     operation_metadata_of(_list_resources_op),
     path="/api/storage/resources",
     method="GET",
+    action="read",
 )
 
 stat_resource = register_operation_route(
@@ -86,6 +88,7 @@ stat_resource = register_operation_route(
     operation_metadata_of(_stat_resource_op),
     path="/api/storage/resources/{resource_id:path}/stat",
     method="GET",
+    action="read",
 )
 
 upload_resource = register_operation_route(
@@ -94,6 +97,7 @@ upload_resource = register_operation_route(
     path="/api/storage/resources",
     method="POST",
     context_extractor=_extract_upload,
+    action="write",
 )
 
 delete_resource = register_operation_route(
@@ -101,6 +105,7 @@ delete_resource = register_operation_route(
     operation_metadata_of(_delete_resource_op),
     path="/api/storage/resources/{resource_id:path}",
     method="DELETE",
+    action="write",
 )
 
 delete_dir = register_operation_route(
@@ -108,6 +113,7 @@ delete_dir = register_operation_route(
     operation_metadata_of(_delete_dir_op),
     path="/api/storage/dirs/{dir_path:path}",
     method="DELETE",
+    action="write",
 )
 
 
@@ -123,6 +129,7 @@ delete_dir = register_operation_route(
         error_statuses=(400, 401, 404, 500, 501),
         success_status=200,
     ),
+    action="read",
 )
 async def download_resource(request: Request) -> Response:
     """Serve the raw object bytes as a file download.

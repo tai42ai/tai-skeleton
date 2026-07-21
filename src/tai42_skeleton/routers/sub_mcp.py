@@ -75,6 +75,7 @@ list_sub_mcp = register_operation_route(
     operation_metadata_of(_list_sub_mcp_op),
     path="/api/sub-mcp",
     method="GET",
+    action="read",
 )
 
 register_sub_mcp = register_operation_route(
@@ -83,6 +84,7 @@ register_sub_mcp = register_operation_route(
     path="/api/sub-mcp",
     method="POST",
     context_extractor=_extract_registration,
+    action="write",
 )
 
 unregister_sub_mcp = register_operation_route(
@@ -90,4 +92,5 @@ unregister_sub_mcp = register_operation_route(
     operation_metadata_of(_unregister_sub_mcp_op),
     path="/api/sub-mcp/{slug}",
     method="DELETE",
+    action="write",
 )

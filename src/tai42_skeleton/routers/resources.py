@@ -23,4 +23,5 @@ get_resource_by_id = register_operation_route(
     operation_metadata_of(_get_resource_by_id_op),
     path="/api/resources/get",
     method="POST",
+    action="write",
 )

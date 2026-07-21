@@ -127,6 +127,9 @@ _EXPECTED_READS_BODY: set[tuple[str, str]] = {
     ("PUT", "/api/auth/api-keys/{user_id}"),
     ("POST", "/api/auth/api-keys/{user_id}/policy/rollback"),
     ("POST", "/api/auth/claim-links"),
+    ("POST", "/api/auth/roles"),
+    ("PUT", "/api/auth/roles/{name}"),
+    ("POST", "/api/auth/roles/{name}/rollback"),
     ("POST", "/api/auth/scopes"),
     ("DELETE", "/api/auth/scopes/urls"),
     ("POST", "/api/auth/public-routes"),
@@ -244,9 +247,9 @@ def test_scope_url_delete_doors_document_the_400(
     spec: dict, api_routes: list[RouteMetadata], method: str, path: str
 ) -> None:
     # Both delete doors validate their JSON body at the request edge (a blank/missing
-    # ``url`` is a 400) before the operation runs (a url that was never mapped is a
-    # 404), so each documents {400, 401, 404} — the 400 the extractor answers must be
-    # in the spec, not just the runtime.
+    # ``url`` is a 400) before the operation runs (a url that was never mapped is a 404), so
+    # each documents {400, 401, 404} — the 400 the extractor answers must be in the spec,
+    # not just the runtime.
     (meta,) = [m for m in api_routes if m.path == path and method in m.methods]
     assert set(meta.error_statuses) == {400, 401, 404}
     responses = spec["paths"][path][method.lower()]["responses"]

@@ -9,6 +9,8 @@ from tai42_skeleton.access_control.settings import access_control_settings
 from tai42_skeleton.access_control.startup import (
     check_accounts_providers_configured,
     check_always_public_routes,
+    check_fenced_routes_resolvable,
+    check_route_actions,
     check_spa_shell_public,
     probe_identity_provider,
     seed_roles,
@@ -231,6 +233,13 @@ def build_app() -> TaiMCP:
             # is printed, an unacknowledged public-by-declaration non-/api GET route fails
             # the boot closed, and the control-plane terminal-deny invariant is confirmed.
             app.lifecycle.on_startup(check_spa_shell_public)
+            # Every gated route must resolve to an authorization action-class
+            # (read/write/fenced/secret) — an unclassifiable route fails the boot closed,
+            # so allow-by-omission can never reach the enforcement path.
+            app.lifecycle.on_startup(check_route_actions)
+            # Every registered fenced/secret route must resolve back to itself through the
+            # gate's resolver, so the admin-only fence can never silently fail open.
+            app.lifecycle.on_startup(check_fenced_routes_resolvable)
             # A registered accounts provider left out of the resolution chain would mint
             # sessions that never authenticate — refuse to boot instead.
             app.lifecycle.on_startup(check_accounts_providers_configured)

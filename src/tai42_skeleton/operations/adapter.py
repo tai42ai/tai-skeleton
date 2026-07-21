@@ -21,7 +21,7 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 
 from tai42_skeleton.app.reload_gate import reload_gate
-from tai42_skeleton.app.route_registry import DeclaredRouteMetadata
+from tai42_skeleton.app.route_registry import DeclaredRouteMetadata, RouteAction
 from tai42_skeleton.operations.errors import OperationError
 
 if TYPE_CHECKING:
@@ -157,14 +157,18 @@ def register_operation_route(
     context_extractor: ContextExtractor | None = None,
     response_headers: dict[str, str] | None = None,
     success_status: int = 200,
+    action: RouteAction | None = None,
 ) -> Callable[[Request], Awaitable[Response]]:
     """Register ``op`` as an HTTP route at ``path``/``method`` and return the handler.
 
-    A DELETE route auto-forces ``destructive`` on the operation; a GET route that
-    declares ``destructive`` is a registration-time error (a read is never
-    destructive). The operation's route template + method + path params are
-    attached to its metadata so the tool-edge authorization can synthesize the
-    concrete resource path.
+    A DELETE route auto-forces the ``destructive`` spec-surface bool on the operation;
+    a GET route that declares ``destructive`` is a registration-time error (a read is
+    never destructive). ``action`` is the ORTHOGONAL authorization action-class
+    (``read``/``write`` derived from the method, or the admin-only ``fenced``/``secret``
+    fence declared explicitly) — it never touches the ``destructive`` bool, so a
+    ``secret`` GET never trips the GET-destructive guard. The operation's route template
+    + method + path params are attached to its metadata so the tool-edge authorization
+    can synthesize the concrete resource path.
 
     ``context_extractor`` derives the operation's non-path kwargs from the raw
     request when they are not a plain request-model parse (header credentials, or a
@@ -213,6 +217,7 @@ def register_operation_route(
         response_model=op.response_model,
         authed=authed,
         destructive=op.destructive,
+        action=action,
         declared=_declared_metadata(op, method_upper, authed=authed, success_status=success_status),
     )
     return decorator(handler)

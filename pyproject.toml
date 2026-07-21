@@ -149,6 +149,9 @@ asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 testpaths = ["tests"]
 xfail_strict = true
+markers = [
+    "integration: exercises a real external service (e.g. a live Postgres); skips VISIBLY with a clear reason when the service is not configured, never a silent skip",
+]
 # Warnings are errors so a real bug (e.g. an un-awaited coroutine) fails the
 # suite instead of scrolling past. The one ignore is a third-party test-infra
 # deprecation (starlette's TestClient asking for the ``httpx2`` backend), not

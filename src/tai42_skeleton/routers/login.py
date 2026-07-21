@@ -65,4 +65,5 @@ logout = register_operation_route(
     path="/api/auth/logout",
     method="POST",
     context_extractor=_logout_candidates,
+    action="write",
 )

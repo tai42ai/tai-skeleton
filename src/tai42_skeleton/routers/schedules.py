@@ -62,6 +62,7 @@ list_schedules = register_operation_route(
     operation_metadata_of(_list_schedules_op),
     path="/api/schedules",
     method="GET",
+    action="read",
 )
 
 server_datetime = register_operation_route(
@@ -69,6 +70,7 @@ server_datetime = register_operation_route(
     operation_metadata_of(_server_datetime_op),
     path="/api/schedules/server-datetime",
     method="GET",
+    action="read",
 )
 
 create_schedule = register_operation_route(
@@ -77,6 +79,7 @@ create_schedule = register_operation_route(
     path="/api/schedules",
     method="POST",
     context_extractor=_extract_create,
+    action="write",
 )
 
 delete_schedule = register_operation_route(
@@ -84,4 +87,5 @@ delete_schedule = register_operation_route(
     operation_metadata_of(_delete_schedule_op),
     path="/api/schedules/{schedule_name}",
     method="DELETE",
+    action="write",
 )

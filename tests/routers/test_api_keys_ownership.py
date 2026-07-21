@@ -293,17 +293,25 @@ async def test_capabilities_reports_mintable(wired):
 async def test_list_roles_returns_seeded_roles(wired, monkeypatch):
     from tai42_skeleton.access_control.roles import seed_default_roles
 
+    pg, _spy = wired
+    # The listing exposes raw base-tier jq, so it is admin-only; seed an admin caller.
+    _seed_caller(pg, "admin1", scopes=["*"])
     # A shared store so the seed survives the handler's own ``role_store()`` rebuild.
     mem = _MemStore()
     monkeypatch.setattr(versioning_module, "versioned_store", lambda: mem)
     monkeypatch.setattr(versioning_module, "versioned_store_configured", lambda: True)
     await seed_default_roles()
-    resp = await router.list_roles(_req(method="GET"))
+    resp = await _call(router.list_roles, "admin1", _req(method="GET"))
     assert resp.status_code == 200
     data = _body(resp)["data"]
     assert {r["name"] for r in data} == {"admin", "editor", "viewer"}
     for role in data:
-        assert set(role) == {"name", "scopes", "condition", "description"}
+        # The full RoleDefinition-shaped body: name/description/scopes + the base-tier jq
+        # dimension + the editable per-tag grant map + allow_all.
+        assert {"name", "description", "scopes", "condition", "grants", "allow_all", "base_tier"} <= set(role)
+    admin = next(r for r in data if r["name"] == "admin")
+    assert admin["allow_all"] is True
+    assert admin["grants"] == {}
 
 
 async def test_list_roles_empty_on_store_less_deployment(wired, monkeypatch):
@@ -311,12 +319,15 @@ async def test_list_roles_empty_on_store_less_deployment(wired, monkeypatch):
     # serves an empty list rather than attempting a Postgres read. The versioned store
     # is patched to RAISE if invoked, so the guard is load-bearing: without it the
     # handler would read the store and blow up rather than return an empty list.
+    pg, _spy = wired
+    _seed_caller(pg, "admin1", scopes=["*"])
+
     def _boom():
         raise AssertionError("versioned store must not be read when store-less")
 
     monkeypatch.setattr(versioning_module, "versioned_store", _boom)
     monkeypatch.setattr(versioning_module, "versioned_store_configured", lambda: False)
-    resp = await router.list_roles(_req(method="GET"))
+    resp = await _call(router.list_roles, "admin1", _req(method="GET"))
     assert resp.status_code == 200
     assert _body(resp)["data"] == []
 

@@ -333,8 +333,23 @@ async def list_routes(routes: list[Any]) -> list[dict[str, Any]]:
     every GET route — noise for the mapper). ``mapped`` is the url's value from
     ``get_all_route_mappings`` looked up by the EXACT path string — a scope id, the
     public marker for a public pin, or ``null`` when the path has no mapping. Exact-key
-    lookup only: this door does not attempt dynamic-pattern matching."""
+    lookup only: this door does not attempt dynamic-pattern matching.
+
+    Each entry is JOINED with its :class:`RouteMetadata` (from
+    ``route_registry.load_all_routes()``, a separate collection) to also carry the
+    route's feature ``tags`` + ``summary`` + authorization ``action`` — the data the
+    Studio Roles page groups the per-tag tri-state by and marks the ``fenced``/``secret``
+    (admin-only) routes it must never offer a grant for. The join is keyed on the route
+    TEMPLATE + its method set with ``HEAD`` stripped on BOTH sides (Starlette auto-adds
+    ``HEAD`` to a GET), so the two collections compare like-for-like; a registered route
+    whose method set fails to join is a loud STOP (a normalization drift), never a
+    silently dropped row."""
+    from tai42_skeleton.app.route_registry import load_all_routes
+
     mappings = await management.get_all_route_mappings()
+    all_meta = load_all_routes()
+    meta_by_key = {(meta.path, frozenset(m for m in meta.methods if m != "HEAD")): meta for meta in all_meta}
+    registered_paths = {meta.path for meta in all_meta}
     entries: list[dict[str, Any]] = []
     for route in routes:
         if isinstance(route, Mount):
@@ -345,7 +360,23 @@ async def list_routes(routes: list[Any]) -> list[dict[str, Any]]:
                 "routing type must be classified in list_routes, not silently dropped"
             )
         methods = sorted(m for m in (route.methods or set()) if m != "HEAD")
-        entries.append({"path": route.path, "methods": methods, "mapped": mappings.get(route.path)})
+        entry: dict[str, Any] = {"path": route.path, "methods": methods, "mapped": mappings.get(route.path)}
+        meta = meta_by_key.get((route.path, frozenset(methods)))
+        if meta is not None:
+            entry.update(tags=list(meta.tags), summary=meta.summary, action=meta.action)
+        elif route.path in registered_paths:
+            # The PATH is a registered route but this method set did not join — a genuine
+            # method-normalization drift between the two collections. A loud STOP, never a
+            # silently dropped metadata row.
+            raise TypeError(
+                f"gated route {'/'.join(methods)} {route.path} did not join its route-registry metadata — "
+                "the method-set normalization drifted; a gated route must never be a dropped row"
+            )
+        else:
+            # A path not in the registry at all carries no metadata to join (the boot
+            # action-class audit guarantees every registered gated route is classified).
+            entry.update(tags=[], summary="", action=None)
+        entries.append(entry)
     entries.sort(key=lambda entry: entry["path"])
     return entries
 
@@ -584,13 +615,19 @@ async def get_capabilities() -> dict[str, Any]:
     return {"mintable": any(m for _, m in capabilities), "providers": providers}
 
 
-@operation(summary="List role templates", tags=["access-control"])
+@operation(summary="List roles", tags=["access-control"], errors=[ForbiddenError])
 async def list_roles() -> list[dict[str, Any]]:
-    """The seeded/operator-authored role templates as ``[{"name", "scopes", "condition",
-    "description"}, …]`` — the users-admin role picker reads this instead of hardcoding
-    the role names. A store-less deployment (no versioned store configured) has no role
-    templates — the seed step is skipped at boot — so the read is skipped and the list
-    is empty."""
+    """The seeded/operator-authored roles as full ``RoleDefinition``-shaped bodies
+    (``{name, description, scopes, condition, condition_id, condition_kwargs, base_tier,
+    allow_all, grants}``) — the users-admin role picker and the Studio Roles page read
+    this. A store-less deployment (no versioned store configured) has no roles — the seed
+    step is skipped at boot — so the read is skipped and the list is empty.
+
+    Admin-only: a listing exposes every role's raw base-tier jq condition, so a non-admin
+    caller is denied 403. This op-level check is defense in depth behind the ``secret``
+    route action-class that already fences the route."""
+    caller = await _resolve_caller()
+    _require_admin(caller)
     from tai42_skeleton.versioning import versioned_store_configured
 
     if not versioned_store_configured():

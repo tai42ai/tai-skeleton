@@ -35,6 +35,7 @@ backend_info = register_operation_route(
     operation_metadata_of(_backend_info_op),
     path="/api/backend",
     method="GET",
+    action="read",
 )
 
 list_workers = register_operation_route(
@@ -42,6 +43,7 @@ list_workers = register_operation_route(
     operation_metadata_of(_list_workers_op),
     path="/api/fleet/workers",
     method="GET",
+    action="read",
 )
 
 
@@ -67,4 +69,5 @@ reload_config = register_operation_route(
     path="/api/fleet/reload-config",
     method="POST",
     context_extractor=_reload_targets,
+    action="fenced",
 )

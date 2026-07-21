@@ -60,6 +60,7 @@ submit_run = register_operation_route(
     method="POST",
     context_extractor=_extract_submission,
     success_status=202,
+    action="write",
 )
 
 get_run = register_operation_route(
@@ -67,6 +68,7 @@ get_run = register_operation_route(
     operation_metadata_of(_get_run_op),
     path="/api/tool-runs/{run_id}",
     method="GET",
+    action="read",
 )
 
 list_tool_runs = register_operation_route(
@@ -75,4 +77,5 @@ list_tool_runs = register_operation_route(
     path="/api/tool-runs",
     method="GET",
     context_extractor=_extract_list_query,
+    action="read",
 )

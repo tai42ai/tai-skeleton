@@ -74,6 +74,7 @@ list_sections = register_operation_route(
     operation_metadata_of(_list_sections_op),
     path="/api/backup/sections",
     method="GET",
+    action="read",
 )
 
 
@@ -84,6 +85,7 @@ list_sections = register_operation_route(
     tags=["backup"],
     request_model=BackupExport,
     response_model=None,
+    action="fenced",
     declared=DeclaredRouteMetadata(
         reload_gated=False,
         reads_body=True,
@@ -157,4 +159,5 @@ import_backup = register_operation_route(
     path="/api/backup/import",
     method="POST",
     context_extractor=_extract_import,
+    action="fenced",
 )

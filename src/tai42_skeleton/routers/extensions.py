@@ -22,4 +22,5 @@ list_extensions = register_operation_route(
     operation_metadata_of(_list_extensions_op),
     path="/api/extensions",
     method="GET",
+    action="read",
 )

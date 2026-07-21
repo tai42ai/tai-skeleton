@@ -482,7 +482,11 @@ class _PgCursor:
         self._all = []
         self.rowcount = 0
 
-        if norm.startswith("INSERT INTO access_control_routes"):
+        if norm.startswith("SELECT COUNT(*) FROM access_control_policies WHERE policy_data"):
+            pointer_key, role_name = params
+            count = sum(1 for p in pg.policies if (p.get("policy_data") or {}).get(pointer_key) == role_name)
+            self._one = (count,)
+        elif norm.startswith("INSERT INTO access_control_routes"):
             url, scope_id, pattern = params
             existing = next((r for r in pg.routes if r["url"] == url), None)
             if existing is not None:

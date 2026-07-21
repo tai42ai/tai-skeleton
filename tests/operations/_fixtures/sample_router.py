@@ -30,4 +30,5 @@ register_operation_route(
     operation_metadata_of(sample_greet),
     path="/api/sample/greet",
     method="POST",
+    action="write",
 )

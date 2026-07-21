@@ -108,6 +108,7 @@ get_manifest = register_operation_route(
     operation_metadata_of(_get_manifest_op),
     path="/api/manifest",
     method="GET",
+    action="read",
 )
 
 update_manifest = register_operation_route(
@@ -116,6 +117,7 @@ update_manifest = register_operation_route(
     path="/api/manifest/replace",
     method="POST",
     context_extractor=_extract_manifest_replace,
+    action="fenced",
 )
 
 set_mcp_config = register_operation_route(
@@ -124,6 +126,7 @@ set_mcp_config = register_operation_route(
     path="/api/mcp-config",
     method="POST",
     context_extractor=_extract_mcp_config,
+    action="write",
 )
 
 get_mcp_config_schema = register_operation_route(
@@ -131,6 +134,7 @@ get_mcp_config_schema = register_operation_route(
     operation_metadata_of(_get_mcp_config_schema_op),
     path="/api/mcp-config/schema",
     method="GET",
+    action="read",
 )
 
 get_mcp_status = register_operation_route(
@@ -138,6 +142,7 @@ get_mcp_status = register_operation_route(
     operation_metadata_of(_get_mcp_status_op),
     path="/api/mcp-status",
     method="GET",
+    action="read",
 )
 
 list_failed_mcps = register_operation_route(
@@ -146,6 +151,7 @@ list_failed_mcps = register_operation_route(
     path="/api/mcp-status/failed",
     method="GET",
     context_extractor=_extract_failed_query,
+    action="read",
 )
 
 reload_failed_mcps = register_operation_route(
@@ -154,6 +160,7 @@ reload_failed_mcps = register_operation_route(
     path="/api/mcp-status/reload-failed",
     method="POST",
     context_extractor=_extract_targets,
+    action="fenced",
 )
 
 reload_mcp = register_operation_route(
@@ -162,6 +169,7 @@ reload_mcp = register_operation_route(
     path="/api/mcp-status/{title}/reload",
     method="POST",
     context_extractor=_extract_targets,
+    action="write",
 )
 
 deregister_mcp = register_operation_route(
@@ -170,4 +178,5 @@ deregister_mcp = register_operation_route(
     path="/api/mcp-status/{title}/deregister",
     method="POST",
     context_extractor=_extract_targets,
+    action="fenced",
 )

@@ -214,12 +214,31 @@ async def test_sub_mcp_filtered_by_mount_coverage(env: _Env):
 
 
 async def test_global_tool_door_projects_every_registry_tool(env: _Env):
-    env.pg.add_policy("u1", scopes=["tools-run"])
-    env.pg.add_route("/api/run-tool", "tools-run")
-    env.routes(("/api/run-tool", ["POST"]))
+    # The sync tool-execution door (POST /api/run-tool) is action=fenced (admin-only), so
+    # reaching a global tool door projects the whole tool surface. A condition-free ["*"]
+    # admin reaches the async submit door and gets every registry tool.
+    env.pg.add_policy("admin1", scopes=["*"])
+    env.pg.add_route("/api/tool-runs", "tools-run")
+    env.routes(("/api/tool-runs", ["POST"]))
     env.tools(["a", "b", "c"])
-    result = await build_projection("u1", ["tools-run"], {})
+    result = await build_projection("admin1", ["*"], {})
     assert result.tools == ["a", "b", "c"]
+
+
+async def test_non_admin_projection_omits_a_fenced_route(env: _Env):
+    # projection ⊆ gate for the per-tag FENCE term, exercised directly in the projection: a
+    # non-admin whose scope AND jq admit a fenced route still has it OMITTED, because
+    # ``role_level_decision`` hard-fences it exactly as the request gate does. POST
+    # /api/run-tool is a REAL fenced route (the resolver reads the live registry, not the
+    # monkeypatched candidate list); /api/x is a non-registered control the same caller reaches.
+    env.pg.add_policy("u1", scopes=["s"], condition="true")  # jq admits everything
+    env.pg.add_route("/api/run-tool", "s")
+    env.pg.add_route("/api/x", "s")
+    env.routes(("/api/run-tool", ["POST"]), ("/api/x", ["GET"]))
+    result = await build_projection("u1", ["s"], {})
+    projected = {(m, r.path) for r in result.routes for m in r.methods}
+    assert ("POST", "/api/run-tool") not in projected  # real fenced route → omitted by the per-tag term
+    assert ("GET", "/api/x") in projected  # not a fenced route → reachable (control)
 
 
 async def test_agents_projected_per_run_path_for_editor(env: _Env):

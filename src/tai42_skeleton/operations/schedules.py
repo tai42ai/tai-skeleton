@@ -91,6 +91,10 @@ async def server_datetime() -> Any:
     request_model=ScheduleCreate,
 )
 async def create_schedule(tool_name: str, tool_kwargs: dict[str, Any], schedule_kwargs: dict[str, Any]) -> Any:
+    """Schedule a caller-named tool to run on a cadence — a run-ANY-tool door.
+
+    The caller supplies ``tool_name``, so reaching this is arbitrary-tool-execution
+    privilege (the recurring firing runs the named tool with real side effects)."""
     if not await _scheduling_backend_present():
         raise NotSupportedError(_NO_BACKEND_MESSAGE)
     # Schedule keys win on collision so the backend's scheduling parameters cannot be

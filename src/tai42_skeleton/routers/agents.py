@@ -128,6 +128,7 @@ list_agents = register_operation_route(
     operation_metadata_of(_list_agents_op),
     path="/api/agents",
     method="GET",
+    action="read",
 )
 
 list_spec_runnable_agents = register_operation_route(
@@ -135,6 +136,7 @@ list_spec_runnable_agents = register_operation_route(
     operation_metadata_of(_list_spec_runnable_agents_op),
     path="/api/agents/spec-runnable",
     method="GET",
+    action="read",
 )
 
 
@@ -230,6 +232,7 @@ async def _agent_event_stream(request: Request, agent: Agent, run_kwargs: dict[s
         error_statuses=(400, 401, 404, 503),
         success_status=200,
     ),
+    action="write",
 )
 async def run_agent(request: Request) -> Response:
     # An agent run dispatched against registries a reload is tearing down would
@@ -288,6 +291,7 @@ async def run_agent(request: Request) -> Response:
         error_statuses=(400, 401, 404, 503),
         success_status=200,
     ),
+    action="write",
 )
 async def run_authored_agent(request: Request) -> Response:
     """Stream a run of an authored agent — a preset over an agent's run tool whose

@@ -9,10 +9,13 @@ in ``tests/versioning``; here the store is a faithful in-memory stand-in.
 
 from __future__ import annotations
 
+import copy
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from typing import Any
 
 import pytest
-from tai42_contract.versioning import VersionedStore
+from tai42_contract.versioning import VersionedStore, VersionedStoreTransaction
 from tai42_contract.versioning.errors import (
     DocumentExistsError,
     DocumentNotFoundError,
@@ -23,20 +26,39 @@ from tai42_contract.versioning.models import DocumentRecord, DocumentVersion
 from tai42_skeleton.access_control.policy_store import AcPolicyStore
 
 
+class _MemTx:
+    """The in-memory unit-of-work handle (an opaque token, like the real store's)."""
+
+
 class _MemStore(VersionedStore):
     """Faithful in-memory ``VersionedStore`` (one active row per ``(kind, name)``)."""
 
     def __init__(self) -> None:
         self.docs: dict[tuple[str, str], dict[str, Any]] = {}
 
-    async def create(self, kind, name, body, tags=None) -> DocumentRecord:
+    @asynccontextmanager
+    async def transaction(self) -> AsyncIterator[VersionedStoreTransaction]:
+        # Apply-or-discard: snapshot the docs on enter, restore them on any exception so
+        # every write done under the yielded handle commits or rolls back together.
+        snapshot = copy.deepcopy(self.docs)
+        try:
+            yield _MemTx()
+        except BaseException:
+            self.docs = snapshot
+            raise
+
+    async def create(
+        self, kind, name, body, tags=None, *, tx: VersionedStoreTransaction | None = None
+    ) -> DocumentRecord:
         key = (kind, name)
         if key in self.docs:
             raise DocumentExistsError(kind, name)
         self.docs[key] = {"active": 1, "versions": {1: (dict(body), list(tags or []))}}
         return DocumentRecord(kind=kind, name=name, active_version=1, is_active=True, created_at="t")
 
-    async def save_version(self, kind, name, body, tags=None) -> DocumentVersion:
+    async def save_version(
+        self, kind, name, body, tags=None, *, tx: VersionedStoreTransaction | None = None
+    ) -> DocumentVersion:
         doc = self.docs.get((kind, name))
         if doc is None:
             raise DocumentNotFoundError(kind, name)
@@ -56,7 +78,9 @@ class _MemStore(VersionedStore):
         doc = self._require(kind, name)
         return DocumentRecord(kind=kind, name=name, active_version=doc["active"], is_active=True, created_at="t")
 
-    async def get_active_body(self, kind, name) -> dict[str, Any]:
+    async def get_active_body(self, kind, name, *, tx=None, for_update=False) -> dict[str, Any]:
+        if for_update and tx is None:
+            raise ValueError("get_active_body(for_update=True) requires a tx")
         doc = self._require(kind, name)
         return dict(doc["versions"][doc["active"]][0])
 
@@ -67,7 +91,7 @@ class _MemStore(VersionedStore):
             for v, (body, tags) in sorted(doc["versions"].items())
         ]
 
-    async def get_version(self, kind, name, version) -> DocumentVersion:
+    async def get_version(self, kind, name, version, *, tx=None) -> DocumentVersion:
         doc = self.docs.get((kind, name))
         if doc is None or version not in doc["versions"]:
             raise DocumentVersionNotFoundError(kind, name, version)
@@ -76,7 +100,7 @@ class _MemStore(VersionedStore):
             version=version, body=body, tags=tags, created_at="t", is_current=version == doc["active"]
         )
 
-    async def rollback(self, kind, name, version) -> DocumentRecord:
+    async def rollback(self, kind, name, version, *, tx: VersionedStoreTransaction | None = None) -> DocumentRecord:
         doc = self.docs.get((kind, name))
         if doc is None or version not in doc["versions"]:
             raise DocumentVersionNotFoundError(kind, name, version)
@@ -87,7 +111,7 @@ class _MemStore(VersionedStore):
         self._require(kind, name)
         del self.docs[(kind, name)]
 
-    async def delete(self, kind, name) -> None:
+    async def delete(self, kind, name, *, tx: VersionedStoreTransaction | None = None) -> None:
         self._require(kind, name)
         del self.docs[(kind, name)]
 

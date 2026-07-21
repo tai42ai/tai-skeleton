@@ -150,6 +150,7 @@ providers = register_operation_route(
     operation_metadata_of(_list_connector_providers_op),
     path="/api/connectors/providers",
     method="GET",
+    action="read",
 )
 
 connections = register_operation_route(
@@ -157,6 +158,7 @@ connections = register_operation_route(
     operation_metadata_of(_list_connections_op),
     path="/api/connectors/connections",
     method="GET",
+    action="read",
 )
 
 get_connection = register_operation_route(
@@ -164,6 +166,7 @@ get_connection = register_operation_route(
     operation_metadata_of(_get_connection_op),
     path="/api/connectors/connections/{connection_id}",
     method="GET",
+    action="read",
 )
 
 start_connect = register_operation_route(
@@ -172,6 +175,7 @@ start_connect = register_operation_route(
     path="/api/connectors/connections/start",
     method="POST",
     context_extractor=_extract_start_connect,
+    action="write",
 )
 
 disconnect = register_operation_route(
@@ -179,6 +183,7 @@ disconnect = register_operation_route(
     operation_metadata_of(_disconnect_op),
     path="/api/connectors/connections/{connection_id}",
     method="DELETE",
+    action="write",
 )
 
 reconnect = register_operation_route(
@@ -187,6 +192,7 @@ reconnect = register_operation_route(
     path="/api/connectors/connections/{connection_id}/reconnect",
     method="POST",
     context_extractor=_extract_reconnect,
+    action="write",
 )
 
 patch_sub_services = register_operation_route(
@@ -195,6 +201,7 @@ patch_sub_services = register_operation_route(
     path="/api/connectors/connections/{connection_id}/sub-services",
     method="PATCH",
     context_extractor=_extract_patch_sub_services,
+    action="write",
 )
 
 
@@ -214,6 +221,7 @@ patch_sub_services = register_operation_route(
         error_statuses=(400, 401, 500),
         success_status=200,
     ),
+    action="write",
 )
 async def oauth_complete(request: Request) -> Response:
     try:

@@ -4,8 +4,8 @@ Boots the app through the real ``app.app_context`` harness with an ``api_tools``
 manifest that loads no management tool modules and enables projection, then
 asserts the projected surface end-to-end (checklist items 1-6):
 
-1. the projected tool surface is exactly the expected op surface — the 90
-   default-projected ops (118 total - 25 tier-2 default-excluded - 3 tier-1
+1. the projected tool surface is exactly the expected op surface — the 89
+   default-projected ops (123 total - 30 tier-2 default-excluded - 4 tier-1
    hardcode-blocked);
 2. ``destructiveHint`` is present on destructive ops (a DELETE, a mutating POST)
    and absent on reads (a GET);
@@ -102,22 +102,24 @@ def test_d1_projected_surface_is_the_expected_op_count():
             tier1 = sorted(op.name for op in ops if is_tier1(op))
             tier2 = sorted(op.name for op in ops if is_tier2(op) and not is_tier1(op))
 
-            # The arithmetic the plan pins: 118 total - 25 tier-2 - 3 tier-1 = 90.
-            assert total == 118, total
-            # Tier-1 (never projectable): the two meta-executors PLUS ``get_me``, whose
+            # The arithmetic the plan pins: 123 total - 30 tier-2 - 3 tier-1 = 90.
+            assert total == 123, total
+            # Tier-1 (never projectable): the two meta-executors (``run_tool`` and
+            # ``submit_run``, each running a caller-named tool) PLUS ``get_me``, whose
             # params are the caller's own edge-derived identity (``caller_context=True``).
             assert tier1 == ["get_me", "run_tool", "submit_run"], tier1
-            # The tier-2 set is the 18 non-``get_me`` api_keys ops (all under /api/auth/*,
-            # including create_claim_link) + logout (/api/auth/logout) +
-            # exchange_claim_token (authority_changing — a public credential door that
-            # must never project) + import_backup + update_manifest + the three
-            # marketplace mutators (install/uninstall/update, each authority_changing
-            # because it runs arbitrary third-party code) — 25 in all. ``get_me`` is NOT
-            # here: it is tier-1 hardcode-blocked, not tier-2 includable.
+            # The tier-2 set is the api_keys ops (all under /api/auth/*, including
+            # create_claim_link) + the five role-management ops (create/edit/delete/
+            # versions/rollback under /api/auth/roles*) + logout + exchange_claim_token
+            # (authority_changing — a public credential door that must never project) +
+            # import_backup + update_manifest + the three marketplace mutators — 30 in
+            # all. ``get_me`` is NOT here: it is tier-1 hardcode-blocked, not tier-2.
             assert set(tier2) == {
                 "add_scope_url",
                 "create_api_key",
                 "create_claim_link",
+                "create_role",
+                "delete_role",
                 "delete_scope",
                 "edit_api_key",
                 "exchange_claim_token",
@@ -125,6 +127,7 @@ def test_d1_projected_surface_is_the_expected_op_count():
                 "import_backup",
                 "list_policy_versions",
                 "list_public_routes",
+                "list_role_versions",
                 "list_roles",
                 "list_routes",
                 "list_scopes",
@@ -137,8 +140,10 @@ def test_d1_projected_surface_is_the_expected_op_count():
                 "remove_scope_url",
                 "revoke_api_key",
                 "rollback_policy",
+                "rollback_role",
                 "unpin_public_route",
                 "update_manifest",
+                "update_role",
                 "validate_condition",
             }, tier2
 

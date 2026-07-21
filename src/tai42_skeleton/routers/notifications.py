@@ -29,6 +29,7 @@ list_notifications = register_operation_route(
     operation_metadata_of(_list_notifications_op),
     path="/api/notifications",
     method="GET",
+    action="read",
 )
 
 notify_user = register_operation_route(
@@ -36,4 +37,5 @@ notify_user = register_operation_route(
     operation_metadata_of(_notify_user_op),
     path="/api/notifications",
     method="POST",
+    action="write",
 )

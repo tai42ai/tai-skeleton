@@ -49,6 +49,7 @@ list_tools = register_operation_route(
     operation_metadata_of(_list_tools_op),
     path="/api/tools",
     method="GET",
+    action="read",
 )
 
 tool_tags = register_operation_route(
@@ -56,6 +57,7 @@ tool_tags = register_operation_route(
     operation_metadata_of(_tool_tags_op),
     path="/api/tools/tags",
     method="GET",
+    action="read",
 )
 
 tool_schema = register_operation_route(
@@ -63,6 +65,7 @@ tool_schema = register_operation_route(
     operation_metadata_of(_tool_schema_op),
     path="/api/tools/{tool_name}/schema",
     method="GET",
+    action="read",
 )
 
 tools_schema = register_operation_route(
@@ -70,6 +73,7 @@ tools_schema = register_operation_route(
     operation_metadata_of(_tools_schema_op),
     path="/api/tools-schema",
     method="GET",
+    action="read",
 )
 
 run_tool = register_operation_route(
@@ -78,6 +82,7 @@ run_tool = register_operation_route(
     path="/api/run-tool",
     method="POST",
     context_extractor=_extract_run_tool,
+    action="fenced",
 )
 
 reload_tool = register_operation_route(
@@ -85,6 +90,7 @@ reload_tool = register_operation_route(
     operation_metadata_of(_reload_tool_op),
     path="/api/tools/reload",
     method="POST",
+    action="fenced",
 )
 
 remove_tool = register_operation_route(
@@ -92,4 +98,5 @@ remove_tool = register_operation_route(
     operation_metadata_of(_remove_tool_op),
     path="/api/tools/remove",
     method="POST",
+    action="fenced",
 )

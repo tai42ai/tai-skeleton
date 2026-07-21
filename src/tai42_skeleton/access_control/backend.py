@@ -10,6 +10,8 @@ from tai42_contract.access_control.models import JqAuthContext
 from tai42_contract.app import tai42_app
 
 from tai42_skeleton.access_control.policy import PolicyEnforcer
+from tai42_skeleton.access_control.role_gate import DenialCause
+from tai42_skeleton.access_control.role_grants import role_level_decision
 from tai42_skeleton.access_control.settings import AccessControlSettings
 from tai42_skeleton.access_control.user import TaiUser, is_admin_policy
 from tai42_skeleton.access_control.verifier import AccessControlVerifier
@@ -67,7 +69,16 @@ class AuthorizationError(AuthenticationError):
     It subclasses ``AuthenticationError`` so Starlette's ``AuthenticationMiddleware``
     still routes it through ``on_error``, but the distinct type lets the error
     handler render it as 403 (authenticated but forbidden) rather than 401.
+
+    ``cause`` is the INTERNAL denial cause (a ``DenialCause``) for debugging/logging —
+    it never reaches the client body (the external response stays a generic 403 that
+    leaks nothing), so a fenced-route denial and a per-tag level-miss are internally
+    distinguishable while the wire response is unchanged.
     """
+
+    def __init__(self, *args: object, cause: DenialCause | None = None) -> None:
+        super().__init__(*args)
+        self.cause = cause
 
 
 class AccessControlAuthBackend(AuthenticationBackend):
@@ -218,6 +229,29 @@ class AccessControlAuthBackend(AuthenticationBackend):
             # but deny the caller with a generic message that leaks no internal detail.
             logger.exception("access_control: policy enforcement failed for user %s", user_id)
             raise AuthorizationError("Access Denied") from e
+
+        # 5b. The per-tag LEVEL pass — Layer 2 of the (resource-x-action) model,
+        # INTERSECTED with the base-tier jq above (fail-closed AND). Skipped for an admin
+        # governing role; a fenced/secret route is admin-only; a grantable route needs
+        # the governing role's per-tag level (the OWNER's role for an owned key — keys
+        # inherit the owner). A resolution/infra fault fails closed as a clean deny.
+        method = conn.scope.get("method")
+        path = conn.url.path
+        try:
+            version = await self.enforcer.current_policy_version()
+            allowed, cause = await role_level_decision(policy, owner_policy, path, method, version)
+        except Exception as e:
+            logger.exception("access_control: per-tag level resolution failed for user %s", user_id)
+            raise AuthorizationError("Access Denied") from e
+        if not allowed:
+            logger.warning(
+                "access_control: per-tag level denied user %s on %s %s (%s)",
+                user_id,
+                method,
+                path,
+                cause.value if cause else "deny",
+            )
+            raise AuthorizationError("Access Denied", cause=cause)
 
         # 6. Finalize with the effective scopes, stamping the admin discriminator so the
         # resource guard can admit a super-admin to a not-yet-configured route. The owner

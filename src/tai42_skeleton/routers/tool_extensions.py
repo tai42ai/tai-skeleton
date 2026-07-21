@@ -108,6 +108,7 @@ get_tool_extensions = register_operation_route(
     operation_metadata_of(_get_tool_extensions_op),
     path="/api/tools/{name}/extensions",
     method="GET",
+    action="read",
 )
 
 set_tool_extensions = register_operation_route(
@@ -116,4 +117,5 @@ set_tool_extensions = register_operation_route(
     path="/api/tools/{name}/extensions",
     method="POST",
     context_extractor=_extract_combos,
+    action="write",
 )

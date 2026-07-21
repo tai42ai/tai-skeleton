@@ -48,6 +48,12 @@ class PolicyEnforcer:
         version = await self._current_policy_version()
         return await self._fetch_policy(user_id, version)
 
+    async def current_policy_version(self) -> int:
+        """The current policy version (a cheap single-key GET) — the cache key the LIVE
+        per-tag grant resolution mixes in, so a role edit's version bump busts it. A
+        backend error fails closed by RAISING (surfaces as a clean deny)."""
+        return await self._current_policy_version()
+
     async def _current_policy_version(self) -> int:
         # A backend error here must fail closed by RAISING (surfaces out of
         # ``authenticate`` as a clean deny), never a silent default: swallowing it

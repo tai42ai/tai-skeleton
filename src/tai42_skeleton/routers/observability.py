@@ -133,6 +133,7 @@ get_metrics = register_operation_route(
     path="/api/observability/metrics",
     method="GET",
     context_extractor=_extract_metrics_query,
+    action="read",
 )
 
 list_runs = register_operation_route(
@@ -141,6 +142,7 @@ list_runs = register_operation_route(
     path="/api/observability/runs",
     method="GET",
     context_extractor=_extract_runs_query,
+    action="read",
 )
 
 get_run_trace = register_operation_route(
@@ -148,6 +150,7 @@ get_run_trace = register_operation_route(
     operation_metadata_of(_get_run_trace_op),
     path="/api/observability/runs/{trace_id}/trace",
     method="GET",
+    action="read",
 )
 
 
@@ -168,6 +171,7 @@ get_run_trace = register_operation_route(
         error_statuses=(401, 404, 501),
         success_status=200,
     ),
+    action="read",
 )
 async def export_run_trace(request: Request) -> Response:
     """Single run's full trace as a downloadable JSON file."""
@@ -200,6 +204,7 @@ async def export_run_trace(request: Request) -> Response:
         error_statuses=(400, 401, 501),
         success_status=200,
     ),
+    action="read",
 )
 async def export_runs(request: Request) -> Response:
     """Bulk export of the filtered run list as CSV (default) or JSON. Honors the

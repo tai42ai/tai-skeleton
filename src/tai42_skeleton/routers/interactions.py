@@ -350,6 +350,7 @@ async def _stream_events(request: Request, store: InteractionStore, settings: In
         error_statuses=(401,),
         success_status=200,
     ),
+    action="read",
 )
 async def stream(request: Request) -> Response:
     settings = interactions_settings()
@@ -390,6 +391,7 @@ answer = register_operation_route(
     path="/api/interactions/{interaction_id}/answer",
     method="POST",
     context_extractor=_extract_answer,
+    action="write",
 )
 
 

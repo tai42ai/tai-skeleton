@@ -81,12 +81,12 @@ class _SpyVerifier:
         return AccessToken(token=token, client_id="u", scopes=[], claims={})
 
 
-def _conn(headers: dict[str, str] | None = None, path="/x") -> Request:
+def _conn(headers: dict[str, str] | None = None, path="/x", method="GET") -> Request:
     raw = [(k.lower().encode(), v.encode()) for k, v in (headers or {}).items()]
     return Request(
         {
             "type": "http",
-            "method": "GET",
+            "method": method,
             "path": path,
             "query_string": b"",
             "headers": raw,
@@ -430,3 +430,63 @@ async def test_same_credential_on_protected_path_still_verifies(monkeypatch, bou
     backend = _backend(spy, settings)
     await backend.authenticate(_conn({"Authorization": "Bearer good"}, path="/x"))
     assert spy.called == 1
+
+
+# -- step 5b: the per-tag level pass denies through the full authenticate flow -
+
+
+async def test_step5b_level_miss_and_hard_fence_deny_with_cause(monkeypatch, bound_app, store_pg):
+    # Drive authenticate() end-to-end for a non-admin: a grantable route the governing role
+    # holds no level for is a LEVEL_MISS 403, and an admin-only fenced route is a HARD_FENCE
+    # 403 — confirming step 5b actually invokes role_level_decision and sets the internal
+    # DenialCause (the external response is a generic AuthorizationError either way).
+    import tai42_skeleton.versioning as versioning_module
+    from tai42_skeleton.access_control import role_grants as role_grants_module
+    from tai42_skeleton.access_control.role_gate import DenialCause, reset_route_index
+    from tai42_skeleton.access_control.roles import seed_default_roles
+
+    from .test_policy_store import _MemStore
+
+    # The offline route harness rebinds a minimal app when the bound app exposes no
+    # ``http`` seam; give the fake app one so importing routes (via resolve_route_meta)
+    # keeps the storage-bearing fake bound for the enforce step.
+    bound_app.http = object()
+
+    mem = _MemStore()
+    monkeypatch.setattr(versioning_module, "versioned_store", lambda: mem)
+    monkeypatch.setattr(versioning_module, "versioned_store_configured", lambda: True)
+    role_grants_module.reset_role_grants_cache()
+    reset_route_index()
+    await seed_default_roles()
+    # A non-admin role: the editor base jq admits non-/api/auth paths (so step 5's condition
+    # passes and we REACH step 5b), but its grant map is empty, so a grantable route misses.
+    await mem.create(
+        "role",
+        "narrow",
+        {
+            "name": "narrow",
+            "description": "",
+            "scopes": ["*"],
+            "base_tier": "editor",
+            "grants": {},
+            "condition": EDITOR_JQ,
+            "allow_all": False,
+        },
+    )
+
+    settings = AccessControlSettings()
+    store_pg.add_policy("ed", scopes=["*"], condition=EDITOR_JQ, policy_data={"role": "narrow"})
+    monkeypatch.setattr(policy_module, "client_ctx", make_client_ctx(FakeRedis()))
+    backend = _backend(_FakeVerifier({"tok": "ed"}), settings)
+
+    # A grantable read route the narrow role holds no tag for → LEVEL_MISS.
+    with pytest.raises(AuthorizationError) as level:
+        await backend.authenticate(_conn({"Authorization": "Bearer tok"}, path="/api/tools"))
+    assert str(level.value) == "Access Denied"
+    assert level.value.cause is DenialCause.LEVEL_MISS
+
+    # An admin-only fenced route → HARD_FENCE regardless of any level. The editor base jq
+    # admits this non-/api/auth path, so enforcement reaches step 5b and the fence denies.
+    with pytest.raises(AuthorizationError) as fence:
+        await backend.authenticate(_conn({"Authorization": "Bearer tok"}, path="/api/run-tool", method="POST"))
+    assert fence.value.cause is DenialCause.HARD_FENCE

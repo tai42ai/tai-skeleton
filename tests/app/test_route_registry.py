@@ -68,6 +68,7 @@ def test_declared_metadata_populates_the_record() -> None:
         summary="Thing",
         tags=["t"],
         authed=True,
+        action="write",
         request_model=None,
         response_model=None,
         declared=DeclaredRouteMetadata(
@@ -137,6 +138,7 @@ def test_streaming_media_type_derivation() -> None:
         summary="Stream",
         tags=["t"],
         authed=True,
+        action="read",
         request_model=None,
         response_model=None,
     )
@@ -192,6 +194,7 @@ def test_a_method_serving_two_content_types_lists_both() -> None:
         summary="Export",
         tags=["t"],
         authed=True,
+        action="read",
         request_model=None,
         response_model=None,
     )

@@ -1090,12 +1090,28 @@ async def test_list_routes_catalogs_route_table(monkeypatch: pytest.MonkeyPatch)
     data = _body(resp)["data"]
     # Sorted by path, Mount excluded (three Route entries, no /app).
     assert [e["path"] for e in data] == ["/api/a", "/api/n", "/api/z"]
-    # HEAD stripped, multi-method sorted, mapped = public marker.
-    assert data[0] == {"path": "/api/a", "methods": ["GET", "POST"], "mapped": marker}
+    # HEAD stripped, multi-method sorted, mapped = public marker. These synthetic paths
+    # are not registered routes, so the metadata join attaches empty tags/summary and a
+    # null action (a real registered route carries its own tags/summary/action).
+    assert data[0] == {
+        "path": "/api/a",
+        "methods": ["GET", "POST"],
+        "mapped": marker,
+        "tags": [],
+        "summary": "",
+        "action": None,
+    }
     # The unassigned-routes bucket: no mapping → null.
-    assert data[1] == {"path": "/api/n", "methods": ["GET"], "mapped": None}
+    assert data[1] == {"path": "/api/n", "methods": ["GET"], "mapped": None, "tags": [], "summary": "", "action": None}
     # A scope-mapped route reports its scope id.
-    assert data[2] == {"path": "/api/z", "methods": ["GET"], "mapped": "scope-x"}
+    assert data[2] == {
+        "path": "/api/z",
+        "methods": ["GET"],
+        "mapped": "scope-x",
+        "tags": [],
+        "summary": "",
+        "action": None,
+    }
 
 
 async def test_list_routes_raises_on_unclassified_entry(monkeypatch: pytest.MonkeyPatch) -> None:

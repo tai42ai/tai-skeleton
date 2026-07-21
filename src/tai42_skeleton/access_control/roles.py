@@ -1,51 +1,48 @@
-"""Role templates: the versioned store view, the seeded defaults, the apply helper,
-and the application's ``AccountsAdminServices`` implementation.
+"""Roles: the versioned store view, the seeded defaults, the LIVE apply helper, and the
+application's ``AccountsAdminServices`` implementation.
 
-A role is a versioned template with COPY semantics: applying a role copies the
-template's ``scopes`` + ``condition`` dimension into the user's ENFORCED policy;
-later template edits do NOT retro-apply (re-assignment is explicit). Roles are stored
-under the generic :class:`~tai42_contract.versioning.VersionedStore` as ``kind="role"``
-— a third view mirroring :class:`~tai42_skeleton.access_control.policy_store.AcPolicyStore`
-and :class:`~tai42_skeleton.presets.store.PresetStoreView`.
+A role is an operator-authored, versioned permission set under two layers. Layer 1 is a
+KEPT base-tier jq security ceiling carried on ``condition`` (owner-scoping, the
+``/api/auth`` control-plane gate, the viewer read-only ceiling); Layer 2 is the editable
+per-tag ACCESS LEVEL map ``grants`` (feature-group tag → ``none``/``read``/``write``).
+Enforcement INTERSECTS the two with the route action-class fence, fail-closed.
 
-**The seeded templates carry ``"*"`` scopes and differ only by a jq condition:**
+Roles are LIVE: a user's enforced policy carries a role-name POINTER
+(``policy_data[ROLE_POINTER_KEY]``, never ``condition_id``), and enforcement resolves
+the role's CURRENT grant map at request time — an edit to a role changes every holder's
+reach on their next request. Roles are stored under the generic
+:class:`~tai42_contract.versioning.VersionedStore` as ``kind="role"`` — a view mirroring
+:class:`~tai42_skeleton.access_control.policy_store.AcPolicyStore` and
+:class:`~tai42_skeleton.presets.store.PresetStoreView`.
+
+**The seeded roles carry ``"*"`` scopes and differ by their base-tier jq + grant map:**
 routes are operator-mapped rows, so a seeded scope re-mapping of the route table would
-break every existing key on deployments that already scoped their routes. Conditions
-need no route-table surgery and work on any deployment. The enforcement engine already
+break every existing key on deployments that already scoped their routes. The base-tier
+jq needs no route-table surgery and works on any deployment; the enforcement engine
 carries ``.request.method``/``.request.path``.
 
-- ``admin``: unconditional ``["*"]`` — full control including access-control admin.
-- ``editor``: ``["*"]`` gated by ``EDITOR_JQ`` — everything EXCEPT the access-control
-  admin area, with the self-service surfaces carved back in: own API keys (the
-  route-level ownership rules scope these to OWN keys, and the admin discriminator
-  classifies a condition-bearing role-holder as non-admin, so those rules genuinely
-  fire), the tokens payload (``GET /api/auth/tokens-payload``) and mint capabilities
-  (``GET /api/auth/capabilities``), ``/api/auth/logout``, own-password change
-  (``PUT /api/auth/users/me/password``), the read-only scopes listing
-  (``GET /api/auth/scopes``), the caller's own capability projection (``GET /api/auth/me``),
-  and one-time claim-link creation (``POST /api/auth/claim-links``, whose route-level
-  ownership rule confines it to keys the caller owns / its own key).
-- ``viewer``: ``["*"]`` gated by ``VIEWER_JQ`` — editor's fence AND (read-only methods
-  OR logout OR the own-key surface OR own-password OR one-time claim-link creation), so a
-  viewer can log out, change their own password, mint/revoke own keys, and mint a
-  one-time claim link for a key it owns (attenuated to read-only power at request time by
-  the backend — attenuation, not trust).
+- ``admin``: unconditional ``["*"]``, ``allow_all`` — full control including
+  access-control administration. Its per-tag pass is SKIPPED at enforcement; it is
+  reserved, permanent, and un-lockable.
+- ``editor``: ``["*"]`` under ``EDITOR_JQ`` (the ``/api/auth`` control-plane gate with
+  self-service carve-outs), with ``write`` on every grantable feature tag — everything
+  EXCEPT the admin-only fence and the access-control admin area, self-service surfaces
+  carved back in (own API keys, tokens payload, mint capabilities, ``/api/auth/logout``,
+  own-password change, the read-only scopes listing, ``/api/auth/me``, one-time
+  claim-link creation).
+- ``viewer``: ``["*"]`` under ``VIEWER_JQ`` (the viewer read-only ceiling), with ``read``
+  on every grantable feature tag — read-only plus login/logout and own-key management.
 
-No ``/api/login`` clause exists in either string: always-public paths short-circuit to
-the public resource id before any jq evaluates, so a login-namespace carve-out would be
-dead text.
-
-**Maintenance rule:** with all three roles on ``["*"]`` scopes, non-admin authorization
-rides ENTIRELY on these seeded jq strings — every future admin-only route prefix MUST
-be reflected here. The templates are versioned and operator-editable; the unit tests
-run these strings through the REAL enforcer so a broken revision fails loudly.
+No ``/api/login`` clause exists in either base-tier string: always-public paths
+short-circuit to the public resource id before any jq evaluates, so a login-namespace
+carve-out would be dead text.
 
 The ``EDITOR_JQ``/``VIEWER_JQ`` carve-in admits the whole ``/api/auth/api-keys`` subtree
 for own-key CRUD, but the policy-administration routes beneath it
 (``/api/auth/api-keys/{user_id}/policy/versions`` and ``.../policy/rollback``) are
 enforced ADMIN-ONLY at the route level: a non-admin editor/viewer is denied there
-regardless of this jq, so it can never read another user's policy history (which leaks
-raw jq conditions) nor roll an enforced policy back to a prior version.
+regardless of this jq, so it can never read another user's policy history nor roll an
+enforced policy back to a prior version.
 """
 
 from __future__ import annotations
@@ -53,8 +50,10 @@ from __future__ import annotations
 from typing import Any
 
 from tai42_contract.access_control import OWNER_USER_ID_CLAIM
-from tai42_contract.versioning import VersionedStore
+from tai42_contract.access_control.models import RoleDefinition
+from tai42_contract.versioning import VersionedStore, VersionedStoreTransaction
 from tai42_contract.versioning.errors import DocumentExistsError, DocumentNotFoundError
+from tai42_contract.versioning.models import DocumentRecord, DocumentVersion
 
 from tai42_skeleton.access_control import management
 from tai42_skeleton.access_control.policy_store import ac_policy_store
@@ -62,73 +61,23 @@ from tai42_skeleton.access_control.store import access_control_store
 
 _KIND = "role"
 
-# ADMIN-ONLY MUTATION FENCE — full-execution / soft-restart / manifest-authority
-# doors only an admin may reach; editor AND viewer are denied here regardless of method.
-# ``run_tool`` is the god-tool (runs any registered tool with real side effects);
-# ``reload_tool`` / ``remove_tool`` / ``reload_config`` soft-restart or rewrite the live
-# registry across the fleet; ``manifest/replace`` persists a whole-manifest replacement
-# and reloads it fleet-wide (it governs ``api_tools`` + module loading);
-# ``fleet/reload-config`` soft-restarts the worker fleet — a recovery/ops door only, since
-# every pipeline mutation already self-propagates on the bus, so a manual fleet reload is
-# reserved for reconverging stranded workers and belongs to the admin;
-# ``mcp-status/reload-failed`` and the
-# per-server ``.../deregister`` re-probe or detach MCP servers fleet-wide. The
-# marketplace ``install``/``uninstall``/``update`` mutations rewrite the running
-# environment (they pip-install code and persist + reload the manifest fleet-wide);
-# the backup ``import`` restores whole sections over the live store and ``export``
-# reads out secret-bearing sections — all privileged, so an editor is denied and only
-# an admin may reach them. Membership
-# rule: every admin-only mutating route MUST be reflected here (the same rule the
-# maintenance note below states for admin-only route prefixes). The single-server
-# ``reload`` (``/api/mcp-status/{title}/reload``) is deliberately NOT fenced — it stays
-# reachable to editors/viewers, unchanged. The fleet census ``GET /api/fleet/workers`` is
-# a read and stays unfenced. The unit tests run the composed strings through the REAL
-# enforcer so a broken revision fails loudly.
-#
-# Three fence dimensions compose into one clause (any match ⇒ deny editor+viewer):
-# a literal path list matched by ``IN()`` (below), variable-segment path SHAPES matched
-# by prefix+suffix, and (METHOD, PATH) rules for a mutation that SHARES its path with a
-# read — a path-only rule cannot distinguish the two, so the fence keys on the method too.
-_ADMIN_ONLY_MUTATIONS = (
-    "/api/run-tool",
-    "/api/tools/reload",
-    "/api/tools/remove",
-    "/api/config/reload",
-    "/api/fleet/reload-config",
-    "/api/manifest/replace",
-    "/api/mcp-status/reload-failed",
-    "/api/marketplace/install",
-    "/api/marketplace/uninstall",
-    "/api/marketplace/update",
-    "/api/backup/import",
-    "/api/backup/export",
-)
-# Admin-only mutating routes with a variable path segment cannot match by literal
-# ``IN``; the per-server detach (``/api/mcp-status/{title}/deregister``) is fenced by
-# matching the concrete path's fixed prefix + suffix (its sibling ``.../reload`` ends in
-# ``/reload``, so it is not caught — preserving its non-membership).
-_ADMIN_ONLY_MUTATION_SHAPES = (("/api/mcp-status/", "/deregister"),)
-# Admin-only mutations fenced by (METHOD, PATH) because the mutation shares its exact path
-# with a read on the same path — a path-only ``IN`` rule would also catch the read.
-# ``POST /api/config/env`` (``write_env``) rewrites ARBITRARY deployment env with no key
-# allow-list and then broadcasts a fleet-wide reload — a strict superset of the
-# already-fenced ``/api/config/reload`` — so it is admin-only; the ``GET /api/config/env``
-# read on the same path is deliberately NOT fenced here (only the write method).
-_ADMIN_ONLY_METHOD_PATHS = (("POST", "/api/config/env"),)
-_MUTATION_LITERAL = "(.request.path | IN(" + ", ".join(f'"{path}"' for path in _ADMIN_ONLY_MUTATIONS) + "))"
-_MUTATION_SHAPED = " or ".join(
-    f'((.request.path | startswith("{pre}")) and (.request.path | endswith("{suf}")))'
-    for pre, suf in _ADMIN_ONLY_MUTATION_SHAPES
-)
-_MUTATION_METHOD_PATH = " or ".join(
-    f'((.request.method == "{method}") and (.request.path == "{path}"))' for method, path in _ADMIN_ONLY_METHOD_PATHS
-)
-_ADMIN_MUTATION_FENCE = f"(({_MUTATION_LITERAL} or {_MUTATION_SHAPED} or {_MUTATION_METHOD_PATH}) | not)"
+# The reserved, permanent role name: undeletable, unrenamable, non-downgradable — its jq
+# base stays ``None`` and it is ``allow_all`` (the per-tag pass skipped), so an admin can
+# never be locked out of the control plane from either direction.
+RESERVED_ADMIN_ROLE = "admin"
+
+# The policy_data key holding a user's LIVE role pointer — the role NAME whose CURRENT
+# grant map governs the user, resolved per request. It is orthogonal metadata read ONLY
+# for the grant lookup: it is NEVER routed through ``condition_id`` (which would collide
+# with the ``is_admin_policy`` discriminator), and an ``allow_all``/admin policy carries
+# no pointer so that discriminator holds byte-for-byte.
+ROLE_POINTER_KEY = "role"
 
 # editor = everything except the access-control admin area, with the self-service
 # surfaces carved back in (own keys / tokens-payload / capabilities / me /
-# one-time claim-link creation / GET scopes / logout / own-password) — AND never the
-# admin-only mutation fence.
+# one-time claim-link creation / GET scopes / logout / own-password). This is the
+# base-tier control-plane ceiling; the admin-only mutation fence is the route
+# action-class (enforced in code), not composed here.
 _EDITOR_AUTH_CARVE = (
     '((.request.path | startswith("/api/auth")) | not) '
     'or (.request.path | startswith("/api/auth/api-keys")) '
@@ -140,11 +89,13 @@ _EDITOR_AUTH_CARVE = (
     'or (.request.path == "/api/auth/logout") '
     'or (.request.path == "/api/auth/users/me/password")'
 )
-EDITOR_JQ = f"({_EDITOR_AUTH_CARVE}) and {_ADMIN_MUTATION_FENCE}"
+EDITOR_JQ = f"({_EDITOR_AUTH_CARVE})"
 
-# viewer = editor's fence AND (read-only methods OR logout OR own-key surface OR
-# own-password OR one-time claim-link creation), so state-changing calls are confined to
-# the self-service surfaces — AND never the admin-only mutation fence.
+# viewer = read-only methods OR logout OR own-key surface OR own-password OR one-time
+# claim-link creation, so state-changing calls are confined to the self-service
+# surfaces; the second conjunct is the editor control-plane ceiling. This is the
+# base-tier viewer read ceiling; the admin-only mutation fence is the route
+# action-class (enforced in code), not composed here.
 _VIEWER_AUTH_CARVE = (
     '(((.request.path | startswith("/api/auth/api-keys")) '
     'or (.request.path == "/api/auth/logout") '
@@ -161,74 +112,124 @@ _VIEWER_AUTH_CARVE = (
     'or (.request.path == "/api/auth/logout") '
     'or (.request.path == "/api/auth/users/me/password")))'
 )
-VIEWER_JQ = f"({_VIEWER_AUTH_CARVE}) and {_ADMIN_MUTATION_FENCE}"
+VIEWER_JQ = f"({_VIEWER_AUTH_CARVE})"
+
+
+def grantable_feature_tags() -> set[str]:
+    """Every feature-group tag that carries at least one GRANTABLE (``read``/``write``,
+    non-fenced) gated route — the tags a per-tag level can open. A tag whose routes are
+    ALL fenced/secret is admin-only and never appears here (a level can never open it)."""
+    from tai42_skeleton.app.route_registry import load_all_routes
+
+    tags: set[str] = set()
+    for meta in load_all_routes():
+        if meta.authed and meta.action in ("read", "write"):
+            tags.update(meta.tags)
+    return tags
 
 
 def _seeded_roles() -> list[dict[str, Any]]:
-    """The default role bodies. ``policy_data`` stays in the body schema for
-    forward use but is NOT applied to users (see :func:`apply_role`)."""
+    """The default role bodies (``RoleDefinition`` dumps). ``editor``/``viewer`` derive
+    their grant maps from the live registry so a new grantable feature area joins the
+    default reach automatically; the bulk-secret reads are ``action=secret`` (fenced)
+    so they never appear in any grant map."""
+    grantable = sorted(grantable_feature_tags())
     return [
-        {
-            "name": "admin",
-            "scopes": ["*"],
-            "condition": None,
-            "policy_data": {},
-            "description": "Full control, including access-control management.",
-        },
-        {
-            "name": "editor",
-            "scopes": ["*"],
-            "condition": EDITOR_JQ,
-            "policy_data": {},
-            "description": "Everything except access-control administration; may manage own API keys.",
-        },
-        {
-            "name": "viewer",
-            "scopes": ["*"],
-            "condition": VIEWER_JQ,
-            "policy_data": {},
-            "description": "Read-only, plus login/logout and own-key management.",
-        },
+        RoleDefinition(
+            name="admin",
+            description="Full control, including access-control management.",
+            allow_all=True,
+            grants={},
+            condition=None,
+        ).model_dump(),
+        RoleDefinition(
+            name="editor",
+            description="Everything except access-control administration; may manage own API keys.",
+            base_tier="editor",
+            grants=dict.fromkeys(grantable, "write"),
+            condition=EDITOR_JQ,
+        ).model_dump(),
+        RoleDefinition(
+            name="viewer",
+            description="Read-only, plus login/logout and own-key management.",
+            base_tier="viewer",
+            grants=dict.fromkeys(grantable, "read"),
+            condition=VIEWER_JQ,
+        ).model_dump(),
     ]
 
 
 class RoleStoreView:
-    """Typed role-template view delegating to a generic :class:`VersionedStore` under
-    ``kind="role"``. The body is ``{scopes, condition, policy_data, description}``."""
+    """Typed role view delegating to a generic :class:`VersionedStore` under
+    ``kind="role"``. The body is a :class:`RoleDefinition` dump."""
 
     def __init__(self, store: VersionedStore) -> None:
         self._store = store
 
     async def seed(self, name: str, body: dict[str, Any]) -> bool:
-        """Create the role only if it does not exist (idempotent create-only).
-        Returns ``True`` when a new template was created, ``False`` when one already
-        existed and was left untouched (an operator edit survives a re-seed)."""
+        """Create the role only if it does not exist (idempotent create-only). Returns
+        ``True`` when a new role was created, ``False`` when one already existed and was
+        left untouched (an operator edit survives a re-seed)."""
         try:
             await self._store.create(_KIND, name, body)
             return True
         except DocumentExistsError:
             return False
 
-    async def get_active_body(self, name: str) -> dict[str, Any]:
-        """The active body of role ``name``. Raises ``DocumentNotFoundError`` when the
-        role does not exist."""
-        return await self._store.get_active_body(_KIND, name)
+    async def create(self, name: str, body: dict[str, Any], tx: VersionedStoreTransaction | None = None) -> None:
+        """Create a brand-new role. Raises ``DocumentExistsError`` on a name collision
+        (the caller maps it to a loud 409). Runs within ``tx`` when one is supplied."""
+        await self._store.create(_KIND, name, body, tx=tx)
+
+    async def update(self, name: str, body: dict[str, Any], tx: VersionedStoreTransaction | None = None) -> None:
+        """Persist an edit as a NEW version (versioned history + rollback come free).
+        Raises ``DocumentNotFoundError`` when the role does not exist (loud 404). Runs
+        within ``tx`` when one is supplied."""
+        await self._store.save_version(_KIND, name, body, tx=tx)
+
+    async def delete(self, name: str, tx: VersionedStoreTransaction | None = None) -> None:
+        """Hard-delete the active role and its version rows. Raises
+        ``DocumentNotFoundError`` when the role does not exist. Runs within ``tx`` when
+        one is supplied."""
+        await self._store.delete(_KIND, name, tx=tx)
+
+    async def rename(self, name: str, new_name: str) -> DocumentRecord:
+        """Re-key the role, moving its whole history untouched."""
+        return await self._store.rename(_KIND, name, new_name)
+
+    async def list_versions(self, name: str) -> list[DocumentVersion]:
+        return await self._store.list_versions(_KIND, name)
+
+    async def get_version(
+        self, name: str, version: int, tx: VersionedStoreTransaction | None = None
+    ) -> DocumentVersion:
+        """The immutable body of one version. Runs within ``tx`` when one is supplied, so a
+        rollback's before/after reads ride the transaction's connection."""
+        return await self._store.get_version(_KIND, name, version, tx=tx)
+
+    async def rollback(self, name: str, version: int, tx: VersionedStoreTransaction | None = None) -> DocumentRecord:
+        return await self._store.rollback(_KIND, name, version, tx=tx)
+
+    async def get_active_body(
+        self, name: str, *, tx: VersionedStoreTransaction | None = None, for_update: bool = False
+    ) -> dict[str, Any]:
+        """The active body of role ``name``. Raises ``DocumentNotFoundError`` when the role
+        does not exist. Passed a ``tx`` the read rides that transaction's connection (no
+        second pooled connection while the transaction is open); with ``for_update=True`` it
+        row-locks the active role so a read-modify-write serializes against a concurrent
+        edit — the lock needs the transaction, so ``for_update`` requires ``tx``."""
+        return await self._store.get_active_body(_KIND, name, tx=tx, for_update=for_update)
 
     async def list_roles(self) -> list[dict[str, Any]]:
-        """Every role's active body as ``{name, scopes, condition, description}`` — the
-        listing shape the roles route returns."""
+        """Every role's active body as a full ``RoleDefinition``-shaped dict
+        (``{name, description, scopes, condition, condition_id, condition_kwargs,
+        base_tier, allow_all, grants}``) — the listing shape the roles route returns."""
         records = await self._store.list(_KIND)
         roles: list[dict[str, Any]] = []
         for record in records:
             body = await self._store.get_active_body(_KIND, record.name)
-            roles.append(
-                {
-                    "name": record.name,
-                    "scopes": list(body.get("scopes") or []),
-                    "condition": body.get("condition"),
-                    "description": body.get("description"),
-                }
-            )
+            body = {**body, "name": record.name}
+            roles.append(body)
         return roles
 
 
@@ -240,52 +241,81 @@ def role_store() -> RoleStoreView:
 
 
 async def seed_default_roles() -> None:
-    """Seed the default admin/editor/viewer templates, idempotent create-only:
-    an operator-edited template is never overwritten by a re-seed."""
+    """Seed the default admin/editor/viewer roles, idempotent create-only: an
+    operator-edited role is never overwritten by a re-seed."""
     store = role_store()
     for body in _seeded_roles():
         await store.seed(body["name"], body)
 
 
 async def apply_role(user_id: str, role_name: str) -> None:
-    """Copy role ``role_name`` into ``user_id``'s ENFORCED policy (COPY semantics).
+    """Assign role ``role_name`` to ``user_id``'s ENFORCED policy (LIVE semantics).
 
-    Writes ONLY the ``scopes`` + condition dimension (``condition`` +
-    ``condition_id`` + ``condition_kwargs``), normalizing the whole condition dimension
-    together so a re-assignment never leaves a stale ``condition_id``/``condition_kwargs``
-    from a prior role behind. It NEVER writes ``policy_data``: on the update path
-    ``update_policy_fields`` wholesale-replaces ``policy_data`` when the key is present,
-    so copying the template's ``policy_data`` would clobber the user's own — most
-    critically the disabled marker (disable-then-change-role would revive the killed
-    keys, a fail-OPEN on exactly the credentials disable kills). ``policy_data``
-    (disabled marker, key ownership) is user-lifecycle state role application never
-    touches; the template body's ``policy_data`` field is reserved for forward use.
+    Writes the ``scopes`` + condition dimension (``condition``/``condition_id``/
+    ``condition_kwargs``, normalized together so a re-assignment never strands a prior
+    role's ``condition_id``/``condition_kwargs``) AND the role-name POINTER merged into
+    the user's existing ``policy_data`` — preserving the disabled marker and key
+    ownership. It does NOT freeze a grant-map COPY: enforcement resolves the role's
+    CURRENT grants through the pointer, so a later role edit retro-applies.
+
+    An ``allow_all``/admin role carries NO pointer (its per-tag pass is skipped, and the
+    absent pointer keeps the ``is_admin_policy`` discriminator intact) — a stale pointer
+    from a prior non-admin role is dropped on the admin assignment.
 
     CREATE-OR-UPDATE: ``update_policy_fields`` is UPDATE-only and returns ``None`` when
     the user has no policy row (the bootstrap owner and every admin-created/invited user
-    reach here with no row). On that sentinel this falls through to ``create_policy`` —
-    an upsert — never leaving the user on the empty ``AccessPolicy()`` default (a broken
-    bootstrap / silent-degrade). Raises ``KeyError`` on an unknown role (loud)."""
+    reach here with no row). On that sentinel this falls through to ``create_policy``, so
+    the user is never left on the empty ``AccessPolicy()`` default. Raises ``KeyError``
+    on an unknown role (loud)."""
     try:
         body = await role_store().get_active_body(role_name)
     except DocumentNotFoundError as exc:
         raise KeyError(f"unknown role: {role_name!r}") from exc
 
-    scopes = list(body.get("scopes") or [])
-    condition = body.get("condition")
+    role = RoleDefinition(**body)
+    scopes = list(role.scopes)
+    condition = role.condition
     # Normalize the rest of the condition dimension so re-assignment leaves nothing stale.
     condition_id = None
     condition_kwargs: dict[str, Any] = {}
 
+    # Fail-closed guard on the admin discriminator: a non-allow_all role MUST carry a
+    # base-tier condition. This guards on the condition actually WRITTEN below —
+    # ``condition_id`` is normalized to ``None`` here regardless of the role body, so a
+    # role carrying ``condition=None`` (whatever its stored ``condition_id``) would assign
+    # a condition-free ["*"] policy (condition/condition_id both None) that
+    # ``is_admin_policy`` reads as FULL ADMIN — the role pointer is orthogonal metadata the
+    # discriminator ignores. Only the reserved allow_all admin role is legitimately
+    # condition-free; refuse to mint an admin-shaped policy from any other role rather than
+    # silently escalate it.
+    if not role.allow_all and role.condition is None:
+        raise ValueError(
+            f"role {role_name!r} is not allow_all yet carries no base-tier condition; assigning it would "
+            "produce a condition-free ['*'] policy the admin discriminator misreads as full admin — refusing"
+        )
+
     store = access_control_store()
+    existing = await store.get_policy_body(user_id)
+    policy_data = dict((existing or {}).get("policy_data") or {})
+    if role.allow_all:
+        policy_data.pop(ROLE_POINTER_KEY, None)
+    else:
+        policy_data[ROLE_POINTER_KEY] = role_name
+
     committed = await store.update_policy_fields(
         user_id,
-        {"scopes": scopes, "condition": condition, "condition_id": condition_id, "condition_kwargs": condition_kwargs},
+        {
+            "scopes": scopes,
+            "condition": condition,
+            "condition_id": condition_id,
+            "condition_kwargs": condition_kwargs,
+            "policy_data": policy_data,
+        },
     )
     if committed is None:
         # No policy row yet — upsert a real policy so the user (including the first
         # admin owner) is never left on the empty AccessPolicy() default.
-        committed = await store.create_policy(user_id, scopes, None, condition, condition_id, condition_kwargs)
+        committed = await store.create_policy(user_id, scopes, policy_data, condition, condition_id, condition_kwargs)
 
     await management.bump_policy_version()
     await ac_policy_store().write(user_id, committed)

@@ -22,10 +22,13 @@ per DSN with the other durable stores, closed centrally at shutdown.
 
 from __future__ import annotations
 
-from typing import Any
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+from dataclasses import dataclass
+from typing import Any, cast
 
 from psycopg.errors import UniqueViolation
-from tai42_contract.versioning import VersionedStore
+from tai42_contract.versioning import VersionedStore, VersionedStoreTransaction
 from tai42_contract.versioning.errors import (
     DocumentExistsError,
     DocumentNotFoundError,
@@ -47,27 +50,88 @@ def _is_active_name_violation(exc: UniqueViolation) -> bool:
     return getattr(exc.diag, "constraint_name", None) == _ACTIVE_NAME_UNIQUE_INDEX
 
 
+@dataclass(frozen=True)
+class _PgTransaction:
+    """The concrete unit-of-work handle: the single pooled connection every write in
+    the scope shares, so they commit or roll back together (see :meth:`transaction`)."""
+
+    conn: Any
+
+
 class PostgresVersionedStore(VersionedStore):
     """Postgres implementation of the generic versioned-document store."""
 
-    async def create(self, kind: str, name: str, body: dict[str, Any], tags: list[str] | None = None) -> DocumentRecord:
+    @asynccontextmanager
+    async def transaction(self) -> AsyncIterator[VersionedStoreTransaction]:
+        """Open one unit of work over a single pooled connection: BEGIN on entry,
+        COMMIT on a clean exit, ROLLBACK on any exception. Every write passed the
+        yielded handle as ``tx=`` runs on that one connection, so a role change and its
+        audit append commit or roll back together — never a live change without its
+        audit."""
         async with (
             client_ctx(PostgresClient, versioning_store_settings()) as pool,
             pool.connection() as conn,
+            conn.transaction(),
         ):
+            yield _PgTransaction(conn)
+
+    @asynccontextmanager
+    async def _cursor(self, tx: VersionedStoreTransaction | None) -> AsyncIterator[Any]:
+        """A cursor for one write. WITHIN a passed ``tx`` it rides that transaction's
+        shared connection (no own BEGIN/COMMIT — the outer scope owns the commit);
+        WITHOUT one it acquires its own pooled connection and wraps a self-contained
+        transaction, preserving each write's stand-alone atomicity."""
+        if tx is not None:
+            async with cast("_PgTransaction", tx).conn.cursor() as cur:
+                yield cur
+            return
+        async with (
+            client_ctx(PostgresClient, versioning_store_settings()) as pool,
+            pool.connection() as conn,
+            conn.transaction(),
+            conn.cursor() as cur,
+        ):
+            yield cur
+
+    @asynccontextmanager
+    async def _read_cursor(self, tx: VersionedStoreTransaction | None) -> AsyncIterator[Any]:
+        """A cursor for one read. WITHIN a passed ``tx`` it rides that transaction's shared
+        connection, so the read sees the transaction's own uncommitted writes and can take
+        a row lock the transaction goes on to hold; WITHOUT one it acquires its own pooled
+        connection with no surrounding transaction — exactly a stand-alone read."""
+        if tx is not None:
+            async with cast("_PgTransaction", tx).conn.cursor() as cur:
+                yield cur
+            return
+        async with (
+            client_ctx(PostgresClient, versioning_store_settings()) as pool,
+            pool.connection() as conn,
+            conn.cursor() as cur,
+        ):
+            yield cur
+
+    async def create(
+        self,
+        kind: str,
+        name: str,
+        body: dict[str, Any],
+        tags: list[str] | None = None,
+        *,
+        tx: VersionedStoreTransaction | None = None,
+    ) -> DocumentRecord:
+        async with self._cursor(tx) as cur:
             try:
-                async with conn.transaction(), conn.cursor() as cur:
-                    await cur.execute(
-                        "INSERT INTO versioned_documents (kind, name, active_version) "
-                        "VALUES (%s, %s, 1) RETURNING id, created_at",
-                        (kind, name),
-                    )
-                    doc_id, created_at = _require_row(await cur.fetchone())
-                    await cur.execute(
-                        "INSERT INTO versioned_document_versions (document_id, version, body, tags) "
-                        "VALUES (%s, %s, %s, %s)",
-                        (doc_id, 1, Json(body), tags or []),
-                    )
+                await cur.execute(
+                    "INSERT INTO versioned_documents (kind, name, active_version) "
+                    "VALUES (%s, %s, 1) RETURNING id, created_at",
+                    (kind, name),
+                )
+                doc_id, created_at = _require_row(await cur.fetchone())
+                await cur.execute(
+                    "INSERT INTO versioned_document_versions (document_id, version, body, tags) "
+                    "VALUES (%s, %s, %s, %s)",
+                    (doc_id, 1, Json(body), tags or []),
+                )
             except UniqueViolation as exc:
                 if _is_active_name_violation(exc):
                     raise DocumentExistsError(kind, name) from exc
@@ -77,43 +141,45 @@ class PostgresVersionedStore(VersionedStore):
             )
 
     async def save_version(
-        self, kind: str, name: str, body: dict[str, Any], tags: list[str] | None = None
+        self,
+        kind: str,
+        name: str,
+        body: dict[str, Any],
+        tags: list[str] | None = None,
+        *,
+        tx: VersionedStoreTransaction | None = None,
     ) -> DocumentVersion:
-        async with (
-            client_ctx(PostgresClient, versioning_store_settings()) as pool,
-            pool.connection() as conn,
-        ):
-            async with conn.transaction(), conn.cursor() as cur:
-                # ``FOR UPDATE`` row-locks the active document so two concurrent
-                # saves serialize: the second waits here, then reads the MAX the
-                # first already appended and numbers MAX+1 — no duplicate
-                # ``(document_id, version)`` insert, no retry loop.
-                await cur.execute(
-                    "SELECT id FROM versioned_documents WHERE kind = %s AND name = %s AND is_active FOR UPDATE",
-                    (kind, name),
-                )
-                row = await cur.fetchone()
-                if row is None:
-                    raise DocumentNotFoundError(kind, name)
-                doc_id = row[0]
-                # ``MAX(version) + 1``, NOT ``active_version + 1``: after a rollback
-                # the active pointer trails MAX, so the next version must extend the
-                # append log rather than collide with an existing version number.
-                await cur.execute(
-                    "SELECT MAX(version) FROM versioned_document_versions WHERE document_id = %s",
-                    (doc_id,),
-                )
-                new_version = _require_row(await cur.fetchone())[0] + 1
-                await cur.execute(
-                    "INSERT INTO versioned_document_versions (document_id, version, body, tags) "
-                    "VALUES (%s, %s, %s, %s) RETURNING created_at",
-                    (doc_id, new_version, Json(body), tags or []),
-                )
-                created_at = _require_row(await cur.fetchone())[0]
-                await cur.execute(
-                    "UPDATE versioned_documents SET active_version = %s WHERE id = %s",
-                    (new_version, doc_id),
-                )
+        async with self._cursor(tx) as cur:
+            # ``FOR UPDATE`` row-locks the active document so two concurrent
+            # saves serialize: the second waits here, then reads the MAX the
+            # first already appended and numbers MAX+1 — no duplicate
+            # ``(document_id, version)`` insert, no retry loop.
+            await cur.execute(
+                "SELECT id FROM versioned_documents WHERE kind = %s AND name = %s AND is_active FOR UPDATE",
+                (kind, name),
+            )
+            row = await cur.fetchone()
+            if row is None:
+                raise DocumentNotFoundError(kind, name)
+            doc_id = row[0]
+            # ``MAX(version) + 1``, NOT ``active_version + 1``: after a rollback
+            # the active pointer trails MAX, so the next version must extend the
+            # append log rather than collide with an existing version number.
+            await cur.execute(
+                "SELECT MAX(version) FROM versioned_document_versions WHERE document_id = %s",
+                (doc_id,),
+            )
+            new_version = _require_row(await cur.fetchone())[0] + 1
+            await cur.execute(
+                "INSERT INTO versioned_document_versions (document_id, version, body, tags) "
+                "VALUES (%s, %s, %s, %s) RETURNING created_at",
+                (doc_id, new_version, Json(body), tags or []),
+            )
+            created_at = _require_row(await cur.fetchone())[0]
+            await cur.execute(
+                "UPDATE versioned_documents SET active_version = %s WHERE id = %s",
+                (new_version, doc_id),
+            )
             return DocumentVersion(
                 version=new_version,
                 body=body,
@@ -185,12 +251,22 @@ class PostgresVersionedStore(VersionedStore):
             kind=kind, name=name, active_version=active_version, is_active=True, created_at=created_at.isoformat()
         )
 
-    async def get_active_body(self, kind: str, name: str) -> dict[str, Any]:
-        async with (
-            client_ctx(PostgresClient, versioning_store_settings()) as pool,
-            pool.connection() as conn,
-            conn.cursor() as cur,
-        ):
+    async def get_active_body(
+        self,
+        kind: str,
+        name: str,
+        *,
+        tx: VersionedStoreTransaction | None = None,
+        for_update: bool = False,
+    ) -> dict[str, Any]:
+        if for_update and tx is None:
+            raise ValueError(
+                "get_active_body(for_update=True) requires a tx: a FOR UPDATE lock outside a "
+                "transaction is released immediately and locks nothing"
+            )
+        if for_update:
+            return await self._locked_active_body(kind, name, tx)
+        async with self._read_cursor(tx) as cur:
             await cur.execute(
                 "SELECT v.body FROM versioned_documents d "
                 "JOIN versioned_document_versions v ON v.document_id = d.id AND v.version = d.active_version "
@@ -201,6 +277,35 @@ class PostgresVersionedStore(VersionedStore):
         if row is None:
             raise DocumentNotFoundError(kind, name)
         return row[0]
+
+    async def _locked_active_body(self, kind: str, name: str, tx: VersionedStoreTransaction | None) -> dict[str, Any]:
+        """The active body under a row lock, read in TWO statements — never a JOIN under
+        the lock.
+
+        A single ``JOIN ... FOR UPDATE`` re-scans the versions table under READ COMMITTED
+        with an EvalPlanQual hazard: when a second concurrent editor blocks on the lock and
+        the first commits (bumping ``active_version``), the blocked scan re-evaluates the
+        version join under its ORIGINAL snapshot — where the newly committed version row is
+        invisible — so it finds 0 rows and raises a spurious ``DocumentNotFoundError`` for a
+        document that plainly exists. Instead: statement (1) locks the parent document row
+        ALONE (no join) and yields its ``active_version``; statement (2) is a FRESH read of
+        that version's body, issued AFTER the lock, so it sees the committed active version
+        (matching ``save_version``'s proven lock-then-read pattern)."""
+        async with self._read_cursor(tx) as cur:
+            await cur.execute(
+                "SELECT id, active_version FROM versioned_documents "
+                "WHERE kind = %s AND name = %s AND is_active FOR UPDATE",
+                (kind, name),
+            )
+            row = await cur.fetchone()
+            if row is None:
+                raise DocumentNotFoundError(kind, name)
+            doc_id, active_version = row
+            await cur.execute(
+                "SELECT body FROM versioned_document_versions WHERE document_id = %s AND version = %s",
+                (doc_id, active_version),
+            )
+            return _require_row(await cur.fetchone())[0]
 
     async def list_versions(self, kind: str, name: str) -> list[DocumentVersion]:
         async with (
@@ -233,12 +338,10 @@ class PostgresVersionedStore(VersionedStore):
             for version, body, row_tags, created_at in rows
         ]
 
-    async def get_version(self, kind: str, name: str, version: int) -> DocumentVersion:
-        async with (
-            client_ctx(PostgresClient, versioning_store_settings()) as pool,
-            pool.connection() as conn,
-            conn.cursor() as cur,
-        ):
+    async def get_version(
+        self, kind: str, name: str, version: int, *, tx: VersionedStoreTransaction | None = None
+    ) -> DocumentVersion:
+        async with self._read_cursor(tx) as cur:
             await cur.execute(
                 "SELECT d.active_version, v.body, v.tags, v.created_at FROM versioned_documents d "
                 "JOIN versioned_document_versions v ON v.document_id = d.id "
@@ -285,35 +388,32 @@ class PostgresVersionedStore(VersionedStore):
             if cur.rowcount == 0:
                 raise DocumentVersionNotFoundError(kind, name, version)
 
-    async def rollback(self, kind: str, name: str, version: int) -> DocumentRecord:
-        async with (
-            client_ctx(PostgresClient, versioning_store_settings()) as pool,
-            pool.connection() as conn,
-        ):
-            async with conn.transaction(), conn.cursor() as cur:
-                # ``FOR UPDATE`` row-locks the active document so a rollback never
-                # races a concurrent save's pointer bump — the two serialize on the
-                # same row rather than interleaving their ``active_version`` writes.
-                await cur.execute(
-                    "SELECT id, created_at FROM versioned_documents "
-                    "WHERE kind = %s AND name = %s AND is_active FOR UPDATE",
-                    (kind, name),
-                )
-                doc = await cur.fetchone()
-                if doc is None:
-                    raise DocumentVersionNotFoundError(kind, name, version)
-                doc_id, created_at = doc
-                await cur.execute(
-                    "SELECT 1 FROM versioned_document_versions WHERE document_id = %s AND version = %s",
-                    (doc_id, version),
-                )
-                if await cur.fetchone() is None:
-                    raise DocumentVersionNotFoundError(kind, name, version)
-                # Re-point the active pointer only — NO data copy.
-                await cur.execute(
-                    "UPDATE versioned_documents SET active_version = %s WHERE id = %s",
-                    (version, doc_id),
-                )
+    async def rollback(
+        self, kind: str, name: str, version: int, *, tx: VersionedStoreTransaction | None = None
+    ) -> DocumentRecord:
+        async with self._cursor(tx) as cur:
+            # ``FOR UPDATE`` row-locks the active document so a rollback never
+            # races a concurrent save's pointer bump — the two serialize on the
+            # same row rather than interleaving their ``active_version`` writes.
+            await cur.execute(
+                "SELECT id, created_at FROM versioned_documents WHERE kind = %s AND name = %s AND is_active FOR UPDATE",
+                (kind, name),
+            )
+            doc = await cur.fetchone()
+            if doc is None:
+                raise DocumentVersionNotFoundError(kind, name, version)
+            doc_id, created_at = doc
+            await cur.execute(
+                "SELECT 1 FROM versioned_document_versions WHERE document_id = %s AND version = %s",
+                (doc_id, version),
+            )
+            if await cur.fetchone() is None:
+                raise DocumentVersionNotFoundError(kind, name, version)
+            # Re-point the active pointer only — NO data copy.
+            await cur.execute(
+                "UPDATE versioned_documents SET active_version = %s WHERE id = %s",
+                (version, doc_id),
+            )
             return DocumentRecord(
                 kind=kind, name=name, active_version=version, is_active=True, created_at=created_at.isoformat()
             )
@@ -331,12 +431,8 @@ class PostgresVersionedStore(VersionedStore):
             if cur.rowcount == 0:
                 raise DocumentNotFoundError(kind, name)
 
-    async def delete(self, kind: str, name: str) -> None:
-        async with (
-            client_ctx(PostgresClient, versioning_store_settings()) as pool,
-            pool.connection() as conn,
-            conn.cursor() as cur,
-        ):
+    async def delete(self, kind: str, name: str, *, tx: VersionedStoreTransaction | None = None) -> None:
+        async with self._cursor(tx) as cur:
             # HARD delete of the ACTIVE row only (structurally at most one per
             # name); the FK cascade drops its version rows with it, while any
             # soft-deleted ghost of the same name is left untouched.

@@ -350,6 +350,25 @@ class PostgresAccessControlStore:
             row = await cur.fetchone()
         return _policy_body(row) if row is not None else None
 
+    async def count_policies_with_role(self, role_name: str, pointer_key: str) -> int:
+        """How many enforced policies currently point at role ``role_name`` (the LIVE
+        role pointer under ``policy_data[pointer_key]``) — the fail-closed read seam the
+        delete-of-assigned guard consults so a role still assigned to any principal can
+        never be deleted. ``pointer_key`` is passed in by the caller (the single source of
+        truth ``ROLE_POINTER_KEY``) rather than hardcoded here, so the JSON key can never
+        drift from the pointer the assignment writes."""
+        async with (
+            client_ctx(PostgresClient, access_control_store_settings()) as pool,
+            pool.connection() as conn,
+            conn.cursor() as cur,
+        ):
+            await cur.execute(
+                "SELECT COUNT(*) FROM access_control_policies WHERE policy_data ->> %s = %s",
+                (pointer_key, role_name),
+            )
+            row = await cur.fetchone()
+        return int(row[0]) if row is not None else 0
+
     async def policy_exists(self, user_id: str) -> bool:
         """Whether ``user_id`` has a policy row — the mint duplicate-user pre-check."""
         async with (

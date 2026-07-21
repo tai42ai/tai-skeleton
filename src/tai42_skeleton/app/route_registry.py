@@ -35,12 +35,58 @@ import inspect
 import re
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
+from typing import Literal
 
 from pydantic import BaseModel
 from starlette.requests import Request
 from starlette.responses import Response
 
 Handler = Callable[[Request], Awaitable[Response]]
+
+# The route action-class — the SINGLE authoritative source of a route's
+# authorization character:
+#
+# * ``read`` / ``write`` are the GRANTABLE classes: a role's per-tag level on the
+#   route's feature tag decides reach, and the class equals the method's derived
+#   action (:func:`method_to_action`).
+# * ``fenced`` is the admin-only MUTATION fence: no per-tag level opens it, admin
+#   only. It is DISTINCT from the ``RouteMetadata.destructive`` spec-surface bool
+#   (which the adapter auto-forces on every DELETE) — sourcing the fence from that
+#   bool would over-fence editor-reachable DELETEs, so the two never interact.
+# * ``secret`` is the admin-only bulk-secret READ fence: a GET whose payload is
+#   admin-equivalent, admin only and non-grantable like ``fenced``.
+RouteAction = Literal["read", "write", "fenced", "secret"]
+_VALID_ROUTE_ACTIONS: frozenset[str] = frozenset(("read", "write", "fenced", "secret"))
+_GRANTABLE_ROUTE_ACTIONS: frozenset[str] = frozenset(("read", "write"))
+_FENCED_ROUTE_ACTIONS: frozenset[str] = frozenset(("fenced", "secret"))
+
+_READ_METHODS: frozenset[str] = frozenset(("GET", "HEAD", "OPTIONS"))
+_WRITE_METHODS: frozenset[str] = frozenset(("POST", "PUT", "PATCH", "DELETE"))
+
+
+def method_to_action(method: str) -> Literal["read", "write"]:
+    """Map an HTTP method to its derived action-class — the ONE place the read/write
+    action is derived from the method. ``GET``/``HEAD``/``OPTIONS`` → ``read``;
+    ``POST``/``PUT``/``PATCH``/``DELETE`` → ``write``.
+
+    An unknown/empty method raises loudly (fail-closed) — the derivation never
+    defaults to ``read``, so an unclassifiable method is caught at registration/boot
+    rather than silently admitted as a read."""
+    upper = method.upper()
+    if upper in _READ_METHODS:
+        return "read"
+    if upper in _WRITE_METHODS:
+        return "write"
+    raise ValueError(f"unclassifiable HTTP method {method!r}: cannot derive a read/write action")
+
+
+def derive_route_action(methods: tuple[str, ...]) -> Literal["read", "write"]:
+    """The grantable action-class a route's method set derives to: ``write`` when the
+    route serves ANY write method, else ``read``. Enforcement re-derives per-method
+    from the live request method (:func:`method_to_action`), so this coarse label
+    only classes the route as a whole (the UI grouping and the boot validation)."""
+    return "write" if any(method_to_action(method) == "write" for method in methods) else "read"
+
 
 # Success content types, derived from markers in the handler source. The default
 # JSON surface answers the ``{"data": ...}`` envelope; a streaming, CSV, HTML, or
@@ -91,6 +137,7 @@ class RouteMetadata:
     error_statuses: tuple[int, ...]
     success_status: int
     success_media_types: dict[str, tuple[str, ...]]
+    action: RouteAction
     destructive: bool = False
 
 
@@ -152,6 +199,47 @@ def _success_media_types(source: str, methods: tuple[str, ...]) -> dict[str, tup
     return {method: _method_media_types(_method_scoped_source(source, method)) for method in methods}
 
 
+def _resolve_route_action(action: RouteAction | None, methods: tuple[str, ...], path: str, authed: bool) -> RouteAction:
+    """The route's authoritative action-class. Every AUTHED route DECLARES its class
+    explicitly: a grantable ``read``/``write``, or the admin-only ``fenced``/``secret``
+    fence. A declared ``read``/``write`` is VALIDATED against every method's derived action,
+    so a misdeclared class (``read`` on a write method) is refused at registration. An
+    authed route that declares NOTHING BOOT-FAILS here — auto-deriving read/write for an
+    undeclared authed route is fail-open (a forgotten fence silently becomes grantable), so
+    the omission is refused rather than divined. A PUBLIC route (``authed=False``) never
+    enforces an action, so it is exempt and its class is derived from the method for the
+    spec — and a ``fenced``/``secret`` class on a public route is itself a contradiction
+    (the fence is enforced only in the authenticated path, so a public fence silently opens
+    an admin-only door), refused here symmetric with the authed-without-action raise. An
+    unknown method raises out of the derivation (fail-closed)."""
+    if action in _FENCED_ROUTE_ACTIONS:
+        if not authed:
+            raise ValueError(
+                f"public route {'/'.join(methods)} {path} declares action={action!r}; a fence is enforced only "
+                "in the authenticated path, so a fenced/secret class on an authed=False route silently opens it — "
+                "a public route must be read/write (or authed=True to keep the fence)"
+            )
+        return action  # type: ignore[return-value]
+    derived = derive_route_action(methods)
+    if action is None:
+        if authed:
+            raise ValueError(
+                f"authed route {'/'.join(methods)} {path} declares no action-class; every authed route must "
+                "declare read/write/fenced/secret explicitly — allow-by-omission is a fail-open fence"
+            )
+        return derived
+    if action not in _GRANTABLE_ROUTE_ACTIONS:
+        raise ValueError(f"route {'/'.join(methods)} {path} declares unknown action {action!r}")
+    # An explicit read/write must match the method-derived class for EVERY method.
+    for method in methods:
+        if method_to_action(method) != action:
+            raise ValueError(
+                f"route {'/'.join(methods)} {path} declares action={action!r} but method {method!r} "
+                f"derives {method_to_action(method)!r}; a grantable route's class must equal its method"
+            )
+    return action
+
+
 class RouteRegistry:
     """In-memory map of every registered route, keyed by ``(path, methods)``.
 
@@ -176,6 +264,7 @@ class RouteRegistry:
         request_model: type[BaseModel] | None,
         response_model: type[BaseModel] | None,
         destructive: bool = False,
+        action: RouteAction | None = None,
         declared: DeclaredRouteMetadata | None = None,
     ) -> None:
         """Record one route's metadata.
@@ -194,6 +283,7 @@ class RouteRegistry:
             raise ValueError(f"route {'/'.join(methods)} {path} is missing at least one tag")
         source = _handler_source(handler)
         method_key = tuple(sorted(m.upper() for m in methods))
+        resolved_action = _resolve_route_action(action, method_key, path, authed)
         if declared is None:
             reload_gated = False
             reads_body = False
@@ -219,6 +309,7 @@ class RouteRegistry:
             error_statuses=error_statuses,
             success_status=success_status,
             success_media_types=_success_media_types(source, method_key),
+            action=resolved_action,
             destructive=destructive,
         )
 
@@ -326,3 +417,36 @@ def load_all_routes() -> list[RouteMetadata]:
     """
     _ensure_routers_imported()
     return route_registry.routes()
+
+
+def route_action_violations() -> list[str]:
+    """Every GATED route whose action-class fails the audit — the boot gate's fail
+    list (empty means clean). A route is an offender when its ``action`` is not one of
+    the four valid classes (allow-by-omission is dead) or, for a grantable
+    ``read``/``write`` route, when the declared class disagrees with the method-derived
+    action. ``fenced``/``secret`` are the explicit admin-only fence classes and are
+    exempt from the method-equals-action rule. Public (``authed=False``) routes are not
+    gated — their action never enforces — so they are not audited here.
+
+    Enumerates through :func:`load_all_routes` so the router modules are imported before
+    the audit runs — iterating the raw registry could pass VACUOUSLY (an empty loop is a
+    silent no-op) had the routers not yet been imported."""
+    violations: list[str] = []
+    for meta in load_all_routes():
+        if not meta.authed:
+            continue
+        if meta.action not in _VALID_ROUTE_ACTIONS:
+            violations.append(f"{'/'.join(meta.methods)} {meta.path}: unclassified action {meta.action!r}")
+            continue
+        if meta.action in _GRANTABLE_ROUTE_ACTIONS:
+            try:
+                derived = derive_route_action(meta.methods)
+            except ValueError as exc:
+                violations.append(f"{'/'.join(meta.methods)} {meta.path}: {exc}")
+                continue
+            if derived != meta.action:
+                violations.append(
+                    f"{'/'.join(meta.methods)} {meta.path}: declared action={meta.action!r} "
+                    f"disagrees with the method-derived {derived!r}"
+                )
+    return violations

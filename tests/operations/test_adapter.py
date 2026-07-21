@@ -59,7 +59,8 @@ def _register(reg, method="POST", path="/api/sample/greet", **op_kwargs):
             raise ConflictError("already greeted")
         return {"greeting": f"hello {name}"}
 
-    handler = register_operation_route(SpecApp(), operation_metadata_of(greet), path=path, method=method)
+    action = "read" if method.upper() in ("GET", "HEAD", "OPTIONS") else "write"
+    handler = register_operation_route(SpecApp(), operation_metadata_of(greet), path=path, method=method, action=action)
     return greet, handler
 
 
@@ -79,7 +80,9 @@ def test_success_status_defaults_to_200_and_is_overridable():
         return {"queued": name}
 
     meta = operation_metadata_of(accept)
-    handler = register_operation_route(SpecApp(), meta, path="/api/sample/accept", method="POST", success_status=202)
+    handler = register_operation_route(
+        SpecApp(), meta, path="/api/sample/accept", method="POST", success_status=202, action="write"
+    )
     resp = _run(handler(_request("POST", "/api/sample/accept", body={"name": "ann"})))
     # The enveloped success answers the declared 202 (accepted-but-detached), not 200.
     assert resp.status_code == 202
@@ -157,7 +160,9 @@ def test_path_params_passed_through():
         return {"detached": title}
 
     meta = operation_metadata_of(detach)
-    handler = register_operation_route(SpecApp(), meta, path="/api/mcp-status/{title}/deregister", method="POST")
+    handler = register_operation_route(
+        SpecApp(), meta, path="/api/mcp-status/{title}/deregister", method="POST", action="write"
+    )
     assert meta.path_params == ("title",)
     resp = _run(handler(_request("POST", "/api/mcp-status/srv/deregister", path_params={"title": "srv"})))
     assert json.loads(bytes(resp.body)) == {"data": {"detached": "srv"}}
@@ -172,7 +177,7 @@ def test_delete_forces_destructive_and_records_route():
         return {"removed": True}
 
     meta = operation_metadata_of(remove_thing)
-    register_operation_route(SpecApp(), meta, path="/api/things/remove", method="DELETE")
+    register_operation_route(SpecApp(), meta, path="/api/things/remove", method="DELETE", action="write")
     assert meta.destructive is True
     recorded = next(r for r in route_registry.routes() if r.path == "/api/things/remove")
     assert recorded.destructive is True
@@ -187,7 +192,9 @@ def test_get_declaring_destructive_is_registration_error():
         return {}
 
     with pytest.raises(ValueError, match="never destructive"):
-        register_operation_route(SpecApp(), operation_metadata_of(list_things), path="/api/things", method="GET")
+        register_operation_route(
+            SpecApp(), operation_metadata_of(list_things), path="/api/things", method="GET", action="read"
+        )
 
 
 def test_basemodel_result_is_serialized():
@@ -202,7 +209,7 @@ def test_basemodel_result_is_serialized():
         return Out(value=7)
 
     handler = register_operation_route(
-        SpecApp(), operation_metadata_of(make_thing), path="/api/things/make", method="POST"
+        SpecApp(), operation_metadata_of(make_thing), path="/api/things/make", method="POST", action="write"
     )
     resp = _run(handler(_request("POST", "/api/things/make")))
     assert json.loads(bytes(resp.body)) == {"data": {"value": 7}}
@@ -236,7 +243,7 @@ def test_media_result_is_serialized_to_its_wire_block(media: str, wire_type: str
         return payloads[media]
 
     handler = register_operation_route(
-        SpecApp(), operation_metadata_of(load_media), path="/api/things/media", method="POST"
+        SpecApp(), operation_metadata_of(load_media), path="/api/things/media", method="POST", action="write"
     )
     resp = _run(handler(_request("POST", "/api/things/media")))
     block = json.loads(bytes(resp.body))["data"]
@@ -255,7 +262,9 @@ def test_context_extractor_supplies_kwargs():
         return {"token": request.headers.get("x-token", "")}
 
     meta = operation_metadata_of(echo)
-    handler = register_operation_route(SpecApp(), meta, path="/api/echo", method="POST", context_extractor=extractor)
+    handler = register_operation_route(
+        SpecApp(), meta, path="/api/echo", method="POST", context_extractor=extractor, action="write"
+    )
 
     scope = {
         "type": "http",
@@ -285,7 +294,9 @@ def test_context_extractor_error_maps_to_status():
         raise NotFoundError("no token presented")
 
     meta = operation_metadata_of(guarded)
-    handler = register_operation_route(SpecApp(), meta, path="/api/guard", method="POST", context_extractor=extractor)
+    handler = register_operation_route(
+        SpecApp(), meta, path="/api/guard", method="POST", context_extractor=extractor, action="write"
+    )
     resp = _run(handler(_request("POST", "/api/guard")))
     assert resp.status_code == 404
     assert json.loads(bytes(resp.body)) == {"error": "no token presented"}
@@ -303,7 +314,7 @@ def test_get_reads_query_params():
         return {"limit": limit}
 
     meta = operation_metadata_of(list_things)
-    handler = register_operation_route(SpecApp(), meta, path="/api/things", method="GET")
+    handler = register_operation_route(SpecApp(), meta, path="/api/things", method="GET", action="read")
 
     scope = {
         "type": "http",

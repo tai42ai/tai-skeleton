@@ -246,6 +246,7 @@ list_hooks = register_operation_route(
     path="/api/hooks",
     method="GET",
     context_extractor=_extract_list_query,
+    action="read",
 )
 
 register_hook = register_operation_route(
@@ -254,6 +255,7 @@ register_hook = register_operation_route(
     path="/api/hooks",
     method="POST",
     context_extractor=_extract_hook_params,
+    action="write",
 )
 
 list_verifiers = register_operation_route(
@@ -261,6 +263,7 @@ list_verifiers = register_operation_route(
     operation_metadata_of(_list_verifiers_op),
     path="/api/hooks/verifiers",
     method="GET",
+    action="read",
 )
 
 unregister_hook = register_operation_route(
@@ -268,6 +271,7 @@ unregister_hook = register_operation_route(
     operation_metadata_of(_unregister_hook_op),
     path="/api/hooks/{name}",
     method="DELETE",
+    action="write",
 )
 
 set_topic_verifier = register_operation_route(
@@ -276,6 +280,7 @@ set_topic_verifier = register_operation_route(
     path="/api/hooks/topics/{topic}/verifier",
     method="PUT",
     context_extractor=_extract_binding,
+    action="write",
 )
 
 delete_topic_verifier = register_operation_route(
@@ -283,4 +288,5 @@ delete_topic_verifier = register_operation_route(
     operation_metadata_of(_delete_topic_verifier_op),
     path="/api/hooks/topics/{topic}/verifier",
     method="DELETE",
+    action="write",
 )

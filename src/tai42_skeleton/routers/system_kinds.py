@@ -24,4 +24,5 @@ list_system_kinds = register_operation_route(
     path="/api/system/kinds",
     method="GET",
     authed=True,
+    action="read",
 )

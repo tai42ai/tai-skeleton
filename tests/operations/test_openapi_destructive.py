@@ -51,7 +51,9 @@ def test_declared_destructive_route_emits_x_destructive():
         """Wipe."""
         return {}
 
-    register_operation_route(SpecApp(), operation_metadata_of(wipe), path="/api/things/wipe", method="POST")
+    register_operation_route(
+        SpecApp(), operation_metadata_of(wipe), path="/api/things/wipe", method="POST", action="write"
+    )
 
     # The emitter reads the registry; find the recorded route directly and emit.
     from tai42_skeleton.cli.openapi import _operation as emit_operation
@@ -71,7 +73,9 @@ def test_declared_metadata_drives_statuses_not_ast():
         """Do it."""
         return {}
 
-    register_operation_route(SpecApp(), operation_metadata_of(doit), path="/api/things/do", method="POST")
+    register_operation_route(
+        SpecApp(), operation_metadata_of(doit), path="/api/things/do", method="POST", action="write"
+    )
     meta = next(r for r in route_registry.routes() if r.path == "/api/things/do")
     # 409 (declared ConflictError) + 401 (authed). No AST-divined 500.
     assert set(meta.error_statuses) == {401, 409}
@@ -92,6 +96,8 @@ def test_converted_route_appears_in_api_routes():
         """Ping."""
         return {}
 
-    register_operation_route(SpecApp(), operation_metadata_of(ping), path="/api/things/ping", method="POST")
+    register_operation_route(
+        SpecApp(), operation_metadata_of(ping), path="/api/things/ping", method="POST", action="write"
+    )
     paths = {r.path for r in load_api_routes()}
     assert "/api/things/ping" in paths

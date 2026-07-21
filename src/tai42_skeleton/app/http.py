@@ -17,7 +17,7 @@ from starlette.responses import Response
 from tai42_skeleton.app.route_registry import route_registry
 
 if TYPE_CHECKING:
-    from tai42_skeleton.app.route_registry import DeclaredRouteMetadata
+    from tai42_skeleton.app.route_registry import DeclaredRouteMetadata, RouteAction
     from tai42_skeleton.app.server import TaiMCP
 
 
@@ -64,6 +64,7 @@ class HttpSurface:
         request_model: type[BaseModel] | None = None,
         authed: bool = True,
         destructive: bool = False,
+        action: "RouteAction | None" = None,
         declared: "DeclaredRouteMetadata | None" = None,
     ) -> Callable[[Callable[[Request], Awaitable[Response]]], Callable[[Request], Awaitable[Response]]]:
         """Register the handler with FastMCP AND record its OpenAPI metadata.
@@ -91,6 +92,7 @@ class HttpSurface:
                 request_model=request_model,
                 response_model=response_model,
                 destructive=destructive,
+                action=action,
                 declared=declared,
             )
             return fastmcp_route(fn)

@@ -3,12 +3,14 @@
 AUTHED thin adapters over operations in ``tai42_skeleton.operations.config``:
 
 * ``GET /api/config/env`` — the stored env config plus the operator's secret-key
-  marks (a secret-bearing read; acceptable on this authed route).
+  marks; admin-only (``action=secret``), the whole store being one admin-owned
+  bulk read.
 * ``POST /api/config/env`` — merge a ``{key: value}`` env map (all values strings),
   then hot-reload the process config; returns the reload result.
 * ``GET /api/config/mode`` — the active config backend mode (``file`` / ``k8s``).
 * ``GET /api/config/settings-schema`` — every registered settings group with its
-  field metadata and each field's current resolved value.
+  field metadata and each field's current resolved value; admin-only
+  (``action=secret``), the same admin-owned bulk read.
 * ``POST /api/config/reload`` — a local soft-restart (refresh env, reset settings
   caches, re-initialize from the manifest), fanned out to every worker when a
   backend is configured.
@@ -51,6 +53,7 @@ read_env = register_operation_route(
     operation_metadata_of(_read_env_op),
     path="/api/config/env",
     method="GET",
+    action="secret",
 )
 
 write_env = register_operation_route(
@@ -59,6 +62,7 @@ write_env = register_operation_route(
     path="/api/config/env",
     method="POST",
     context_extractor=_extract_env_update,
+    action="fenced",
 )
 
 read_mode = register_operation_route(
@@ -66,6 +70,7 @@ read_mode = register_operation_route(
     operation_metadata_of(_read_mode_op),
     path="/api/config/mode",
     method="GET",
+    action="read",
 )
 
 read_settings_schema = register_operation_route(
@@ -73,6 +78,7 @@ read_settings_schema = register_operation_route(
     operation_metadata_of(_read_settings_schema_op),
     path="/api/config/settings-schema",
     method="GET",
+    action="secret",
 )
 
 reload_config = register_operation_route(
@@ -80,4 +86,5 @@ reload_config = register_operation_route(
     operation_metadata_of(_reload_config_op),
     path="/api/config/reload",
     method="POST",
+    action="fenced",
 )

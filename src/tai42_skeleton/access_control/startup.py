@@ -205,6 +205,64 @@ async def check_spa_shell_public() -> None:
             )
 
 
+async def check_route_actions() -> None:
+    """Boot-fail on a route whose authorization action-class cannot be resolved.
+
+    Every gated route carries a required action-class (``read``/``write``/``fenced``/
+    ``secret``) — the SINGLE source of its authorization character. A route the registry
+    cannot classify, or a grantable ``read``/``write`` route whose declared class
+    disagrees with its HTTP method, is a fail-closed contradiction the boot REFUSES
+    (allow-by-omission is dead), mirroring the ``summary``/``tags`` registration raises.
+    Runs after the routers register so the whole surface is audited at once.
+    """
+    from tai42_skeleton.app.route_registry import route_action_violations
+
+    violations = route_action_violations()
+    if violations:
+        raise RuntimeError(
+            "access_control: gated route(s) failed the action-class audit — every gated route must "
+            f"resolve to a read/write/fenced/secret action-class: {sorted(violations)}"
+        )
+
+
+async def check_fenced_routes_resolvable() -> None:
+    """Boot-fail if a registered fenced/secret route does not resolve back to itself.
+
+    The admin-only fence is enforced ONLY where ``resolve_route_meta`` returns the route:
+    a genuinely-unregistered path resolves to ``None`` and the per-tag gate correctly
+    does not act on it, but a REGISTERED fenced/secret route that fails to resolve would
+    be a SILENT fail-open — the fence would never fire. This check closes that by
+    construction: every ``fenced``/``secret`` route must resolve via
+    ``resolve_route_meta(path, method)`` to ITSELF for each of its methods, or the boot
+    refuses to start. Runs after the routers register so the whole surface is audited.
+
+    The resolver's route index is rebuilt first so it reflects the routes that just
+    registered — the boot then validates the live surface, and leaves the runtime index
+    consistent with what it verified rather than trusting a possibly-stale earlier build.
+
+    Enumerates through ``load_all_routes`` so the router modules are imported before the
+    audit runs — iterating the raw registry could pass VACUOUSLY (an empty loop verifies
+    nothing) had the routers not yet been imported.
+    """
+    from tai42_skeleton.access_control.role_gate import reset_route_index, resolve_route_meta
+    from tai42_skeleton.app.route_registry import load_all_routes
+
+    reset_route_index()
+    unresolvable: list[str] = []
+    for meta in load_all_routes():
+        if meta.action not in ("fenced", "secret"):
+            continue
+        for method in meta.methods:
+            if resolve_route_meta(meta.path, method) is not meta:
+                unresolvable.append(f"{method} {meta.path}")
+
+    if unresolvable:
+        raise RuntimeError(
+            "access_control: fenced/secret route(s) do not resolve back to themselves via resolve_route_meta — "
+            f"the admin-only fence would silently fail open for: {sorted(unresolvable)}"
+        )
+
+
 async def check_accounts_providers_configured() -> None:
     """Refuse to boot when a registered accounts provider is left out of the chain.
 

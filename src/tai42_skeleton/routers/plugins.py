@@ -89,6 +89,7 @@ list_studio_plugins = register_operation_route(
     path="/api/plugins",
     method="GET",
     response_headers={"cache-control": _REVALIDATE_CACHE},
+    action="read",
 )
 
 

@@ -66,6 +66,7 @@ from tai42_kit.settings import register_settings_reset
 
 from tai42_skeleton.access_control import management
 from tai42_skeleton.access_control.policy import PolicyEnforcer
+from tai42_skeleton.access_control.role_grants import role_level_decision
 from tai42_skeleton.access_control.settings import AccessControlSettings, access_control_settings
 from tai42_skeleton.access_control.user import is_admin_policy
 from tai42_skeleton.access_control.verifier import AccessControlVerifier
@@ -538,7 +539,14 @@ async def _build_uncached(
         if admin:
             return True
         assert key_pass is not None  # built for every non-admin caller above
-        return await _jq_admits(enforcer, key_pass, owner_pass, path, method)
+        if not await _jq_admits(enforcer, key_pass, owner_pass, path, method):
+            return False
+        # The per-tag LEVEL term — the SAME shared decision the request gate runs, so a
+        # fenced route or an ungranted tag is omitted here exactly as it is denied at the
+        # edge (projection ⊆ gate). A missing-role pointer denies; an infra fault
+        # propagates per the projection's failure doctrine.
+        allowed, _cause = await role_level_decision(policy, owner_policy, path, method, version)
+        return allowed
 
     # Routes: every registry route whose resolution+scope gate admits it, then jq-filtered
     # per method.

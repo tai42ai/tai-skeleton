@@ -154,6 +154,98 @@ async def test_rollback_locks_active_row_for_update(pg, store):
     assert all(sql.endswith("AND is_active FOR UPDATE") for sql in id_selects)
 
 
+async def test_get_active_body_for_update_uses_two_statement_non_join_lock(pg, store):
+    # A read-modify-write's locking read: WITHIN a transaction, ``for_update`` locks the
+    # active document row ALONE with ``FOR UPDATE`` (NO join under the lock — a JOIN under
+    # READ COMMITTED has an EvalPlanQual hazard that raises a spurious 404 for a concurrent
+    # editor), then reads the version body in a SEPARATE fresh statement issued after the
+    # lock. This pins the two-statement non-join pattern that fixes the regression.
+    await store.create("role", "ops", {"n": 1})
+    pg.executed.clear()
+    async with store.transaction() as tx:
+        body = await store.get_active_body("role", "ops", tx=tx, for_update=True)
+    assert body == {"n": 1}
+
+    # Statement (1): the parent row is locked ALONE — no join to the versions table.
+    parent_locks = [sql for sql in pg.executed if sql.startswith("SELECT id, active_version FROM versioned_documents")]
+    assert parent_locks
+    assert all(sql.endswith("AND is_active FOR UPDATE") for sql in parent_locks)
+    assert all("JOIN" not in sql for sql in parent_locks)
+    # Statement (2): a fresh, un-joined read of the active version's body, AFTER the lock.
+    body_reads = [sql for sql in pg.executed if sql.startswith("SELECT body FROM versioned_document_versions")]
+    assert body_reads
+    assert all("JOIN" not in sql and "FOR UPDATE" not in sql for sql in body_reads)
+    # The locked read emits NO joined ``SELECT v.body`` query at all (that path is the
+    # non-locking read only).
+    assert not [sql for sql in pg.executed if sql.startswith("SELECT v.body FROM versioned_documents d")]
+    # Ordering: the parent-row lock precedes the version-body read.
+    assert pg.executed.index(parent_locks[0]) < pg.executed.index(body_reads[0])
+
+
+async def test_get_active_body_for_update_missing_doc_raises_not_found(pg, store):
+    # The locked path's statement (1) finds no parent row for an absent document → a loud
+    # DocumentNotFoundError, the same posture as the non-locked read (never a silent None).
+    with pytest.raises(DocumentNotFoundError):
+        async with store.transaction() as tx:
+            await store.get_active_body("role", "ghost", tx=tx, for_update=True)
+
+
+async def test_get_active_body_without_for_update_takes_no_lock(pg, store):
+    # A plain read (no ``for_update``) never emits a lock clause — behavior unchanged.
+    await store.create("role", "plain", {"n": 1})
+    pg.executed.clear()
+    assert await store.get_active_body("role", "plain") == {"n": 1}
+    body_selects = [sql for sql in pg.executed if sql.startswith("SELECT v.body FROM versioned_documents d")]
+    assert body_selects
+    assert all("FOR UPDATE" not in sql for sql in body_selects)
+
+
+async def test_get_active_body_for_update_requires_a_transaction(pg, store):
+    # A ``FOR UPDATE`` lock outside a transaction is released immediately and locks
+    # nothing, so requesting one without a ``tx`` is a loud error, never a silent no-lock.
+    await store.create("role", "x", {"n": 1})
+    with pytest.raises(ValueError, match="requires a tx"):
+        await store.get_active_body("role", "x", for_update=True)
+
+
+async def test_transaction_commits_all_writes_together(pg, store):
+    # Two writes in ONE unit of work commit together.
+    async with store.transaction() as tx:
+        await store.create("preset", "a", {"n": 1}, tx=tx)
+        await store.create("preset", "b", {"n": 2}, tx=tx)
+    assert {(await store.get("preset", name)).name for name in ("a", "b")} == {"a", "b"}
+
+
+async def _two_writes_second_fails(store, pg):
+    async with store.transaction() as tx:
+        await store.create("preset", "a", {"n": 1}, tx=tx)
+        pg.fault = ("INSERT INTO versioned_documents ", RuntimeError("boom"))
+        await store.create("preset", "b", {"n": 2}, tx=tx)
+
+
+async def test_transaction_rolls_back_all_writes_on_failure(pg, store):
+    # A failure inside the unit of work rolls the WHOLE scope back — the earlier write in
+    # the same transaction never persists either, so there is no partial commit.
+    await store.create("preset", "keep", {"n": 0})
+    with pytest.raises(RuntimeError, match="boom"):
+        await _two_writes_second_fails(store, pg)
+    pg.fault = None
+    with pytest.raises(DocumentNotFoundError):
+        await store.get("preset", "a")
+    assert (await store.get("preset", "keep")).active_version == 1
+
+
+async def test_write_without_transaction_stays_self_contained(pg, store):
+    # Called WITHOUT a tx, a write is still atomic on its own: its own partial failure
+    # rolls itself back, unchanged from the pre-transaction behavior.
+    pg.fault = ("INSERT INTO versioned_document_versions", RuntimeError("solo"))
+    with pytest.raises(RuntimeError, match="solo"):
+        await store.create("preset", "solo", {"x": 1}, tx=None)
+    pg.fault = None
+    with pytest.raises(DocumentNotFoundError):
+        await store.get("preset", "solo")
+
+
 async def test_save_version_partial_failure_rolls_back(pg, store):
     await store.create("preset", "atomic", {"n": 1})
     versions_before = pg.versions.copy()

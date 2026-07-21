@@ -22,4 +22,5 @@ list_channels = register_operation_route(
     operation_metadata_of(_list_channels_op),
     path="/api/channels",
     method="GET",
+    action="read",
 )

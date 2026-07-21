@@ -86,6 +86,7 @@ marketplace_search = register_operation_route(
     path="/api/marketplace/search",
     method="GET",
     context_extractor=_extract_search,
+    action="read",
 )
 
 marketplace_plugin_detail = register_operation_route(
@@ -93,6 +94,7 @@ marketplace_plugin_detail = register_operation_route(
     operation_metadata_of(_marketplace_plugin_detail_op),
     path="/api/marketplace/plugins/{ns}/{name}",
     method="GET",
+    action="read",
 )
 
 marketplace_categories = register_operation_route(
@@ -100,6 +102,7 @@ marketplace_categories = register_operation_route(
     operation_metadata_of(_marketplace_categories_op),
     path="/api/marketplace/categories",
     method="GET",
+    action="read",
 )
 
 marketplace_installed = register_operation_route(
@@ -107,6 +110,7 @@ marketplace_installed = register_operation_route(
     operation_metadata_of(_marketplace_installed_op),
     path="/api/marketplace/installed",
     method="GET",
+    action="read",
 )
 
 marketplace_install = register_operation_route(
@@ -114,6 +118,7 @@ marketplace_install = register_operation_route(
     operation_metadata_of(_marketplace_install_op),
     path="/api/marketplace/install",
     method="POST",
+    action="fenced",
 )
 
 marketplace_uninstall = register_operation_route(
@@ -121,6 +126,7 @@ marketplace_uninstall = register_operation_route(
     operation_metadata_of(_marketplace_uninstall_op),
     path="/api/marketplace/uninstall",
     method="POST",
+    action="fenced",
 )
 
 marketplace_update = register_operation_route(
@@ -128,6 +134,7 @@ marketplace_update = register_operation_route(
     operation_metadata_of(_marketplace_update_op),
     path="/api/marketplace/update",
     method="POST",
+    action="fenced",
 )
 
 marketplace_advisories = register_operation_route(
@@ -135,6 +142,7 @@ marketplace_advisories = register_operation_route(
     operation_metadata_of(_marketplace_advisories_op),
     path="/api/marketplace/advisories",
     method="GET",
+    action="read",
 )
 
 
