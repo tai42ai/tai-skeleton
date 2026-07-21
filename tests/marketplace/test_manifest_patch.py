@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import pytest
 
+from tai42_skeleton.app.route_defaults import STUDIO_SPA_ROUTER
 from tai42_skeleton.manifest import Manifest
 from tai42_skeleton.marketplace import manifest_patch
 from tai42_skeleton.marketplace.errors import ManifestBindingError, ManifestCollisionError
@@ -104,6 +105,71 @@ def test_apply_scalar_storage_and_monitoring(kind: str, field: str) -> None:
     manifest: dict = {}
     apply_provides(manifest, spec)
     assert manifest[field] == "pkg.mod"
+
+
+# -- router/middleware ordering-aware module_list ----------------------------
+
+
+def test_apply_router_inserts_before_the_spa_catch_all() -> None:
+    # A plugin router must land BEFORE the SPA catch-all, else its routes are dead
+    # (the catch-all matches every path).
+    spec = make_spec(provides=[_item("router", "r", "pkg.routers.r")])
+    manifest = {"routers_modules": ["tai42_skeleton.routers.agents", STUDIO_SPA_ROUTER]}
+    apply_provides(manifest, spec)
+    assert manifest["routers_modules"] == [
+        "tai42_skeleton.routers.agents",
+        "pkg.routers.r",
+        STUDIO_SPA_ROUTER,
+    ]
+
+
+def test_apply_router_plain_appends_when_catch_all_absent() -> None:
+    # No catch-all in the list (the loader owns its placement under all/api) → the
+    # router plain-appends.
+    spec = make_spec(provides=[_item("router", "r", "pkg.routers.r")])
+    manifest = {"routers_modules": ["tai42_skeleton.routers.agents"]}
+    apply_provides(manifest, spec)
+    assert manifest["routers_modules"] == ["tai42_skeleton.routers.agents", "pkg.routers.r"]
+
+
+def test_apply_router_into_empty_list_appends() -> None:
+    spec = make_spec(provides=[_item("router", "r", "pkg.routers.r")])
+    manifest: dict = {}
+    apply_provides(manifest, spec)
+    assert manifest["routers_modules"] == ["pkg.routers.r"]
+
+
+def test_apply_two_routers_keep_relative_order_before_catch_all() -> None:
+    spec = make_spec(
+        provides=[
+            _item("router", "r1", "pkg.routers.r1"),
+            _item("router", "r2", "pkg.routers.r2"),
+        ]
+    )
+    manifest = {"routers_modules": [STUDIO_SPA_ROUTER]}
+    apply_provides(manifest, spec)
+    assert manifest["routers_modules"] == ["pkg.routers.r1", "pkg.routers.r2", STUDIO_SPA_ROUTER]
+
+
+def test_remove_router_leaves_the_catch_all_last() -> None:
+    spec = make_spec(provides=[_item("router", "r", "pkg.routers.r")])
+    manifest = {"routers_modules": ["pkg.routers.r", STUDIO_SPA_ROUTER]}
+    assert remove_provides(manifest, spec) is True
+    assert manifest["routers_modules"] == [STUDIO_SPA_ROUTER]
+
+
+def test_apply_middleware_plain_appends_to_middlewares_modules() -> None:
+    # MIDDLEWARE has no catch-all; it plain-appends (no ordering rule).
+    spec = make_spec(provides=[_item("middleware", "m", "pkg.mw.m")])
+    manifest = {"middlewares_modules": ["pkg.mw.first"]}
+    apply_provides(manifest, spec)
+    assert manifest["middlewares_modules"] == ["pkg.mw.first", "pkg.mw.m"]
+
+
+def test_router_collides_when_already_present() -> None:
+    spec = make_spec(provides=[_item("router", "r", "pkg.routers.r")])
+    manifest = {"routers_modules": ["pkg.routers.r", STUDIO_SPA_ROUTER]}
+    assert collisions(manifest, spec) == ["routers_modules already contains 'pkg.routers.r'"]
 
 
 # -- collisions per field shape ----------------------------------------------

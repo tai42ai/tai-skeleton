@@ -62,7 +62,12 @@ def _all_router_modules() -> list[str]:
 def _manifest(**api_tools: object) -> Manifest:
     body: dict = {"enabled": True}
     body.update(api_tools)
-    return Manifest.model_validate({"api_tools": body, "routers_modules": _all_router_modules()})
+    # "none" pins the surface to exactly the operation-bearing routers listed here
+    # (the infra routers are deliberately excluded), so the default core set does
+    # not re-introduce the prometheus/metrics multiproc-state imports.
+    return Manifest.model_validate(
+        {"api_tools": body, "routers_modules": _all_router_modules(), "default_routers": "none"}
+    )
 
 
 class _RecordingTools:
@@ -199,6 +204,7 @@ def test_d1_duplicate_bind_of_builtin_and_projection_fails_boot():
             {
                 "api_tools": {"enabled": True},
                 "routers_modules": _all_router_modules(),
+                "default_routers": "none",
                 "tools": [{"title": "collide", "module": "tests.operations._fixtures.collide_projected"}],
             }
         )
@@ -300,6 +306,7 @@ def test_d1_user_tools_curation_coexists_with_api_tools():
             {
                 "api_tools": {"enabled": True},
                 "routers_modules": _all_router_modules(),
+                "default_routers": "none",
                 "user_tools": ["remove_tool", "list_hooks"],
             }
         )

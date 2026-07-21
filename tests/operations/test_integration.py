@@ -36,6 +36,8 @@ def _manifest() -> Manifest:
             "routers_modules": ["tests.operations._fixtures.sample_router"],
             "extensions_modules": ["tests.app._fixtures.ext_kinds"],
             "api_tools": {"enabled": True, "extensions": {"sample_greet": [["argswrap"]]}},
+            # "none" keeps the surface to just the sample router under test.
+            "default_routers": "none",
         }
     )
 
@@ -108,6 +110,8 @@ def _skeleton_manifest() -> Manifest:
         {
             "routers_modules": ["tai42_skeleton.routers.system_kinds"],
             "api_tools": {"enabled": True},
+            # "none" keeps the surface to just the system-kinds router under test.
+            "default_routers": "none",
         }
     )
 

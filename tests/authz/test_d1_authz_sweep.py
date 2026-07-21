@@ -110,6 +110,10 @@ def _sweep_manifest() -> Manifest:
             },
             "extensions_modules": ["tests.app._fixtures.ext_kinds"],
             "routers_modules": _all_router_modules(),
+            # "none" keeps the surface to exactly the operation-bearing routers
+            # listed here (infra routers deliberately excluded), so the default core
+            # set does not re-introduce the prometheus/metrics multiproc-state imports.
+            "default_routers": "none",
         }
     )
 

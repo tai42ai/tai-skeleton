@@ -72,13 +72,23 @@ _KIND = "role"
 # every pipeline mutation already self-propagates on the bus, so a manual fleet reload is
 # reserved for reconverging stranded workers and belongs to the admin;
 # ``mcp-status/reload-failed`` and the
-# per-server ``.../deregister`` re-probe or detach MCP servers fleet-wide. Membership
+# per-server ``.../deregister`` re-probe or detach MCP servers fleet-wide. The
+# marketplace ``install``/``uninstall``/``update`` mutations rewrite the running
+# environment (they pip-install code and persist + reload the manifest fleet-wide);
+# the backup ``import`` restores whole sections over the live store and ``export``
+# reads out secret-bearing sections — all privileged, so an editor is denied and only
+# an admin may reach them. Membership
 # rule: every admin-only mutating route MUST be reflected here (the same rule the
 # maintenance note below states for admin-only route prefixes). The single-server
 # ``reload`` (``/api/mcp-status/{title}/reload``) is deliberately NOT fenced — it stays
 # reachable to editors/viewers, unchanged. The fleet census ``GET /api/fleet/workers`` is
 # a read and stays unfenced. The unit tests run the composed strings through the REAL
 # enforcer so a broken revision fails loudly.
+#
+# Three fence dimensions compose into one clause (any match ⇒ deny editor+viewer):
+# a literal path list matched by ``IN()`` (below), variable-segment path SHAPES matched
+# by prefix+suffix, and (METHOD, PATH) rules for a mutation that SHARES its path with a
+# read — a path-only rule cannot distinguish the two, so the fence keys on the method too.
 _ADMIN_ONLY_MUTATIONS = (
     "/api/run-tool",
     "/api/tools/reload",
@@ -87,18 +97,33 @@ _ADMIN_ONLY_MUTATIONS = (
     "/api/fleet/reload-config",
     "/api/manifest/replace",
     "/api/mcp-status/reload-failed",
+    "/api/marketplace/install",
+    "/api/marketplace/uninstall",
+    "/api/marketplace/update",
+    "/api/backup/import",
+    "/api/backup/export",
 )
 # Admin-only mutating routes with a variable path segment cannot match by literal
 # ``IN``; the per-server detach (``/api/mcp-status/{title}/deregister``) is fenced by
 # matching the concrete path's fixed prefix + suffix (its sibling ``.../reload`` ends in
 # ``/reload``, so it is not caught — preserving its non-membership).
 _ADMIN_ONLY_MUTATION_SHAPES = (("/api/mcp-status/", "/deregister"),)
+# Admin-only mutations fenced by (METHOD, PATH) because the mutation shares its exact path
+# with a read on the same path — a path-only ``IN`` rule would also catch the read.
+# ``POST /api/config/env`` (``write_env``) rewrites ARBITRARY deployment env with no key
+# allow-list and then broadcasts a fleet-wide reload — a strict superset of the
+# already-fenced ``/api/config/reload`` — so it is admin-only; the ``GET /api/config/env``
+# read on the same path is deliberately NOT fenced here (only the write method).
+_ADMIN_ONLY_METHOD_PATHS = (("POST", "/api/config/env"),)
 _MUTATION_LITERAL = "(.request.path | IN(" + ", ".join(f'"{path}"' for path in _ADMIN_ONLY_MUTATIONS) + "))"
 _MUTATION_SHAPED = " or ".join(
     f'((.request.path | startswith("{pre}")) and (.request.path | endswith("{suf}")))'
     for pre, suf in _ADMIN_ONLY_MUTATION_SHAPES
 )
-_ADMIN_MUTATION_FENCE = f"(({_MUTATION_LITERAL} or {_MUTATION_SHAPED}) | not)"
+_MUTATION_METHOD_PATH = " or ".join(
+    f'((.request.method == "{method}") and (.request.path == "{path}"))' for method, path in _ADMIN_ONLY_METHOD_PATHS
+)
+_ADMIN_MUTATION_FENCE = f"(({_MUTATION_LITERAL} or {_MUTATION_SHAPED} or {_MUTATION_METHOD_PATH}) | not)"
 
 # editor = everything except the access-control admin area, with the self-service
 # surfaces carved back in (own keys / tokens-payload / capabilities / me /

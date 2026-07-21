@@ -89,6 +89,8 @@ async def _allows(jq: str, path: str, method: str) -> bool:
         ("/api/tools/reload", "POST", False),  # admin-only mutation fence
         ("/api/tools/remove", "POST", False),  # admin-only mutation fence
         ("/api/config/reload", "POST", False),  # admin-only mutation fence
+        ("/api/config/env", "POST", False),  # method-aware fence — write_env is admin-only
+        ("/api/config/env", "GET", True),  # read_env on the SAME path stays reachable (unfenced)
         ("/api/fleet/reload-config", "POST", False),  # fence — fleet soft-restart (recovery/ops)
         ("/api/fleet/workers", "GET", True),  # fleet census read — NOT fenced
         ("/api/manifest/replace", "POST", False),  # fence — whole-manifest replace
@@ -120,6 +122,8 @@ async def test_editor_jq_matrix(path, method, allowed):
         ("/api/tools/run", "POST", False),  # state-changing outside self-service → denied
         ("/api/run-tool", "POST", False),  # admin-only mutation fence
         ("/api/config/reload", "POST", False),  # admin-only mutation fence
+        ("/api/config/env", "POST", False),  # method-aware fence — write_env is admin-only
+        ("/api/config/env", "GET", True),  # read_env on the SAME path stays reachable (read-only leg)
         ("/api/fleet/reload-config", "POST", False),  # fence — fleet soft-restart (recovery/ops)
         ("/api/fleet/workers", "GET", True),  # fleet census read — NOT fenced
         ("/api/run-tool", "GET", False),  # fenced regardless of method (no such GET route exists)
@@ -143,6 +147,57 @@ async def test_editor_jq_matrix(path, method, allowed):
 )
 async def test_viewer_jq_matrix(path, method, allowed):
     assert await _allows(VIEWER_JQ, path, method) is allowed
+
+
+# -- default-mounted privileged mutations stay admin-only --------------------
+
+# The admin-only mutation fence denies editor + viewer these five privileged
+# mutations while an admin (unconditional template) reaches them — asserted on
+# both sides so a fence loosening fails loudly.
+_PRIVILEGED_MUTATIONS = [
+    "/api/marketplace/install",
+    "/api/marketplace/uninstall",
+    "/api/marketplace/update",
+    "/api/backup/import",
+    "/api/backup/export",
+]
+
+
+@pytest.mark.parametrize("path", _PRIVILEGED_MUTATIONS)
+async def test_editor_and_viewer_denied_privileged_mutations(path):
+    # An editor and a viewer are DENIED each privileged mutation through the REAL
+    # enforcer — the admin-only mutation fence catches them.
+    assert await _allows(EDITOR_JQ, path, "POST") is False
+    assert await _allows(VIEWER_JQ, path, "POST") is False
+
+
+async def test_admin_template_is_unconditional_so_privileged_mutations_pass(mem: _MemStore):
+    # The admin template carries no jq condition, so the enforcer allows it
+    # unconditionally: the fence that denies editor/viewer the five privileged
+    # mutations does not apply to admin. (There is no admin jq to run through
+    # ``_allows`` — an absent condition IS the unconditional allow.)
+    await seed_default_roles()
+    roles = {r["name"]: r for r in await role_store().list_roles()}
+    assert roles["admin"]["condition"] is None
+
+
+# -- method-aware fence: POST /api/config/env (write_env) is admin-only -------
+
+
+async def test_config_env_write_is_admin_only_read_stays_open(mem: _MemStore):
+    # The (METHOD, PATH) fence keys on the method because the write shares its exact path
+    # with a read: POST /api/config/env (write_env — rewrites arbitrary deployment env and
+    # broadcasts a fleet reload) is DENIED to editor and viewer through the REAL enforcer,
+    # while GET /api/config/env (read_env, the deferred decision) stays reachable to both.
+    # The admin template is unconditional, so the fence never applies to it.
+    assert await _allows(EDITOR_JQ, "/api/config/env", "POST") is False
+    assert await _allows(VIEWER_JQ, "/api/config/env", "POST") is False
+    assert await _allows(EDITOR_JQ, "/api/config/env", "GET") is True
+    assert await _allows(VIEWER_JQ, "/api/config/env", "GET") is True
+
+    await seed_default_roles()
+    roles = {r["name"]: r for r in await role_store().list_roles()}
+    assert roles["admin"]["condition"] is None  # admin reaches the write unconditionally
 
 
 # -- seed idempotence --------------------------------------------------------

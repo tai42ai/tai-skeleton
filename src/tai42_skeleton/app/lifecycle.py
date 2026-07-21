@@ -31,6 +31,7 @@ from tai42_skeleton.app.bus_settings import bus_settings
 from tai42_skeleton.app.importer import import_or_reload_package
 from tai42_skeleton.app.kind_status import collect_kind_status, warn_if_noop_monitoring
 from tai42_skeleton.app.reload_gate import reload_gate
+from tai42_skeleton.app.route_defaults import DEFAULT_API_ROUTERS, STUDIO_SPA_ROUTER
 from tai42_skeleton.connectors.providers.registry import reset_registry
 from tai42_skeleton.extensions import ExtensionRegistry
 from tai42_skeleton.manifest import Manifest
@@ -667,6 +668,41 @@ class TaiMCPLifecycleMixin(ABC):
         )
         self._extension_registry = ExtensionRegistry(self._tool_registry.used_extensions)
 
+    def _effective_router_modules(self) -> list[str]:
+        """The router modules to import this boot, composed from the default set +
+        the manifest's own list per ``default_routers``.
+
+        - ``"all"``: the default API routers, then the manifest's extras, then the
+          Studio SPA catch-all forced LAST.
+        - ``"api"``: the default API routers, then extras, and NO SPA catch-all —
+          unless the operator explicitly listed it (then it is honored last).
+        - ``"none"``: no defaults; ``routers_modules`` is authoritative, with an
+          operator-listed catch-all still moved to the end.
+
+        Recomputed fresh on every start()/reload so the composition holds across
+        reloads. The ``module not in effective`` check is the no-double-mount guard:
+        a manifest that still lists a defaulted core router imports it exactly once,
+        so the catch-all is never accidentally un-lasted and no route registers
+        twice. The ``module != STUDIO_SPA_ROUTER`` check keeps the catch-all out of
+        the middle even when a manifest lists it among the extras — it is only ever
+        appended by the two branches below, always last.
+        """
+        if self._manifest is None:
+            raise RuntimeError("TaiMCP is not started — call start()/app_context first.")
+
+        listed = self._manifest.routers_modules or []
+        effective: list[str] = []
+        if self._manifest.default_routers != "none":
+            effective.extend(DEFAULT_API_ROUTERS)
+        for module in listed:
+            if module not in effective and module != STUDIO_SPA_ROUTER:
+                effective.append(module)
+        # The catch-all goes last under "all" (the loader owns its placement) or
+        # when an operator explicitly listed it under "api"/"none" (honored last).
+        if self._manifest.default_routers == "all" or STUDIO_SPA_ROUTER in listed:
+            effective.append(STUDIO_SPA_ROUTER)
+        return effective
+
     def _initialize_components(self):
         if self._manifest is None:
             raise RuntimeError("TaiMCP is not started — call start()/app_context first.")
@@ -710,7 +746,14 @@ class TaiMCPLifecycleMixin(ABC):
         for module in self._manifest.channel_modules or []:
             import_or_reload_package(module)
 
-        for module in self._manifest.routers_modules or []:
+        # Import the composed effective router set (defaults + extras + a single
+        # last catch-all, per default_routers). Each import runs the module's
+        # @custom_route decorators, registering routes into the FastMCP route table.
+        # NOTE: that table is snapshotted once when the ASGI app is built, so a
+        # router first imported on a live reload registers into the table but does
+        # not reach the already-built served app until the next process start — a
+        # newly-installed plugin router activates on restart.
+        for module in self._effective_router_modules():
             import_or_reload_package(module)
 
         for module in self._manifest.middlewares_modules or []:

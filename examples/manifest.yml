@@ -27,34 +27,20 @@ lifecycle_modules:          # modules with on_startup / on_reload handlers
   # secret. Provider verifiers (e.g. github) ship as their own packages, added
   # here the same way.
   # - tai42_skeleton.webhooks.builtin.shared_secret
-routers_modules: []         # modules adding HTTP routers
-  # The interactions HTTP surface (SSE stream + human answer door + the public
-  # callback doors that external-format ask_user questions wake through) ships as
-  # a router module; opt it in when you use ask_user, and required for `external`.
-  # - tai42_skeleton.routers.interactions
-  # The agents HTTP surface (list registered agents + run one over an SSE stream
-  # of its StreamEvents); opt it in to drive agents from a UI.
-  # - tai42_skeleton.routers.agents
-  # The background tool-runs surface (submit a tool run, poll its result, list
-  # recent runs) — for long / interactive tool runs that outlive one request.
-  # - tai42_skeleton.routers.tool_runs
-  # The presets HTTP surface (list/create presets, save versions, roll back,
-  # delete); presets are versioned + store-backed. Opt it in to manage presets
-  # from a UI.
-  # - tai42_skeleton.routers.presets
-  # The tool-extensions HTTP surface (read/write a tool's `extensions:` map from
-  # a UI — attach a chain/batch/monitor branch to a tool); opt it in to apply
-  # extensions from a UI.
-  # - tai42_skeleton.routers.tool_extensions
-  # The marketplace surface (search/install/update/uninstall plugins from the
-  # tai42 marketplace registry, plus advisories for installed ones); opt it in
-  # to manage plugins from the CLI or Studio. Install/uninstall/update mutate
-  # the running environment — scope-guard them like any other route.
-  # - tai42_skeleton.routers.marketplace
-  # The public login surface: `GET /api/login/methods` (the accounts login-method
-  # aggregator, public) and the authed `POST /api/auth/logout` dispatcher. Opt it in
-  # when an accounts provider is installed.
-  # - tai42_skeleton.routers.login
+# --- HTTP routers -----------------------------------------------------------
+# `default_routers` selects the built-in router set the server mounts:
+#   all  (default) — every core API router PLUS the Studio SPA catch-all last;
+#                    the normal full-Studio deployment.
+#   api            — every core API router but NOT the SPA catch-all; a headless
+#                    JSON `/api` deployment with no browser UI.
+#   none           — mount nothing by default; `routers_modules` lists everything
+#                    (a fully-manual or MCP-only surface).
+default_routers: all
+# `routers_modules` lists ONLY extras/plugins — modules NOT already in the
+# default set. A plugin-installed router is auto-added here; the loader keeps the
+# SPA catch-all last, and a module already covered by the default set is mounted
+# once (no double-mount). Leave empty for a stock deployment.
+routers_modules: []
 middlewares_modules: []     # modules adding your own middlewares
   # The app-level rate limiter that guards the two PUBLIC door families (the
   # interactions callback and `universal_webhook/*`) is registered automatically —

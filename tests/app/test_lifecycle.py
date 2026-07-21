@@ -27,6 +27,7 @@ from tai42_contract.manifest import MCPConfig, TaiMCPConfig
 from tai42_skeleton.app import kind_status as ks
 from tai42_skeleton.app.instance import app
 from tai42_skeleton.app.lifecycle import TaiMCPLifecycleMixin
+from tai42_skeleton.app.route_defaults import DEFAULT_API_ROUTERS, STUDIO_SPA_ROUTER
 from tai42_skeleton.manifest import Manifest
 from tai42_skeleton.monitoring.registry import reset_monitoring
 from tai42_skeleton.template import ResourceManager
@@ -927,6 +928,9 @@ def test_start_imports_lifecycle_router_and_middleware_modules():
             "lifecycle_modules": ["tests.app._fixtures.neutral"],
             "routers_modules": ["tests.app._fixtures.neutral"],
             "middlewares_modules": ["tests.app._fixtures.neutral"],
+            # "none" keeps this focused on the loop importing the listed module,
+            # not the default set.
+            "default_routers": "none",
         }
     )
 
@@ -1018,3 +1022,105 @@ def test_start_fails_when_kind_status_collector_raises(monkeypatch):
 
     with pytest.raises(RuntimeError, match="collector exploded"):
         asyncio.run(run())
+
+
+# -- default-router composition (_effective_router_modules) -------------------
+
+
+def _effective(default_routers=None, routers_modules=None) -> list[str]:
+    m = _Mixin()
+    body: dict[str, Any] = {}
+    if default_routers is not None:
+        body["default_routers"] = default_routers
+    if routers_modules is not None:
+        body["routers_modules"] = routers_modules
+    m._manifest = Manifest.model_validate(body)
+    return m._effective_router_modules()
+
+
+def test_all_with_empty_list_is_defaults_then_catch_all_last():
+    # "all" is the default when default_routers is omitted.
+    eff = _effective(routers_modules=[])
+    assert eff == [*DEFAULT_API_ROUTERS, STUDIO_SPA_ROUTER]
+    assert eff[-1] == STUDIO_SPA_ROUTER
+
+
+def test_all_with_extra_appends_extra_before_catch_all():
+    eff = _effective(default_routers="all", routers_modules=["some.extra.router"])
+    assert eff == [*DEFAULT_API_ROUTERS, "some.extra.router", STUDIO_SPA_ROUTER]
+
+
+def test_all_dedups_a_redundantly_listed_core_router_no_double_mount():
+    # A manifest that still lists a defaulted core router imports it exactly once.
+    core = DEFAULT_API_ROUTERS[0]
+    eff = _effective(default_routers="all", routers_modules=[core])
+    assert eff.count(core) == 1
+    assert eff[-1] == STUDIO_SPA_ROUTER
+    assert eff == [*DEFAULT_API_ROUTERS, STUDIO_SPA_ROUTER]
+
+
+def test_all_never_double_appends_an_explicitly_listed_catch_all():
+    # An operator listing the catch-all among extras under "all" gets it exactly
+    # once, still last — never in the middle, never twice.
+    eff = _effective(default_routers="all", routers_modules=[STUDIO_SPA_ROUTER])
+    assert eff.count(STUDIO_SPA_ROUTER) == 1
+    assert eff == [*DEFAULT_API_ROUTERS, STUDIO_SPA_ROUTER]
+
+
+def test_api_mounts_defaults_without_catch_all():
+    eff = _effective(default_routers="api", routers_modules=["some.extra.router"])
+    assert eff == [*DEFAULT_API_ROUTERS, "some.extra.router"]
+    assert STUDIO_SPA_ROUTER not in eff
+
+
+def test_api_honors_an_explicitly_listed_catch_all_last():
+    # Under "api" the loader never adds the catch-all, but an operator who lists it
+    # explicitly is honored — placed last.
+    eff = _effective(default_routers="api", routers_modules=[STUDIO_SPA_ROUTER])
+    assert eff == [*DEFAULT_API_ROUTERS, STUDIO_SPA_ROUTER]
+
+
+def test_none_is_the_verbatim_manual_surface_with_catch_all_last():
+    eff = _effective(
+        default_routers="none",
+        routers_modules=["a.router", STUDIO_SPA_ROUTER, "b.router"],
+    )
+    # No defaults; the operator list is authoritative, catch-all moved to last.
+    assert eff == ["a.router", "b.router", STUDIO_SPA_ROUTER]
+
+
+def test_none_with_empty_list_is_empty_mcp_only():
+    assert _effective(default_routers="none", routers_modules=[]) == []
+
+
+def test_effective_router_modules_requires_started():
+    m = _Mixin()  # _manifest is None
+    with pytest.raises(RuntimeError, match="not started"):
+        m._effective_router_modules()
+
+
+def test_default_boot_mounts_the_studio_and_cli_page_routes():
+    """A DEFAULT ("all") boot registers the specific Studio/CLI-consumed endpoints.
+    Asserted by LITERAL path (not derived from DEFAULT_API_ROUTERS) against the
+    routes the boot registered, so the composition is checked against real
+    materialized routes a partial router list is prone to omit."""
+    manifest = Manifest.model_validate({"default_routers": "all"})
+
+    async def run():
+        async with app.app_context(manifest):
+            routes = app._fast_mcp._additional_http_routes
+            registered = {getattr(route, "path", None) for route in routes}
+            # channels backs the Interactions ChannelsCard, sub-mcp the Manifest
+            # SubMcpTab, resources/get the `tai resources get` CLI.
+            assert "/api/channels" in registered
+            assert "/api/sub-mcp" in registered
+            assert "/api/resources/get" in registered
+            # A representative privileged page a partial manifest could omit.
+            assert "/api/marketplace/install" in registered
+            assert "/api/backup/export" in registered
+            # The SPA catch-all is mounted AND is the LAST-registered route — its
+            # ``/{spa_path:path}`` matches any path, so anything registered after it
+            # would be shadowed. Assert its terminal position, not mere membership.
+            assert getattr(routes[-1], "path", None) == "/{spa_path:path}"
+
+    asyncio.run(run())

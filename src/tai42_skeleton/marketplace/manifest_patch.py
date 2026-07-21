@@ -13,8 +13,14 @@ The five patch shapes:
   ``{"title": <module>, "module": <module>}``. The title IS the module path:
   deterministic, unique, and the marker that the entry is installer-owned.
 - ``module_list`` (``extensions_modules``, ``channel_modules``,
-  ``webhook_verifier_modules``, ``lifecycle_modules``) — the item's module
-  appended to a plain module list.
+  ``webhook_verifier_modules``, ``lifecycle_modules``, ``routers_modules``,
+  ``middlewares_modules``) — the item's module appended to a plain module list.
+  ``routers_modules`` is the one ordering-aware case: when the Studio SPA
+  catch-all (:data:`~tai42_skeleton.app.route_defaults.STUDIO_SPA_ROUTER`) is
+  present in the list, a new router is INSERTED before it rather than appended,
+  because the catch-all matches every path and a router registered after it
+  serves nothing. The catch-all's last position is a skeleton serving fact, not a
+  contract rule; the contract binding stays a plain ``module_list``.
 - ``package_list`` (``studio_plugins``) — the plugin's DISTRIBUTION name (not the
   item's module) appended to a package-name list.
 - ``scalar_module`` (``backend_module``, ``storage_module``,
@@ -37,6 +43,7 @@ from typing import Any, NamedTuple
 
 from tai42_contract.plugins import KIND_MANIFEST_BINDINGS, PluginSpec
 
+from tai42_skeleton.app.route_defaults import STUDIO_SPA_ROUTER
 from tai42_skeleton.marketplace.errors import ManifestBindingError, ManifestCollisionError
 
 
@@ -143,7 +150,17 @@ def apply_provides(manifest_dict: dict[str, Any], spec: PluginSpec) -> None:
                 entries = []
                 manifest_dict[field] = entries
             for value in target.values:
-                if value not in entries:
+                if value in entries:
+                    continue
+                # ``routers_modules`` is ordering-aware: a router listed AFTER the
+                # Studio SPA catch-all serves nothing (the catch-all matches every
+                # path), so insert each new router BEFORE the sentinel when present,
+                # preserving the relative order of multiple inserted routers. Every
+                # other module_list field (and routers_modules without the sentinel,
+                # the case where the loader owns catch-all placement) plain-appends.
+                if field == "routers_modules" and STUDIO_SPA_ROUTER in entries:
+                    entries.insert(entries.index(STUDIO_SPA_ROUTER), value)
+                else:
                     entries.append(value)
         elif target.mode == "scalar_module":
             # The collisions() re-check above rejects a spec with two distinct
