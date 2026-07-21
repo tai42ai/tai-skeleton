@@ -9,6 +9,7 @@ from tai42_skeleton.access_control.settings import access_control_settings
 from tai42_skeleton.access_control.startup import (
     check_accounts_providers_configured,
     check_always_public_routes,
+    check_spa_shell_public,
     probe_identity_provider,
     seed_roles,
 )
@@ -226,6 +227,10 @@ def build_app() -> TaiMCP:
             # The always-public login surface is enumerated (visible at every boot) and
             # an accidental authed mount under it fails the boot closed.
             app.lifecycle.on_startup(check_always_public_routes)
+            # The SPA-shell public fallback surface is audited: the derived reserved set
+            # is printed, an unacknowledged public-by-declaration non-/api GET route fails
+            # the boot closed, and the control-plane terminal-deny invariant is confirmed.
+            app.lifecycle.on_startup(check_spa_shell_public)
             # A registered accounts provider left out of the resolution chain would mint
             # sessions that never authenticate — refuse to boot instead.
             app.lifecycle.on_startup(check_accounts_providers_configured)

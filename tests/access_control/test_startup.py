@@ -23,6 +23,7 @@ import tai42_skeleton.access_control.startup as startup
 from tai42_skeleton.access_control.startup import (
     check_accounts_providers_configured,
     check_always_public_routes,
+    check_spa_shell_public,
     probe_identity_provider,
     seed_roles,
 )
@@ -206,3 +207,111 @@ async def test_check_always_public_routes_ignores_routes_outside_prefix(monkeypa
     # legal there — so the check neither raises nor enumerates it.
     _bind_public_check(monkeypatch, [_meta("/api/tools/run", ("POST",), True)])
     await check_always_public_routes()  # no raise: the offender is not under the prefix
+
+
+# -- SPA-shell public fallback boot audit (H3/H4/H7) -------------------------
+
+
+def _bind_spa_check(
+    monkeypatch: pytest.MonkeyPatch,
+    routes: list,
+    *,
+    derived: set[str],
+    acknowledged: tuple[str, ...] = (),
+    spa_shell_public: bool = True,
+) -> None:
+    """Point ``check_spa_shell_public`` at fixed route metadata + a fixed derived reserved
+    set + fixed settings. The audit reads only ``.path``/``.methods``/``.authed`` per route."""
+    import tai42_skeleton.access_control.verifier as verifier_module
+    from tai42_skeleton.app import route_registry as rr
+
+    monkeypatch.setattr(rr.route_registry, "routes", lambda: routes)
+    monkeypatch.setattr(verifier_module, "registered_reserved_get_paths", lambda: frozenset(derived))
+    monkeypatch.setattr(
+        startup,
+        "access_control_settings",
+        lambda: SimpleNamespace(spa_shell_public=spa_shell_public, acknowledged_public_routes=acknowledged),
+    )
+
+
+async def test_spa_check_fails_on_unacknowledged_public_declaration(monkeypatch: pytest.MonkeyPatch) -> None:
+    # An authed=False non-/api GET route not on the allowlist HALTS boot (H3): a boot-log
+    # flag is not a control — the reviewer must consciously acknowledge it.
+    _bind_spa_check(monkeypatch, [_meta("/dashboard", ("GET",), False)], derived={"/dashboard"})
+    with pytest.raises(RuntimeError, match="/dashboard"):
+        await check_spa_shell_public()
+
+
+async def test_spa_check_passes_acknowledged_and_logs_surface(monkeypatch: pytest.MonkeyPatch, caplog) -> None:
+    # Acknowledged public-by-declaration routes pass; the derived reserved set and the
+    # acknowledged routes are both printed (H7) so the surface is reviewable at boot.
+    _bind_spa_check(
+        monkeypatch,
+        [_meta("/health", ("GET",), False), _meta("/metrics", ("GET",), False)],
+        derived={"/health", "/metrics"},
+        acknowledged=("/health", "/metrics"),
+    )
+    with caplog.at_level("INFO"):
+        await check_spa_shell_public()  # no raise
+    assert "SPA-shell public fallback ON" in caplog.text
+    assert "/health" in caplog.text
+    assert "/metrics" in caplog.text
+    assert "acknowledged public-by-declaration" in caplog.text
+
+
+async def test_spa_check_fails_on_authed_route_invisible_to_derivation(monkeypatch: pytest.MonkeyPatch) -> None:
+    # An authed=True non-/api GET route the fallback derivation cannot see would resolve
+    # public via the shell — a contradiction the boot refuses.
+    _bind_spa_check(monkeypatch, [_meta("/secretpage", ("GET",), True)], derived=set())
+    with pytest.raises(RuntimeError, match="/secretpage"):
+        await check_spa_shell_public()
+
+
+async def test_spa_check_excludes_api_and_mcp_routes(monkeypatch: pytest.MonkeyPatch) -> None:
+    # /api + /mcp routes — concrete AND templated — are excluded from the audit: serve_spa
+    # 404s them, so the shell tier can never reach them. None of these should halt boot,
+    # even unacknowledged.
+    _bind_spa_check(
+        monkeypatch,
+        [
+            _meta("/api/tools", ("GET",), False),
+            _meta("/mcp/x", ("GET",), False),
+            _meta("/api/plugins/{name}/studio/{path:path}", ("GET",), False),
+            _meta("/mcp/{tool}", ("GET",), True),
+        ],
+        derived=set(),
+    )
+    await check_spa_shell_public()  # no raise
+
+
+async def test_spa_check_fails_on_templated_authed_route(monkeypatch: pytest.MonkeyPatch) -> None:
+    # A TEMPLATED authed=True non-/api GET route is structurally not derivable into the
+    # concrete reserved set: a concrete request matching its pattern with no route row
+    # would be served the public shell. The exhaustive audit refuses to skip it and FAILS
+    # the boot, forcing the author to /api-prefix it or acknowledge it.
+    _bind_spa_check(monkeypatch, [_meta("/reports/{id}", ("GET",), True)], derived=set())
+    with pytest.raises(RuntimeError, match=r"/reports/\{id\}"):
+        await check_spa_shell_public()
+
+
+async def test_spa_check_fails_on_unacknowledged_templated_public_route(monkeypatch: pytest.MonkeyPatch) -> None:
+    # A TEMPLATED authed=False non-/api GET route (the webhook door) is no longer skipped:
+    # unacknowledged, it halts boot exactly like a concrete public-by-declaration route.
+    _bind_spa_check(monkeypatch, [_meta("/universal_webhook/{topic}", ("GET",), False)], derived=set())
+    with pytest.raises(RuntimeError, match=r"/universal_webhook/\{topic\}"):
+        await check_spa_shell_public()
+
+
+async def test_spa_check_passes_acknowledged_templated_route(monkeypatch: pytest.MonkeyPatch, caplog) -> None:
+    # Acknowledged by its REGISTERED template string, the same templated public route passes
+    # CONSCIOUSLY and is printed in the acknowledged surface line.
+    _bind_spa_check(
+        monkeypatch,
+        [_meta("/universal_webhook/{topic}", ("GET",), False), _meta("/{spa_path:path}", ("GET",), False)],
+        derived=set(),
+        acknowledged=("/universal_webhook/{topic}", "/{spa_path:path}"),
+    )
+    with caplog.at_level("INFO"):
+        await check_spa_shell_public()  # no raise
+    assert "/universal_webhook/{topic}" in caplog.text
+    assert "/{spa_path:path}" in caplog.text

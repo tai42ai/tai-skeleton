@@ -95,8 +95,11 @@ class ResourceGuardMiddleware:
         # A resolve failure (e.g. a backend outage in the verifier's fetchers)
         # must fail closed as a clean deny, not leak out as a raw 500. The verifier
         # raises rather than caching a degraded result; we log it here and deny.
+        # Pass the request METHOD so the GET-only SPA-shell fallback can fire for a
+        # deep-link refresh. A websocket scope carries no HTTP method → ``None`` → the
+        # fallback never fires (a websocket upgrade is not a shell GET), fail-closed.
         try:
-            resource_ids = await self.verifier.resolve_resource_ids(path_to_check)
+            resource_ids = await self.verifier.resolve_resource_ids(path_to_check, method=scope.get("method"))
         except Exception:
             logger.exception(
                 "access_control: route resolution failed for %s — denying; %s",

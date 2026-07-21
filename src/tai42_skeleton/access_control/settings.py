@@ -7,6 +7,8 @@ from pydantic_settings import SettingsConfigDict
 from tai42_kit.clients import RedisConnectionSettings
 from tai42_kit.settings import TaiBaseSettings, settings_cache
 
+from tai42_skeleton.access_control.path_canon import MalformedPathError, canonicalize_path, under_prefix
+
 
 def _prefix_overlaps(a: str, b: str) -> bool:
     """Whether path prefixes ``a`` and ``b`` overlap — equal, or one nested under the
@@ -123,6 +125,43 @@ class AccessControlSettings(TaiBaseSettings):
     # the mandatory companion), and an unauthenticated caller is still denied 401.
     authenticated_always_allowed_paths: tuple[str, ...] = ("/api/auth/me",)
 
+    # The master switch for the SPA-shell public fallback tier. When on, a GET that
+    # reaches the last routing tier (no route matched), is not under ``/api``/``/mcp``,
+    # and is not in the DERIVED reserved set nor ``reserved_operational_supplement``,
+    # resolves to the public resource id so a deep-link refresh of an inner Studio route
+    # reaches the dataless index.html shell. A headless/API-only deployment turns it off.
+    spa_shell_public: bool = True
+
+    # A SMALL explicit supplement to the DERIVED reserved set: operational paths that the
+    # route registry does NOT surface as concrete non-``/api`` GET routes yet must stay
+    # gated (never served the SPA shell). The derived set (the registered non-``/api`` GET
+    # route paths) is primary and can never go stale; this exists only for paths outside
+    # it. ``/openapi.json`` is the conventional OpenAPI document URL — this app emits its
+    # spec offline via the CLI, so ``/openapi.json`` is not a live registered route, and
+    # reserving it keeps the fallback from serving the shell for that conventional path.
+    # Every entry is validated absolute + canonical + non-``/api``-overlapping below.
+    reserved_operational_supplement: tuple[str, ...] = ("/openapi.json",)
+
+    # The explicit, code-reviewed allowlist of ``authed=False`` non-``/api`` GET routes
+    # that are ALLOWED to be public by DECLARATION. Deny-by-default: an ``authed=False``
+    # non-``/api`` GET route NOT listed here FAILS boot (a boot-log flag is not a control;
+    # a reviewer must consciously add a path here before boot accepts it as a publicly
+    # declared non-API GET). Matched at REGISTRY level against each route's REGISTERED path,
+    # so a TEMPLATED public route is acknowledged by its template STRING (an ordinary key).
+    # The app's intentional public-by-declaration GET routes are so acknowledged by default:
+    # the operational probes (``/health``, ``/ready``, ``/metrics``), the webhook ingress
+    # door (``/universal_webhook/{topic}``), and the SPA history-fallback catch-all
+    # (``/{spa_path:path}``) that IS the public shell. A NEW such route halts boot until a
+    # reviewer acknowledges it. Entries must be absolute, canonical, and never under
+    # ``/api``/``/mcp`` (an acknowledged PUBLIC control-plane route is a contradiction).
+    acknowledged_public_routes: tuple[str, ...] = (
+        "/health",
+        "/ready",
+        "/metrics",
+        "/universal_webhook/{topic}",
+        "/{spa_path:path}",
+    )
+
     path_patterns: dict[str, str] = {}  # noqa: RUF012
     compiled_patterns: list[tuple[Pattern, str]] = []  # noqa: RUF012
 
@@ -161,6 +200,43 @@ class AccessControlSettings(TaiBaseSettings):
                     raise ValueError(
                         f"authenticated_always_allowed_paths entry {path!r} falls under always-public prefix "
                         f"{always!r} — a path cannot be both public-anonymous and authenticated-only"
+                    )
+
+        # The SPA-shell reserved supplement and the acknowledged-public allowlist are
+        # compared against the SAME canonical path form the resolver classifies in, so a
+        # non-canonical entry could never match and would silently mis-gate. Reject any
+        # entry that is not absolute, does not canonicalize to itself (a ``.``/``..``,
+        # a double slash, or an encoded byte), or overlaps the always-public login
+        # surface. An ``acknowledged_public_routes`` entry additionally must NOT be under
+        # ``/api``/``/mcp`` — an acknowledged PUBLIC control-plane route is a contradiction.
+        for field_name, entries in (
+            ("reserved_operational_supplement", self.reserved_operational_supplement),
+            ("acknowledged_public_routes", self.acknowledged_public_routes),
+        ):
+            for entry in entries:
+                if not entry.startswith("/"):
+                    raise ValueError(f"{field_name} entry {entry!r} must be an absolute path starting with '/'")
+                try:
+                    canonical = canonicalize_path(entry)
+                except MalformedPathError as exc:
+                    raise ValueError(f"{field_name} entry {entry!r} is malformed: {exc}") from exc
+                if canonical != entry:
+                    raise ValueError(
+                        f"{field_name} entry {entry!r} is not canonical (it canonicalizes to {canonical!r}) — "
+                        "supply the canonical form (no '.'/'..', no double slash, no percent-encoding)"
+                    )
+                for always in self.always_public_path_prefixes:
+                    if _prefix_overlaps(entry, always):
+                        raise ValueError(
+                            f"{field_name} entry {entry!r} overlaps always-public prefix {always!r} — "
+                            "a reserved/acknowledged path cannot also be always-public"
+                        )
+                if field_name == "acknowledged_public_routes" and (
+                    under_prefix(entry, "/api") or under_prefix(entry, "/mcp")
+                ):
+                    raise ValueError(
+                        f"acknowledged_public_routes entry {entry!r} is under '/api'/'/mcp' — an acknowledged "
+                        "PUBLIC control-plane route is a contradiction; the control plane is never shell-public"
                     )
 
         # A claim record holds raw key material, so its lifetime must be a bounded,

@@ -351,7 +351,7 @@ async def test_unauthenticated_request_is_denied_by_the_real_resource_guard():
     class _FakeVerifier:
         # Every /app route resolves to a protected resource, so the guard's auth
         # decision (not route config) governs the denial.
-        async def resolve_resource_ids(self, path):
+        async def resolve_resource_ids(self, path, method=None, *, policy_version=None):
             return ["protected-res"]
 
     class _Authenticate:

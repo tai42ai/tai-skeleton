@@ -81,7 +81,11 @@ def security_headers(nonce: str) -> dict[str, str]:
             "form-action 'self'",
         ]
     )
-    return {"content-security-policy": csp}
+    # ``nosniff`` rides every HTML document response (the SPA shell + the OAuth pages):
+    # the browser must honor the declared ``text/html`` type and never MIME-sniff a
+    # served body into a script, complementing the CSP ``script-src`` gate. The
+    # ``frame-ancestors 'none'`` directive above is the clickjacking (frame) policy.
+    return {"content-security-policy": csp, "x-content-type-options": "nosniff"}
 
 
 def _escape_json_for_html(payload: str) -> str:

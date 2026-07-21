@@ -113,3 +113,43 @@ def test_bare_redis_url_does_not_configure_access_control(monkeypatch):
     monkeypatch.delenv("ACCESS_CONTROL_REDIS_URL", raising=False)
     monkeypatch.setenv("REDIS_URL", "redis://should-not-apply:1/9")
     assert AccessControlSettings().redis.redis_url == "redis://localhost:6379/0"
+
+
+# -- SPA-shell settings validation (supplement + acknowledged allowlist) ------
+
+
+def test_spa_settings_defaults_are_canonical_and_valid():
+    # The shipped defaults validate: the derived supplement + acknowledged operational
+    # routes are absolute, canonical, and disjoint from the always-public surface.
+    s = AccessControlSettings()
+    assert s.spa_shell_public is True
+    assert s.reserved_operational_supplement == ("/openapi.json",)
+    # The operational probes plus the two templated public-by-declaration GET routes —
+    # the webhook ingress door and the SPA shell catch-all — acknowledged by their
+    # REGISTERED (template) strings.
+    assert s.acknowledged_public_routes == (
+        "/health",
+        "/ready",
+        "/metrics",
+        "/universal_webhook/{topic}",
+        "/{spa_path:path}",
+    )
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("reserved_operational_supplement", ("openapi.json",)),  # not absolute
+        ("reserved_operational_supplement", ("/a/../b",)),  # non-canonical (dot segments)
+        ("reserved_operational_supplement", ("/a//b",)),  # non-canonical (double slash)
+        ("reserved_operational_supplement", ("/a%2Fb",)),  # non-canonical (encoded byte)
+        ("reserved_operational_supplement", ("/api/login/x",)),  # overlaps always-public
+        ("acknowledged_public_routes", ("/api/secret",)),  # under /api — a contradiction
+        ("acknowledged_public_routes", ("/mcp/x",)),  # under /mcp — a contradiction
+        ("acknowledged_public_routes", ("/api/login",)),  # overlaps always-public
+        ("acknowledged_public_routes", ("relative",)),  # not absolute
+    ],
+)
+def test_spa_settings_reject_invalid_entries(field, value):
+    with pytest.raises(ValueError, match=r"entry|absolute|canonical|overlaps|contradiction|under"):
+        AccessControlSettings(**{field: value})

@@ -171,7 +171,10 @@ async def test_spa_deep_link_falls_back_to_index_with_csp(studio_env):
     resp = await router.serve_spa(_req(spa_path="tools"))
     assert resp.status_code == 200
     assert resp.headers["content-type"] == "text/html; charset=utf-8"
-    assert resp.headers["cache-control"] == "no-store"
+    # The shell must never be pinned by a stale copy (dead asset hashes / desynced nonce).
+    assert resp.headers["cache-control"] == "no-store, must-revalidate"
+    # ``nosniff`` rides the shell so the browser honors the declared HTML type (H6).
+    assert resp.headers["x-content-type-options"] == "nosniff"
     csp = resp.headers["content-security-policy"]
     assert "frame-ancestors 'none'" in csp
     assert "'wasm-unsafe-eval'" in csp
@@ -241,6 +244,43 @@ async def test_oauth_static_html_carries_security_headers(studio_env):
     resp = await router.serve_spa(_req(spa_path="oauth-callback.html"))
     assert resp.status_code == 200
     assert resp.headers["content-type"] == "text/html; charset=utf-8"
+    assert resp.headers["x-content-type-options"] == "nosniff"
     csp = resp.headers["content-security-policy"]
     assert "frame-ancestors 'none'" in csp
     assert "'wasm-unsafe-eval'" in csp
+
+
+# -- SPA realpath containment (H2) -------------------------------------------
+
+
+async def test_spa_traversal_escaping_root_never_serves_file(studio_env, tmp_path):
+    # A traversal that escapes the realpath'd bundle root can NEVER serve the
+    # out-of-bundle file: containment fails and the request falls through to the
+    # dataless shell, never the requested bytes.
+    (tmp_path / "config").write_text("OUT_OF_BUNDLE_SECRET", encoding="utf-8")
+    resp = await router.serve_spa(_req(spa_path="static/../../config"))
+    assert resp.status_code == 200
+    body = bytes(resp.body).decode()
+    assert "OUT_OF_BUNDLE_SECRET" not in body
+    assert 'type="importmap"' in body  # the shell, not the file
+
+
+async def test_spa_symlink_escaping_root_never_serves_target(studio_env, tmp_path):
+    # An in-bundle symlink pointing OUTSIDE the bundle: realpath follows it out of
+    # root, containment fails, and the symlink target's bytes are never served.
+    outside = tmp_path / "outside-secret.js"
+    outside.write_text("OUTSIDE_SYMLINK_SECRET", encoding="utf-8")
+    (studio_env.dist / "leak.js").symlink_to(outside)
+    resp = await router.serve_spa(_req(spa_path="leak.js"))
+    body = bytes(resp.body).decode()
+    assert "OUTSIDE_SYMLINK_SECRET" not in body
+
+
+def test_spa_urlencoded_traversal_never_serves_file(studio_env, tmp_path):
+    # Through the route stack: the ASGI server percent-decodes the path once. A
+    # ``..%2f..%2f`` deep link that resolves out of the bundle after decoding still
+    # never serves the out-of-bundle file (it serves the shell or 404).
+    (tmp_path / "passwd").write_text("URLENCODED_OUT_OF_BUNDLE", encoding="utf-8")
+    app = Starlette(routes=[Route("/{spa_path:path}", router.serve_spa, methods=["GET"])])
+    resp = TestClient(app).get("/agents/..%2f..%2fpasswd")
+    assert "URLENCODED_OUT_OF_BUNDLE" not in resp.text

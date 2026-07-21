@@ -5,6 +5,8 @@ set/reset around a successful downstream call.
 
 from __future__ import annotations
 
+import re
+
 import pytest
 from fastmcp.server.auth import AccessToken
 from starlette.authentication import AuthCredentials, AuthenticationError, UnauthenticatedUser
@@ -40,7 +42,9 @@ class _FakeVerifier(AccessControlVerifier):
     def __init__(self, resource_ids: list[str]) -> None:
         self._ids = resource_ids
 
-    async def resolve_resource_ids(self, path: str, *, policy_version: int | None = None) -> list[str]:
+    async def resolve_resource_ids(
+        self, path: str, method: str | None = None, *, policy_version: int | None = None
+    ) -> list[str]:
         return self._ids
 
 
@@ -50,7 +54,9 @@ class _RaisingVerifier(AccessControlVerifier):
     def __init__(self) -> None:
         pass
 
-    async def resolve_resource_ids(self, path: str, *, policy_version: int | None = None) -> list[str]:
+    async def resolve_resource_ids(
+        self, path: str, method: str | None = None, *, policy_version: int | None = None
+    ) -> list[str]:
         raise RuntimeError("redis down")
 
 
@@ -348,7 +354,9 @@ class _SpyResolveVerifier(AccessControlVerifier):
     def __init__(self) -> None:
         self.calls: list[str] = []
 
-    async def resolve_resource_ids(self, path: str, *, policy_version: int | None = None) -> list[str]:
+    async def resolve_resource_ids(
+        self, path: str, method: str | None = None, *, policy_version: int | None = None
+    ) -> list[str]:
         self.calls.append(path)
         return []
 
@@ -418,3 +426,92 @@ async def test_no_carve_out_configured_leaves_path_to_resolution():
     scope = _http_scope(path="/api/auth/me", user=_authed_user(), auth=AuthCredentials(["*"]))
     sent = await _drive(mw, scope)
     assert _status(sent) == 403
+
+
+# -- SPA-shell public fallback: H4 terminal deny, public deep link, H5 walk ---
+
+
+def _real_guard(monkeypatch, pg: FakeAccessControlPg, settings: AccessControlSettings | None = None):
+    """A guard over the REAL verifier wired to fake stores — everything unmapped unless
+    ``pg`` is seeded. Drives real classification (canonicalization, fallback, exclusions)."""
+    settings = settings or AccessControlSettings()
+    monkeypatch.setattr(store_module, "client_ctx", make_pg_ctx(pg))
+    monkeypatch.setattr(verifier_module, "client_ctx", make_client_ctx(FakeRedis()))
+    verifier = AccessControlVerifier(settings, providers=[_NoIdentityProvider()])
+    return ResourceGuardMiddleware(_make_app({}), verifier, PUBLIC_ID)
+
+
+async def test_spa_deeplink_reaches_shell_unauthenticated(monkeypatch):
+    # An unauthenticated GET to an inner Studio route resolves public (CASE B) and
+    # reaches the app (the 200 shell), not 403 — the deep-link refresh fix.
+    mw = _real_guard(monkeypatch, FakeAccessControlPg())
+    sent = await _drive(mw, _http_scope(path="/agents", user=UnauthenticatedUser(), auth=AuthCredentials()))
+    assert _status(sent) == 200
+
+
+async def test_h4_terminal_deny_unmatched_control_plane(monkeypatch):
+    # H4: an UNMATCHED /api or /mcp path terminal-denies (JSON 401/403), NEVER the shell.
+    mw = _real_guard(monkeypatch, FakeAccessControlPg())
+    for path in ("/api/does-not-exist", "/mcp/does-not-exist"):
+        sent = await _drive(mw, _http_scope(path=path, user=UnauthenticatedUser(), auth=AuthCredentials()))
+        assert _status(sent) in (401, 403)
+
+
+async def test_websocket_deeplink_never_shell_public(monkeypatch):
+    # A websocket upgrade carries no HTTP method → the GET-only fallback never fires →
+    # the deep-link path is never shell-public; the connection is closed.
+    mw = _real_guard(monkeypatch, FakeAccessControlPg())
+    sent = await _drive(mw, _ws_scope(path="/agents", user=UnauthenticatedUser(), auth=AuthCredentials()))
+    assert sent == [{"type": "websocket.close", "code": 1008}]
+
+
+async def test_h5_unauthenticated_route_walk(monkeypatch):
+    # H5 (MUST): walk EVERY registered route + a hostile-path corpus with NO credentials.
+    # Backstop invariant — the control plane never leaks unauthenticated, hostile
+    # /api-canonicalizing forms never reach data, genuine deep links reach the shell.
+    from tai42_skeleton.access_control.path_canon import under_prefix
+    from tai42_skeleton.app.route_registry import load_all_routes
+
+    settings = AccessControlSettings()
+    mw = _real_guard(monkeypatch, FakeAccessControlPg(), settings)
+
+    def concretize(path: str) -> str:
+        return re.sub(r"\{[^}]+\}", "probe", path)
+
+    always_public = settings.always_public_path_prefixes
+    for meta in load_all_routes():
+        if "GET" not in meta.methods:
+            continue
+        path = concretize(meta.path)
+        # The always-public login surface is legitimately public; skip it.
+        if any(under_prefix(path, prefix) for prefix in always_public):
+            continue
+        sent = await _drive(mw, _http_scope(path=path, user=UnauthenticatedUser(), auth=AuthCredentials()))
+        status = _status(sent)
+        if under_prefix(path, "/api") or under_prefix(path, "/mcp"):
+            # Every control-plane GET route terminal-denies unauthenticated — never the
+            # shell, never data.
+            assert status in (401, 403), f"control-plane {path} leaked unauthenticated: {status}"
+        else:
+            # Non-/api routes either serve the public shell or deny — never a 5xx leak.
+            assert status in (200, 401, 403), f"unexpected {status} for {path}"
+
+    # The DERIVED reserved operational routes stay gated (not shell) unauthenticated.
+    for path in ("/health", "/ready", "/metrics"):
+        sent = await _drive(mw, _http_scope(path=path, user=UnauthenticatedUser(), auth=AuthCredentials()))
+        assert _status(sent) == 403
+
+    # Hostile corpus: every /api-canonicalizing form is gated (401/403), never data;
+    # a form that genuinely resolves to a non-/api path reaches the public shell. (The
+    # verifier-unit corpus classifies the raw strings directly; here they arrive via
+    # Starlette's ``conn.url.path``, which parses a leading ``//`` as protocol-relative
+    # and yields ``/x`` for ``//api/x`` — so at the guard that form is a bare shell path,
+    # never /api data. The invariant "hostile never reaches /api data" holds either way.)
+    gated = ("/%61pi/x", "/agents/../api/secret", "/api%2Fx")
+    shell = ("/api/../agents", "/API/x", "//api/x")
+    for path in gated:
+        sent = await _drive(mw, _http_scope(path=path, user=UnauthenticatedUser(), auth=AuthCredentials()))
+        assert _status(sent) in (401, 403), f"hostile {path} was not gated"
+    for path in shell:
+        sent = await _drive(mw, _http_scope(path=path, user=UnauthenticatedUser(), auth=AuthCredentials()))
+        assert _status(sent) == 200, f"hostile {path} did not reach the shell"

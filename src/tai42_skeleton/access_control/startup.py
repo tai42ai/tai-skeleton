@@ -96,6 +96,115 @@ async def check_always_public_routes() -> None:
         logger.info("access_control: always-public routes (no auth): %s", ", ".join(sorted(public_routes)))
 
 
+async def check_spa_shell_public() -> None:
+    """Audit the non-``/api`` GET route surface against the SPA-shell public fallback.
+
+    Driven by the ROUTE REGISTRY, never a static list, and EXHAUSTIVE: it iterates EVERY
+    registered non-``/api``/non-``/mcp`` GET route — CONCRETE AND TEMPLATED — and never
+    silently skips one. Each such route must fall into exactly ONE bucket, or the boot
+    FAILS closed:
+
+    * consciously ACKNOWLEDGED public — its REGISTERED path (the template string for a
+      templated route) is in ``acknowledged_public_routes``. This is a registry-level
+      match: templates are ordinary keys. The operational probes, the webhook ingress
+      door, and the SPA shell catch-all itself are the app's acknowledged public GETs;
+    * gated by AUTHZ (``authed=True``) AND visible to the fallback derivation — a CONCRETE
+      authed route is in the DERIVED reserved set (the shell fallback skips it, so an
+      unmapped request terminal-denies rather than being served the shell). A TEMPLATED
+      ``authed=True`` route is structurally NOT derivable into the concrete reserved set:
+      a concrete request matching its pattern with no route row would be served the public
+      shell, so the boot FAILS it (the author must ``/api``-prefix it — control-plane
+      excluded — or consciously acknowledge it), the same posture as the always-public
+      authed refusal;
+    * ``authed=False`` and NOT acknowledged → the boot FAILS: a boot-log flag is not a
+      control; a publicly declared non-API GET must be a consciously reviewed decision.
+
+    ``/api``/``/mcp`` routes (concrete and templated alike) are excluded: ``serve_spa``
+    404s them, so the shell tier can never reach them regardless of auth or templating.
+    The fallback state and the derived + acknowledged surfaces are printed so drift and the
+    public-by-declaration vs shell-fallback split stay reviewable in ops logs. The audit's
+    exhaustiveness is what lets the runtime fallback (concrete-match only) rely on it for
+    templated routes rather than build a second matcher — see ``resolve_resource_ids``.
+
+    Finally it confirms the terminal-deny exclusion: a ``/api``/``/mcp`` probe is
+    segment-under the excluded prefixes, so the GET fallback can never open the control
+    plane. (Exercised end-to-end by the terminal-deny + route-walk tests.)
+    """
+    from tai42_skeleton.access_control.path_canon import canonicalize_path, under_prefix
+    from tai42_skeleton.access_control.verifier import registered_reserved_get_paths
+    from tai42_skeleton.app.route_registry import route_registry
+
+    settings = access_control_settings()
+    derived = registered_reserved_get_paths()
+    acknowledged = frozenset(settings.acknowledged_public_routes)
+
+    logger.info(
+        "access_control: SPA-shell public fallback %s; derived reserved (gated) non-/api GET routes: %s",
+        "ON" if settings.spa_shell_public else "OFF",
+        ", ".join(sorted(derived)) or "(none)",
+    )
+
+    invisible_authed: list[str] = []
+    unacknowledged: list[str] = []
+    acknowledged_present: list[str] = []
+    for meta in route_registry.routes():
+        if "GET" not in meta.methods:
+            continue
+        registered = meta.path
+        # The control plane is excluded structurally: serve_spa 404s /api and /mcp, so the
+        # shell tier never reaches them. The literal REGISTERED prefix decides (registered
+        # paths carry clean, un-encoded prefixes), so a templated /api route is excluded too.
+        if under_prefix(registered, "/api") or under_prefix(registered, "/mcp"):
+            continue
+        templated = "{" in registered
+        # Acknowledgment is REGISTRY-LEVEL: the REGISTERED path — the template string for a
+        # templated route — is an ordinary key compared against acknowledged_public_routes.
+        # A consciously-public route passes here whatever its concrete/templated shape.
+        if registered in acknowledged:
+            acknowledged_present.append(registered)
+            continue
+        if meta.authed:
+            # Gated by authz ONLY if the fallback derivation can SEE it. A CONCRETE authed
+            # route is in the derived reserved set (the shell skips it). A TEMPLATED authed
+            # route is structurally not derivable, so a concrete request matching its pattern
+            # with no route row would be served the public shell — the boot must refuse it.
+            if templated or canonicalize_path(registered) not in derived:
+                invisible_authed.append(registered)
+        else:
+            # authed=False and not acknowledged: public by declaration with no conscious review.
+            unacknowledged.append(registered)
+
+    if invisible_authed:
+        raise RuntimeError(
+            "access_control: authed=True non-/api GET route(s) would be served the public SPA shell — they are "
+            f"not visible in the derived reserved set: {sorted(set(invisible_authed))}. A concrete route must "
+            "register so it joins the derived set; a TEMPLATED route is structurally not derivable, so /api-prefix "
+            "it (control-plane excluded) or add its registered template to ACCESS_CONTROL_ACKNOWLEDGED_PUBLIC_ROUTES "
+            "if it is genuinely public"
+        )
+    if unacknowledged:
+        raise RuntimeError(
+            "access_control: authed=False non-/api GET route(s) are public by declaration but not acknowledged: "
+            f"{sorted(set(unacknowledged))} — add each (the registered path, or the template string for a templated "
+            "route) to ACCESS_CONTROL_ACKNOWLEDGED_PUBLIC_ROUTES if it is intentionally public, else set authed=True "
+            "or remove the route"
+        )
+    if acknowledged_present:
+        logger.info(
+            "access_control: acknowledged public-by-declaration non-/api GET routes: %s",
+            ", ".join(sorted(set(acknowledged_present))),
+        )
+
+    # Terminal-deny confirmation: the resolver structurally excludes the control plane
+    # from the shell tier, so no unmatched /api or /mcp path can ever reach the SPA shell.
+    for probe in ("/api/__boot_probe__", "/mcp/__boot_probe__"):
+        if not (under_prefix(probe, "/api") or under_prefix(probe, "/mcp")):
+            raise RuntimeError(
+                f"access_control: control-plane probe {probe!r} is not excluded from the SPA-shell tier — "
+                "the terminal-deny invariant is broken"
+            )
+
+
 async def check_accounts_providers_configured() -> None:
     """Refuse to boot when a registered accounts provider is left out of the chain.
 

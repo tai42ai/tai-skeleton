@@ -28,6 +28,7 @@ than a silent wrong-serve, but correct ordering is the contract.
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 from starlette.requests import Request
@@ -53,9 +54,15 @@ from tai42_skeleton.plugins.serving import (
 )
 from tai42_skeleton.plugins.settings import plugins_settings
 
+logger = logging.getLogger(__name__)
+
 _HASHED_ASSET_CACHE = "public, max-age=31536000, immutable"
 _REVALIDATE_CACHE = "no-cache"
 _NO_STORE = "no-store"
+# The SPA shell (index.html) must never be pinned by a stale copy — a cached shell
+# could hold dead/rotated asset hashes and desync its inline nonce from the live CSP
+# header — so it is served ``no-store`` AND ``must-revalidate``.
+_NO_STORE_REVALIDATE = "no-store, must-revalidate"
 _INDEX_FILENAME = "index.html"
 # Vite content-hashes only the files it emits under this dir (``/assets/<name>-<hash>.js``);
 # a URL there is a fingerprinted bundle whose bytes never change, so it earns the
@@ -146,9 +153,14 @@ async def serve_studio_asset(request: Request) -> Response:
 
 def _serve_index(dist_root: Path) -> Response:
     """Serve ``index.html`` with the injected import map, a fresh CSP nonce, the
-    security headers, and ``no-store`` (a cached copy would desync its inline
-    nonce from the live CSP header)."""
-    index = dist_root / _INDEX_FILENAME
+    security headers, and ``no-store, must-revalidate``. The index path is
+    realpath-resolved under the bundle root (a constant basename, so it can never
+    escape), keeping the "every served byte is inside the bundle" invariant whole."""
+    try:
+        index = resolve_under(dist_root, _INDEX_FILENAME)
+    except StudioPluginError as exc:
+        logger.error("studio SPA index path escaped the dist root %s: %s", dist_root, exc)
+        return _error("studio SPA index.html not found in the configured dist path", 500)
     if not index.is_file():
         return _error("studio SPA index.html not found in the configured dist path", 500)
     try:
@@ -161,7 +173,7 @@ def _serve_index(dist_root: Path) -> Response:
     except StudioPluginError as exc:
         return _error(str(exc), 500)
     headers = security_headers(nonce)
-    headers["cache-control"] = _NO_STORE
+    headers["cache-control"] = _NO_STORE_REVALIDATE
     headers["content-type"] = HTML_CONTENT_TYPE
     return Response(html, headers=headers)
 
@@ -203,10 +215,16 @@ async def serve_spa(request: Request) -> Response:
         return _error("not found", 404)
     dist_root = Path(dist_path)
     if spa_path:
+        # ``resolve_under`` realpath-resolves the target (symlinks included) and verifies
+        # it stays CONTAINED within the realpath'd bundle root, so a misclassification can
+        # only ever serve bundle bytes — never an arbitrary file on disk. A containment
+        # failure (a traversal that escapes root, or an in-bundle symlink pointing out) is
+        # logged loudly and falls through to the shell, never serving the requested bytes.
         try:
             target = resolve_under(dist_root, spa_path)
-        except StudioPluginError:
-            return _error("not found", 404)
+        except StudioPluginError as exc:
+            logger.warning("studio SPA path %r escaped the dist root — serving the shell instead: %s", spa_path, exc)
+            return _serve_index(dist_root)
         # index.html always goes through injection (byte-constant serving would
         # ship it without the import map — a dead app).
         if target.is_file() and target.name != _INDEX_FILENAME:

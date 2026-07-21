@@ -313,3 +313,16 @@ def load_api_routes() -> list[RouteMetadata]:
     """
     _ensure_routers_imported()
     return [meta for meta in route_registry.routes() if meta.path.startswith("/api/")]
+
+
+def load_all_routes() -> list[RouteMetadata]:
+    """Every registered route — the whole self-describing HTTP surface, ``/api/*`` and
+    the non-``/api`` operational routes (``/health``, ``/ready``, ``/metrics``, …) alike.
+
+    Imports the router modules (offline) if needed, then returns their metadata. The
+    access-control resolver derives its SPA-shell reserved set from the non-``/api``
+    GET routes surfaced here, so a route added to a router joins the reserved set with
+    no static list to maintain.
+    """
+    _ensure_routers_imported()
+    return route_registry.routes()

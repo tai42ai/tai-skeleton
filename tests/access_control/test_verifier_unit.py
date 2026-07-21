@@ -442,3 +442,137 @@ async def test_dynamic_pattern_change_visible_after_version_bump(monkeypatch):
     # re-read, so the new pattern-scoped route resolves.
     await management.bump_policy_version()
     assert await v.resolve_resource_ids("/dyn/7") == ["dynroute"]
+
+
+# -- SPA-shell public fallback + H1 canonicalization -------------------------
+#
+# The last resolution tier: a GET to an UNMAPPED, non-/api, non-/mcp canonical path
+# that is NOT a registered route resolves public so a deep-link refresh reaches the
+# dataless SPA shell. Every classification runs on ONE canonical path form.
+
+
+async def test_spa_fallback_unmapped_get_is_public(monkeypatch):
+    settings = AccessControlSettings()
+    _wire(monkeypatch, FakeAccessControlPg())
+    v = _verifier(settings)
+    assert await v.resolve_resource_ids("/agents", method="GET") == [settings.public_resource_id]
+    # Any inner Studio route, too.
+    assert await v.resolve_resource_ids("/agents/123/detail", method="GET") == [settings.public_resource_id]
+
+
+async def test_spa_fallback_only_fires_for_get(monkeypatch):
+    settings = AccessControlSettings()
+    _wire(monkeypatch, FakeAccessControlPg())
+    v = _verifier(settings)
+    # A non-GET method never opens the shell (it would be a mutation on an unmapped path).
+    assert await v.resolve_resource_ids("/agents", method="POST") == []
+    # An unspecified method is fail-closed: the fallback never fires.
+    assert await v.resolve_resource_ids("/agents", method=None) == []
+    assert await v.resolve_resource_ids("/agents") == []
+
+
+async def test_spa_fallback_skips_registered_operational_routes(monkeypatch):
+    # /health, /ready, /metrics are registered non-/api GET routes → in the DERIVED
+    # reserved set → the fallback skips them; they never gain the public id from this tier.
+    settings = AccessControlSettings()
+    _wire(monkeypatch, FakeAccessControlPg())
+    v = _verifier(settings)
+    for path in ("/health", "/ready", "/metrics"):
+        assert await v.resolve_resource_ids(path, method="GET") == []
+
+
+async def test_spa_fallback_skips_openapi_via_supplement(monkeypatch):
+    # /openapi.json is not a live registered route; the supplement keeps the fallback
+    # from serving the shell for the conventional OpenAPI document path.
+    settings = AccessControlSettings()
+    _wire(monkeypatch, FakeAccessControlPg())
+    v = _verifier(settings)
+    assert await v.resolve_resource_ids("/openapi.json", method="GET") == []
+
+
+async def test_spa_fallback_never_opens_api(monkeypatch):
+    settings = AccessControlSettings()
+    _wire(monkeypatch, FakeAccessControlPg())
+    v = _verifier(settings)
+    assert await v.resolve_resource_ids("/api/anything", method="GET") == []
+
+
+async def test_spa_fallback_deny_wins_over_explicit_protected_mapping(monkeypatch):
+    # An operator who explicitly mapped /agents to a protected scope keeps it protected:
+    # the fallback fires ONLY when the route table resolved nothing.
+    settings = AccessControlSettings()
+    pg = FakeAccessControlPg()
+    pg.add_route("/agents", "agents-scope")
+    _wire(monkeypatch, pg)
+    v = _verifier(settings)
+    assert await v.resolve_resource_ids("/agents", method="GET") == ["agents-scope"]
+
+
+async def test_spa_fallback_reserved_prefix_stays_gated(monkeypatch):
+    # A reserved-prefix path (also under /api) never opens via the fallback.
+    settings = AccessControlSettings()
+    _wire(monkeypatch, FakeAccessControlPg())
+    v = _verifier(settings)
+    assert await v.resolve_resource_ids("/api/auth/whatever", method="GET") == []
+
+
+async def test_spa_fallback_master_switch_off(monkeypatch):
+    settings = AccessControlSettings(spa_shell_public=False)
+    _wire(monkeypatch, FakeAccessControlPg())
+    v = _verifier(settings)
+    assert await v.resolve_resource_ids("/agents", method="GET") == []
+
+
+async def test_spa_reserved_set_is_derived_not_static(monkeypatch):
+    # A NEWLY registered non-/api GET route is automatically in the derived reserved set
+    # (the fallback skips it) with NO settings change — pins the no-static-list property.
+    from types import SimpleNamespace
+
+    fake_routes = [
+        SimpleNamespace(path="/newpage", methods=("GET",)),
+        SimpleNamespace(path="/api/agents", methods=("GET",)),  # /api excluded
+        SimpleNamespace(path="/webhook/{topic}", methods=("GET",)),  # templated excluded
+    ]
+    monkeypatch.setattr(verifier_module, "load_all_routes", lambda: fake_routes)
+    settings = AccessControlSettings()
+    _wire(monkeypatch, FakeAccessControlPg())
+    v = _verifier(settings)
+    # The freshly declared route is reserved (gated) with no static list edit.
+    assert await v.resolve_resource_ids("/newpage", method="GET") == []
+    # A genuinely unmapped, unregistered path still reaches the shell.
+    assert await v.resolve_resource_ids("/otherpage", method="GET") == [settings.public_resource_id]
+
+
+# -- H1 bypass corpus (MUST): one canonical form, segment-aware prefixes ------
+
+
+async def test_h1_bypass_corpus(monkeypatch):
+    settings = AccessControlSettings()
+    _wire(monkeypatch, FakeAccessControlPg())
+    v = _verifier(settings)
+    public = [settings.public_resource_id]
+
+    # A residual percent-escape (the ASGI decode already ran) is a double-encoded byte:
+    # canonicalize REJECTS it rather than re-decoding, so it is denied (empty), never public.
+    assert await v.resolve_resource_ids("/%61pi/x", method="GET") == []
+    # Duplicate leading slash collapses to /api/x — gated.
+    assert await v.resolve_resource_ids("//api/x", method="GET") == []
+    # Dot-resolution first: /api/../agents is genuinely /agents — shell-public.
+    assert await v.resolve_resource_ids("/api/../agents", method="GET") == public
+    # …and /agents/../api/secret is genuinely /api/secret — gated.
+    assert await v.resolve_resource_ids("/agents/../api/secret", method="GET") == []
+    # A residual encoded slash (%2F) is NOT decoded again — it is REJECTED as a
+    # double-encoded byte and denied, rather than canonicalized into a /api/ segment.
+    assert await v.resolve_resource_ids("/api%2Fx", method="GET") == []
+    # Case-sensitive: /API is not the lowercase /api mount, so it never reaches API
+    # DATA; shell-or-deny is acceptable (here: the shell).
+    assert await v.resolve_resource_ids("/API/x", method="GET") == public
+
+
+async def test_h1_malformed_paths_denied(monkeypatch):
+    # A NUL / control / backslash path is malformed → fail-closed deny, never the shell.
+    settings = AccessControlSettings()
+    _wire(monkeypatch, FakeAccessControlPg())
+    v = _verifier(settings)
+    for bad in ("/agents\x00", "/agents\\admin", "/agents\x1f"):
+        assert await v.resolve_resource_ids(bad, method="GET") == []
