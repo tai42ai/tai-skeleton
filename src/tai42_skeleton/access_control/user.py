@@ -38,9 +38,17 @@ class TaiUser(AuthenticatedUser):
     is passed straight through. ``.token`` is retained for
     ``ResourceGuardMiddleware`` (which reads ``user.token.client_id``)."""
 
-    def __init__(self, token: AccessToken):
+    def __init__(self, token: AccessToken, is_admin: bool = False):
         super().__init__(token)
         self.token = token
+        # Whether this principal is the ADMIN discriminator (a condition-free ``"*"``
+        # policy that is not an owned key — see :func:`is_admin_policy`). Computed
+        # server-side by the auth backend from the resolved policy and stamped here, so
+        # it cannot be forged by a provider claim. The resource guard reads it to admit a
+        # super-admin to a route with no configured row: a root identity is never gated
+        # by a missing route mapping (it can map the route anyway), so blocking it is a
+        # footgun, not security — while every non-admin identity still fails closed.
+        self.is_admin = is_admin
 
     @property
     def identity(self) -> str:

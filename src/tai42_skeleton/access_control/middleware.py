@@ -106,8 +106,18 @@ class ResourceGuardMiddleware:
             await self._deny(scope, receive, send, 403, "Forbidden: Route not configured")
             return
 
-        # CASE A: Unknown Route (403)
+        # CASE A: Unknown Route (403) — with a SUPER-ADMIN carve-out. A route with no
+        # configured resource fails closed for every ordinary identity, but the admin
+        # discriminator (a condition-free "*" policy that is not an owned key, stamped on
+        # the user by the auth backend) is admitted: a root identity is never gated by a
+        # missing route row — it can map the route anyway — so blocking it is a footgun,
+        # not security. Non-admins (owned keys, condition-bearing role-holders, scoped
+        # keys) still fall through to the deny. The jq enforcement already ran upstream,
+        # and an unauthenticated caller has no admin flag, so both remain denied.
         if not resource_ids:
+            if user.is_authenticated and getattr(user, "is_admin", False):
+                await self._run_app_with_context(scope, receive, send, user)
+                return
             logger.warning(
                 "access_control: denied %s — no resource is configured for this route; %s",
                 path_to_check,

@@ -11,7 +11,7 @@ from tai42_contract.app import tai42_app
 
 from tai42_skeleton.access_control.policy import PolicyEnforcer
 from tai42_skeleton.access_control.settings import AccessControlSettings
-from tai42_skeleton.access_control.user import TaiUser
+from tai42_skeleton.access_control.user import TaiUser, is_admin_policy
 from tai42_skeleton.access_control.verifier import AccessControlVerifier
 
 logger = logging.getLogger(__name__)
@@ -219,6 +219,14 @@ class AccessControlAuthBackend(AuthenticationBackend):
             logger.exception("access_control: policy enforcement failed for user %s", user_id)
             raise AuthorizationError("Access Denied") from e
 
-        # 6. Finalize with the effective scopes.
+        # 6. Finalize with the effective scopes, stamping the admin discriminator so the
+        # resource guard can admit a super-admin to a not-yet-configured route. The owner
+        # is read from the STORED ``policy.policy_data`` (the management dual-home), NOT
+        # the request token claim — the contract ``is_admin_policy`` and its other callers
+        # (the projection, key management) all share, so the guard's admin verdict is
+        # byte-identical to theirs and an owned condition-free ``["*"]`` key fails CLOSED.
         access_token.scopes = resolved_scopes
-        return AuthCredentials(scopes=resolved_scopes), TaiUser(access_token)
+        stored_owner = policy.policy_data.get(OWNER_USER_ID_CLAIM)
+        return AuthCredentials(scopes=resolved_scopes), TaiUser(
+            access_token, is_admin=is_admin_policy(policy, stored_owner)
+        )

@@ -26,6 +26,11 @@ _CONTENT_TYPES: dict[str, str] = {
     ".css": "text/css",
     ".map": "application/json",
     ".wasm": "application/wasm",
+    # Static image assets a built SPA serves (favicon / touch icon). Mapped so the
+    # browser gets the right image type rather than application/octet-stream.
+    ".png": "image/png",
+    ".svg": "image/svg+xml",
+    ".ico": "image/x-icon",
 }
 _OCTET_STREAM = "application/octet-stream"
 

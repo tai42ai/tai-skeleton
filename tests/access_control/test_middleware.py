@@ -146,6 +146,29 @@ async def test_unknown_route_is_forbidden(caplog):
     assert DISABLE_HINT.encode() not in _body(sent)
 
 
+async def test_unknown_route_admits_super_admin():
+    """A route with no configured resource fails closed for ordinary identities, but
+    the admin discriminator is admitted — a root identity is never gated by a missing
+    route row (it can map the route anyway)."""
+    captured: dict = {}
+    mw = ResourceGuardMiddleware(_make_app(captured), _FakeVerifier([]), PUBLIC_ID)
+    admin = TaiUser(AccessToken(token="t", client_id="root", scopes=["*"], claims={}), is_admin=True)
+    sent = await _drive(mw, _http_scope(user=admin, auth=AuthCredentials(["*"])))
+    assert _status(sent) == 200
+    assert captured["called"] is True
+    assert captured["user_id_in_ctx"] == "root"
+
+
+async def test_unknown_route_denies_non_admin_even_with_wildcard_scope():
+    """A non-admin (here a wildcard-scoped but NOT admin-flagged identity — e.g. an owned
+    key or a condition-bearing role-holder) still fails closed on an unconfigured route:
+    the carve-out keys on the admin discriminator, never on the raw ``*`` scope."""
+    mw = ResourceGuardMiddleware(_make_app({}), _FakeVerifier([]), PUBLIC_ID)
+    non_admin = TaiUser(AccessToken(token="t", client_id="editor", scopes=["*"], claims={}), is_admin=False)
+    sent = await _drive(mw, _http_scope(user=non_admin, auth=AuthCredentials(["*"])))
+    assert _status(sent) == 403
+
+
 async def test_public_route_allows_unauthenticated():
     captured: dict = {}
     mw = ResourceGuardMiddleware(_make_app(captured), _FakeVerifier([PUBLIC_ID]), PUBLIC_ID)
