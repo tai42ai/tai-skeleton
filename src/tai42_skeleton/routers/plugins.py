@@ -57,7 +57,12 @@ _HASHED_ASSET_CACHE = "public, max-age=31536000, immutable"
 _REVALIDATE_CACHE = "no-cache"
 _NO_STORE = "no-store"
 _INDEX_FILENAME = "index.html"
-_VENDOR_PREFIX = "vendor/"
+# Vite content-hashes only the files it emits under this dir (``/assets/<name>-<hash>.js``);
+# a URL there is a fingerprinted bundle whose bytes never change, so it earns the
+# ``immutable`` long cache. Everything else the dist ships — the stable-named vendor
+# ESM and the ``public/``-copied root files (favicon / touch icon) copied verbatim at
+# the same URL — must revalidate, so replacing those bytes takes effect for browsers.
+_HASHED_ASSET_PREFIX = "assets/"
 
 
 def _error(message: str, status_code: int) -> JSONResponse:
@@ -171,7 +176,7 @@ def _serve_static(dist_root: Path, rel: str, target: Path) -> Response:
         headers["cache-control"] = _NO_STORE
         headers["content-type"] = HTML_CONTENT_TYPE
         return Response(target.read_text(encoding="utf-8"), headers=headers)
-    cache = _REVALIDATE_CACHE if rel.startswith(_VENDOR_PREFIX) else _HASHED_ASSET_CACHE
+    cache = _HASHED_ASSET_CACHE if rel.startswith(_HASHED_ASSET_PREFIX) else _REVALIDATE_CACHE
     return Response(
         target.read_bytes(),
         media_type=asset_content_type(target.name),

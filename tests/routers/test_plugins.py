@@ -55,6 +55,9 @@ def _build_spa_dist(root: Path) -> Path:
     for rel in reg.VENDOR_MODULES.values():
         (dist / rel).write_text("export {};\n", encoding="utf-8")
     (dist / "assets" / "app-h4sh.js").write_text("console.log(1)\n", encoding="utf-8")
+    # A stable-named ``public/``-copied root asset (favicon / touch icon), emitted
+    # at a fixed URL and NOT content-hashed.
+    (dist / "apple-touch-icon.png").write_bytes(b"\x89PNG\r\n\x1a\n")
     (dist / "index.html").write_text(
         "<!doctype html><head><!--tai-importmap-->"
         '<script type="module" src="/assets/app-h4sh.js"></script></head><body></body>',
@@ -199,6 +202,17 @@ async def test_spa_vendor_asset_revalidates(studio_env):
     resp = await router.serve_spa(_req(spa_path="vendor/react.js"))
     assert resp.status_code == 200
     assert resp.headers["cache-control"] == "no-cache"
+
+
+async def test_spa_root_public_asset_revalidates(studio_env):
+    # A stable-named root ``public/``-copied asset (the favicon / touch icon) is NOT
+    # content-hashed: its bytes CAN change at the same URL (a rebrand), so it must
+    # revalidate — never ``immutable``, which would strand a stale icon in browsers.
+    resp = await router.serve_spa(_req(spa_path="apple-touch-icon.png"))
+    assert resp.status_code == 200
+    assert resp.media_type == "image/png"
+    assert resp.headers["cache-control"] == "no-cache"
+    assert "immutable" not in resp.headers["cache-control"]
 
 
 async def test_spa_direct_index_request_is_injected(studio_env):
