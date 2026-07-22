@@ -40,6 +40,7 @@ from typing import Literal, Protocol, cast
 from pydantic import BaseModel
 from starlette.requests import Request
 from starlette.responses import Response
+from tai42_contract.app import DeclaredRouteMetadata
 
 Handler = Callable[[Request], Awaitable[Response]]
 
@@ -139,23 +140,6 @@ class RouteMetadata:
     success_media_types: dict[str, tuple[str, ...]]
     action: RouteAction
     destructive: bool = False
-
-
-@dataclass(frozen=True)
-class DeclaredRouteMetadata:
-    """The behavioral OpenAPI properties a route DECLARES.
-
-    A route registered through the operations adapter supplies this
-    from its operation's metadata + declared error classes; a native ``/api/*``
-    handler passes it explicitly at its ``custom_route`` registration. Its
-    ``reload_gated`` / ``reads_body`` / error statuses / success status feed the
-    emitted spec and the coverage/parity gates.
-    """
-
-    reload_gated: bool
-    reads_body: bool
-    error_statuses: tuple[int, ...]
-    success_status: int
 
 
 def _handler_source(func: Callable[..., object]) -> str:

@@ -183,6 +183,93 @@ CREATE TABLE IF NOT EXISTS versioned_document_versions (
     CONSTRAINT versioned_document_versions_doc_version_unique UNIQUE (document_id, version)
 );
 
+-- ------------------------------------------------------------
+-- role_audit append-only enforcement — DB-level immutability for the
+-- security audit trail.
+-- ------------------------------------------------------------
+-- The role-edit audit trail rides the generic store under `kind='role_audit'`
+-- (the RoleAuditView). For every other kind the store's full surface (edit,
+-- soft-delete, hard-delete + FK cascade, rename, rollback) is legitimate, but an
+-- audit trail must never be rewritten. These triggers make `kind='role_audit'`
+-- documents append-only IN THE DATABASE, so no code path or bug can silently alter
+-- the security record — a comment is not enforcement. A legitimate audit write is
+-- only ever an INSERT of a new version row plus the `active_version` pointer bump,
+-- and both stay allowed. (This guards against application code, not a hostile
+-- superuser/DBA, who can disable triggers — that is WORM territory, out of scope.)
+--
+-- The functions RAISE loudly (matching the store's fail-loud posture); psycopg
+-- surfaces the raise as an error that propagates rather than being swallowed. The
+-- DDL is idempotent: CREATE OR REPLACE FUNCTION plus DROP TRIGGER IF EXISTS before
+-- each CREATE TRIGGER.
+
+-- Version rows are written once and never change: block UPDATE or DELETE of any
+-- version row whose parent document is a role_audit. (The FK ON DELETE CASCADE can
+-- only reach these rows via a delete of the parent document, which the next trigger
+-- already forbids for role_audit, so a cascade never strips a role_audit history.)
+CREATE OR REPLACE FUNCTION versioned_document_versions_role_audit_immutable()
+    RETURNS TRIGGER AS $$
+BEGIN
+    IF (SELECT kind FROM versioned_documents WHERE id = OLD.document_id) = 'role_audit' THEN
+        RAISE EXCEPTION
+            'role_audit version rows are immutable and append-only: % on document_id=% version=% is forbidden',
+            TG_OP, OLD.document_id, OLD.version;
+    END IF;
+    RETURN COALESCE(NEW, OLD);
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_versioned_document_versions_role_audit_immutable ON versioned_document_versions;
+CREATE TRIGGER trg_versioned_document_versions_role_audit_immutable
+    BEFORE UPDATE OR DELETE ON versioned_document_versions
+    FOR EACH ROW EXECUTE FUNCTION versioned_document_versions_role_audit_immutable();
+
+-- A role_audit document can never be deleted: a hard delete would drop the whole
+-- audit history via the FK cascade. Blocking DELETE here also stops the cascade
+-- from ever reaching the version rows above.
+CREATE OR REPLACE FUNCTION versioned_documents_role_audit_no_delete()
+    RETURNS TRIGGER AS $$
+BEGIN
+    IF OLD.kind = 'role_audit' THEN
+        RAISE EXCEPTION
+            'role_audit documents cannot be deleted: the security audit trail is append-only (id=%, name=%)',
+            OLD.id, OLD.name;
+    END IF;
+    RETURN OLD;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_versioned_documents_role_audit_no_delete ON versioned_documents;
+CREATE TRIGGER trg_versioned_documents_role_audit_no_delete
+    BEFORE DELETE ON versioned_documents
+    FOR EACH ROW EXECUTE FUNCTION versioned_documents_role_audit_no_delete();
+
+-- On a role_audit document, ONLY `active_version` may change — the legitimate
+-- pointer bump an append (or a rollback) performs. Any other column change is
+-- forbidden: this blocks the soft-delete `is_active` flip and the rename, which
+-- would each corrupt or hide the audit trail.
+CREATE OR REPLACE FUNCTION versioned_documents_role_audit_guard_update()
+    RETURNS TRIGGER AS $$
+BEGIN
+    IF OLD.kind = 'role_audit' AND (
+        NEW.id IS DISTINCT FROM OLD.id
+        OR NEW.kind IS DISTINCT FROM OLD.kind
+        OR NEW.name IS DISTINCT FROM OLD.name
+        OR NEW.is_active IS DISTINCT FROM OLD.is_active
+        OR NEW.created_at IS DISTINCT FROM OLD.created_at
+    ) THEN
+        RAISE EXCEPTION
+            'role_audit documents are append-only: only active_version may change (id=%, name=%)',
+            OLD.id, OLD.name;
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_versioned_documents_role_audit_guard_update ON versioned_documents;
+CREATE TRIGGER trg_versioned_documents_role_audit_guard_update
+    BEFORE UPDATE ON versioned_documents
+    FOR EACH ROW EXECUTE FUNCTION versioned_documents_role_audit_guard_update();
+
 -- ============================================================
 -- Access-control policy store — the enforced authz rules
 -- ============================================================

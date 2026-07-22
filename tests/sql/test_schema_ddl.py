@@ -44,3 +44,27 @@ def test_header_is_de_branded() -> None:
     ddl = load_ddl()
     assert "Nexus Platform" not in ddl
     assert "Tai Platform" in ddl
+
+
+def test_role_audit_append_only_triggers_present() -> None:
+    """The shipped DDL wires the three role_audit append-only triggers onto the
+    versioned-document tables — the DB-level guard that a comment alone cannot give.
+    Text-level guard so removing/renaming a trigger fails without a live Postgres."""
+    ddl = load_ddl()
+    # Trigger functions (idempotent CREATE OR REPLACE) and their row triggers.
+    for name in (
+        "versioned_document_versions_role_audit_immutable",
+        "versioned_documents_role_audit_no_delete",
+        "versioned_documents_role_audit_guard_update",
+    ):
+        assert f"CREATE OR REPLACE FUNCTION {name}()" in ddl, f"missing trigger function {name}"
+        assert f"DROP TRIGGER IF EXISTS trg_{name}" in ddl, f"missing idempotent drop for trg_{name}"
+        assert f"CREATE TRIGGER trg_{name}" in ddl, f"missing trigger trg_{name}"
+
+    # The immutability trigger fires on both UPDATE and DELETE of version rows;
+    # the doc-delete guard on DELETE; the update guard on UPDATE.
+    assert "BEFORE UPDATE OR DELETE ON versioned_document_versions" in ddl
+    assert "BEFORE DELETE ON versioned_documents" in ddl
+    assert "BEFORE UPDATE ON versioned_documents" in ddl
+    # Every guard keys strictly on kind='role_audit' — no other kind is affected.
+    assert ddl.count("'role_audit'") >= 3

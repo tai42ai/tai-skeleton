@@ -1,9 +1,10 @@
 """Op-level oracles for ``get_resource_by_id``.
 
-``get_resource_by_id`` backs the ``POST /api/resources/get`` route and carries the
-route's typed error surface: it maps ``FileNotFoundError`` / ``ValueError`` /
-``UnsafeTemplatePathError`` to ``NotFoundError`` (404) and ``BadRequestError`` (400).
-A READ door: not destructive, projects normally.
+``get_resource_by_id`` backs both methods of ``/api/resources/get`` (the GET fetch
+door and the POST render door) and carries the route's typed error surface: it maps
+``FileNotFoundError`` / ``ValueError`` / ``UnsafeTemplatePathError`` to
+``NotFoundError`` (404) and ``BadRequestError`` (400). A READ door: not destructive,
+projects normally.
 """
 
 from __future__ import annotations

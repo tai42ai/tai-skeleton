@@ -24,7 +24,7 @@ from typing import Any
 from pydantic import BaseModel
 
 from tai42_skeleton.app.reload_gate import REJECT_MESSAGE
-from tai42_skeleton.app.route_registry import RouteMetadata, load_api_routes
+from tai42_skeleton.app.route_registry import RouteMetadata, load_api_routes, method_to_action
 
 _SECURITY_SCHEME = "ApiKeyAuth"
 _API_KEY_HEADER = "x-api-key"
@@ -110,6 +110,29 @@ def _register_model(model: type[BaseModel], components: dict[str, Any]) -> str:
     return model.__name__
 
 
+def _query_parameters(model: type[BaseModel], components: dict[str, Any]) -> list[dict[str, Any]]:
+    """A read method's typed ``request_model`` fields as ``in: query`` parameters.
+
+    A read method (GET/HEAD) parses its inputs from the query string, so its model's
+    fields ARE query parameters (never a request body). Each parameter carries the
+    field's own JSON schema and is ``required`` exactly when the model marks it
+    required (a field with a default is optional). Any ``$defs`` a field schema
+    references are merged into ``components`` so the ``$ref``s resolve."""
+    schema = model.model_json_schema(ref_template="#/components/schemas/{model}")
+    for def_name, def_schema in schema.pop("$defs", {}).items():
+        _assign_component(components, def_name, def_schema)
+    required = set(schema.get("required", []))
+    return [
+        {
+            "name": name,
+            "in": "query",
+            "required": name in required,
+            "schema": prop_schema,
+        }
+        for name, prop_schema in schema.get("properties", {}).items()
+    ]
+
+
 def _json_envelope_schema(meta: RouteMetadata, components: dict[str, Any]) -> dict[str, Any]:
     if meta.response_model is None:
         data_schema: dict[str, Any] = {}
@@ -174,11 +197,18 @@ def _operation(meta: RouteMetadata, method: str, components: dict[str, Any]) -> 
     if meta.description:
         operation["description"] = meta.description
 
+    # A route's typed ``request_model`` is documented according to how the method carries
+    # it: a body-reading (write) method takes a JSON ``requestBody``; a read method
+    # (GET/HEAD) reads its inputs from the query string, so the model's fields become
+    # ``in: query`` parameters instead (a GET request body would misdocument the
+    # endpoint). Path parameters always precede the model-derived ones.
     parameters = _path_parameters(meta.path)
+    if meta.request_model is not None and method_to_action(method) == "read":
+        parameters = parameters + _query_parameters(meta.request_model, components)
     if parameters:
         operation["parameters"] = parameters
 
-    if meta.request_model is not None:
+    if meta.request_model is not None and method_to_action(method) == "write":
         ref = _register_model(meta.request_model, components)
         operation["requestBody"] = {
             "required": True,

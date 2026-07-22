@@ -899,3 +899,31 @@ def test_auth_claim_404_renders_uniform_message(monkeypatch: pytest.MonkeyPatch)
     result = run_cli(monkeypatch, handler, ["auth", "claim", "clm-nope"])
     assert result.exit_code != 0
     assert "unknown or already used claim token" in result.output
+
+
+def test_resources_get_plain_uses_read_get(monkeypatch: pytest.MonkeyPatch) -> None:
+    # No render vars -> the plain fetch-as-is path calls the read-classed GET door with
+    # ``resource_id`` as a query param and no body.
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.method == "GET"
+        assert request.url.path == "/api/resources/get"
+        assert request.url.params["resource_id"] == "doc.txt"
+        assert not request.content
+        return data_response("raw text")
+
+    result = run_cli(monkeypatch, handler, ["resources", "get", "doc.txt"], json_output=True)
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.output) == "raw text"
+
+
+def test_resources_get_render_uses_write_post(monkeypatch: pytest.MonkeyPatch) -> None:
+    # A render var -> the render path posts ``template_kwargs`` to the write-classed POST.
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.method == "POST"
+        assert request.url.path == "/api/resources/get"
+        assert json.loads(request.content) == {"resource_id": "greet.j2", "template_kwargs": {"name": "Ada"}}
+        return data_response("Hello Ada")
+
+    result = run_cli(monkeypatch, handler, ["resources", "get", "greet.j2", "--kw", "name=Ada"], json_output=True)
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.output) == "Hello Ada"

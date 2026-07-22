@@ -16,11 +16,11 @@ import tai42_skeleton.routers.resources as router
 from tai42_skeleton.template.media import MediaBlock
 
 
-def _req(body: dict | None = None) -> Request:
+def _req(body: dict | None = None, *, query: dict | None = None) -> Request:
     async def _json() -> Any:
         return body or {}
 
-    return cast(Request, SimpleNamespace(json=_json, path_params={}, query_params={}))
+    return cast(Request, SimpleNamespace(json=_json, path_params={}, query_params=query or {}))
 
 
 def _data(resp):
@@ -55,6 +55,16 @@ def bind(monkeypatch):
 async def test_get_text_unrendered(bind):
     bind(_ResourceManager(loaded="raw {{ body }}"))
     resp = await router.get_resource_by_id(_req({"resource_id": "doc.txt"}))
+    assert resp.status_code == 200
+    assert _data(resp)["data"] == "raw {{ body }}"
+
+
+async def test_get_route_fetches_as_is_from_query(bind):
+    # The read-classed GET door parses ``resource_id`` from the query string (no body)
+    # and returns the stored resource as-is. The manager renders to "", so getting the
+    # raw loaded text back proves no render happened.
+    bind(_ResourceManager(loaded="raw {{ body }}", rendered="RENDERED"))
+    resp = await router.fetch_resource(_req(query={"resource_id": "doc.txt"}))
     assert resp.status_code == 200
     assert _data(resp)["data"] == "raw {{ body }}"
 

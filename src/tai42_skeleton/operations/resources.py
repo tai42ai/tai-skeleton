@@ -2,9 +2,10 @@
 
 ``get_resource_by_id`` loads a stored resource by its id/URL and optionally renders
 it as a Jinja template, returning the loaded (and optionally rendered) content —
-text or a :data:`~tai42_skeleton.template.media.MediaBlock`. It is the op behind
-``POST /api/resources/get`` and the ``tai resources get`` CLI — a thin skin over
-the app's resource manager (``load_file`` + ``render_by_id_or_content``).
+text or a :data:`~tai42_skeleton.template.media.MediaBlock`. It backs both methods of
+``/api/resources/get`` — the ``GET`` fetch-as-is door (no ``template_kwargs``) and the
+``POST`` render door — and the ``tai resources get`` CLI, a thin skin over the app's
+resource manager (``load_file`` + ``render_by_id_or_content``).
 
 A READ door: it never mutates the store, so it is NOT destructive and stays outside
 the admin-mutation deny-fence.

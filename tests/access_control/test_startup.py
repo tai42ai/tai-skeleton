@@ -318,6 +318,26 @@ async def test_spa_check_passes_acknowledged_templated_route(monkeypatch: pytest
     assert "/{spa_path:path}" in caplog.text
 
 
+async def test_spa_check_passes_on_offline_whole_package_surface() -> None:
+    # EARLY-WARNING over the WHOLE package, not just a started deployment's effective router
+    # set. The boot audit iterates ``route_registry.routes()`` as populated by a STARTED
+    # process — its manifest's effective router set — so a misconfigured TURNED-OFF route
+    # (an authed=False non-/api GET that is not acknowledged) escapes it and only trips the
+    # boot once turned on. Here the whole ``tai42_skeleton.routers`` package is enumerated
+    # OFFLINE: ``load_all_routes`` imports every router module under the no-op spec harness,
+    # where routes are INSPECTED, never served, and records them into the process-wide
+    # registry. Running the REAL classifier — ``check_spa_shell_public`` reused verbatim so
+    # this can never drift from the boot rules — with the DEFAULT acknowledged-public
+    # settings must place every whole-package non-/api/non-/mcp GET route in a valid
+    # spa-shell bucket (acknowledged-public, or authed-and-derived-reserved). A misconfigured
+    # OFF route would FAIL here even though the effective-only boot audit would not see it.
+    from tai42_skeleton.app.route_registry import load_all_routes
+
+    reset_all_settings()  # DEFAULT acknowledged-public settings — no env override
+    load_all_routes()  # import the whole router package offline into the registry
+    await check_spa_shell_public()  # no raise: every whole-package GET route buckets cleanly
+
+
 # -- fenced-route resolvability boot guarantee -------------------------------
 
 

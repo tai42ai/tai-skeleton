@@ -19,7 +19,7 @@ from openapi_spec_validator import validate
 from pydantic import BaseModel
 
 from tai42_skeleton.app.reload_gate import REJECT_MESSAGE
-from tai42_skeleton.app.route_registry import RouteMetadata, load_api_routes
+from tai42_skeleton.app.route_registry import RouteMetadata, load_api_routes, method_to_action
 from tai42_skeleton.cli import app as app_module
 from tai42_skeleton.cli.openapi import _assign_component, _openapi_path, _register_model, build_openapi_spec
 
@@ -308,14 +308,49 @@ def test_authed_routes_require_the_api_key_security(spec: dict, api_routes: list
 
 
 def test_body_routes_declare_a_request_body(spec: dict, api_routes: list[RouteMetadata]) -> None:
+    # A requestBody is documented ONLY for a body-reading (write) method. A read method
+    # (GET/HEAD) parses its typed parameters from the query string, so even when its
+    # operation carries a ``request_model`` it documents no body — a GET request body
+    # would misdocument the endpoint.
     for meta in api_routes:
         if meta.request_model is None:
             continue
         for method in meta.methods:
             op = _operation(spec, meta, method)
-            ref = op["requestBody"]["content"]["application/json"]["schema"]["$ref"]
-            assert ref.endswith("/" + meta.request_model.__name__)
-            assert meta.request_model.__name__ in spec["components"]["schemas"]
+            if method_to_action(method) == "write":
+                ref = op["requestBody"]["content"]["application/json"]["schema"]["$ref"]
+                assert ref.endswith("/" + meta.request_model.__name__)
+                assert meta.request_model.__name__ in spec["components"]["schemas"]
+            else:
+                assert "requestBody" not in op, f"{method} {meta.path} must not document a request body"
+
+
+def test_resources_get_read_route_documents_query_params_not_a_body(
+    spec: dict, api_routes: list[RouteMetadata]
+) -> None:
+    # The read-classed GET fetch door shares the operation (and its ``request_model``)
+    # with the write-classed POST render door on the same path. The GET must self-describe
+    # its input as ``in: query`` parameters (NO requestBody), so a generated client knows
+    # ``resource_id`` is a REQUIRED query param; the POST keeps its ``ResourceGet`` body.
+    (meta,) = [m for m in api_routes if m.path == "/api/resources/get" and "GET" in m.methods]
+    assert meta.action == "read"
+    assert meta.reads_body is False
+
+    get_op = spec["paths"]["/api/resources/get"]["get"]
+    assert "requestBody" not in get_op
+
+    params = {p["name"]: p for p in get_op.get("parameters", [])}
+    # ``resource_id`` is documented as a REQUIRED query parameter carrying a string schema.
+    assert "resource_id" in params, "GET must document resource_id as a parameter"
+    assert params["resource_id"]["in"] == "query"
+    assert params["resource_id"]["required"] is True
+    assert params["resource_id"]["schema"]["type"] == "string"
+    # The optional ``template_kwargs`` field is documented as a non-required query param.
+    assert params["template_kwargs"]["in"] == "query"
+    assert params["template_kwargs"]["required"] is False
+
+    post_op = spec["paths"]["/api/resources/get"]["post"]
+    assert post_op["requestBody"]["content"]["application/json"]["schema"]["$ref"].endswith("/ResourceGet")
 
 
 def test_spec_validates_against_openapi_31(spec: dict) -> None:

@@ -10,6 +10,7 @@ from __future__ import annotations
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from tai42_contract.app import DeclaredRouteMetadata
 from tai42_contract.extensions import ExtensionKind
 from tai42_contract.presets import PresetBody
 from tai42_contract.storage import Storage
@@ -319,6 +320,18 @@ def test_http_facet_forwarding():
         action=None,
         declared=None,
     )
+
+
+def test_http_facet_forwards_declared():
+    """A native route's ``declared`` metadata (the contract-typed
+    :class:`DeclaredRouteMetadata`) reaches the impl surface unchanged, so a native
+    ``/api`` handler can declare its OpenAPI behavioral properties through the seam."""
+    app = _app()
+    f = HttpFacet(app)
+    declared = DeclaredRouteMetadata(reload_gated=True, reads_body=True, error_statuses=(400, 401), success_status=201)
+    f.custom_route("/p", ["POST"], summary="P", tags=["t"], response_model=None, action="write", declared=declared)
+    _, kwargs = app._http_surface.custom_route.call_args
+    assert kwargs["declared"] is declared
 
 
 # -- LifecycleFacet -----------------------------------------------------------

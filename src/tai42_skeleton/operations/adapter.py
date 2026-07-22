@@ -202,10 +202,9 @@ def register_operation_route(
 
     handler = _build_handler(op, method_upper, path_params, context_extractor, response_headers, success_status)
     route_tags = tags if tags is not None else list(op.tags)
-    # Register over the skeleton HttpSurface directly (not the contract ``.http``
-    # facet, which cannot carry the skeleton-typed ``declared`` metadata): the
-    # concrete app exposes it as ``_http_surface``, the offline spec harness as
-    # ``.http``.
+    # Register over the concrete HttpSurface directly: the concrete app exposes it
+    # as ``_http_surface``, the offline spec harness as ``.http``; either way the
+    # resolved surface carries the ``declared`` / ``destructive`` metadata seam.
     surface = getattr(app, "_http_surface", None) or app.http
     decorator = surface.custom_route(
         path,

@@ -125,16 +125,15 @@ class HttpSurface:
 
 
 def http_surface() -> HttpSurface:
-    """The bound concrete :class:`HttpSurface`, carrying the skeleton-typed
+    """The bound concrete :class:`HttpSurface`, carrying the
     ``declared`` / ``destructive`` metadata seam.
 
     A native ``/api/*`` handler registers through this so it can declare its
     OpenAPI metadata explicitly (its ``reload_gated`` / ``reads_body`` / error
     statuses / success status), the same way the operation adapter reaches the
-    surface. The contract ``app.http`` facet intentionally omits the seam (it
-    cannot reference the skeleton ``DeclaredRouteMetadata`` type), so the routers
-    reach the concrete surface directly here. The offline spec harness exposes it
-    as ``tai42_app.http``; the concrete server exposes it as ``_http_surface``.
+    surface. It resolves the concrete surface whichever way the bound app exposes
+    it: the offline spec harness binds it as ``tai42_app.http``; the concrete
+    server exposes it as ``_http_surface``.
     """
     from tai42_contract.app import tai42_app
 

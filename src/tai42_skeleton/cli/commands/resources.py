@@ -24,7 +24,7 @@ app = typer.Typer(
 
 
 @app.command("get")
-@covers(("POST", "/api/resources/get"))
+@covers(("GET", "/api/resources/get"), ("POST", "/api/resources/get"))
 def get_resource_by_id(
     ctx: typer.Context,
     resource_id: Annotated[str, typer.Argument(help="Resource id (path) to load.")],
@@ -46,9 +46,15 @@ def get_resource_by_id(
     Example: ``tai resources get prompts/greeting.md --kw name=Ada``
     """
     ctx_obj = app_context(ctx)
-    body: dict = {"resource_id": resource_id}
-    if render or kwargs is not None or kw:
-        body["template_kwargs"] = parse_kwargs(kwargs, kw)
+    wants_render = render or kwargs is not None or kw
     with ctx_obj.client() as client:
-        data = client.post("/api/resources/get", json=body)
+        if wants_render:
+            # The render path carries arbitrary nested ``template_kwargs``, which needs
+            # a request body — the write-classed POST door.
+            body = {"resource_id": resource_id, "template_kwargs": parse_kwargs(kwargs, kw)}
+            data = client.post("/api/resources/get", json=body)
+        else:
+            # The plain fetch-as-is path — the read-classed GET door, so a resources
+            # READ grant can fetch it.
+            data = client.get("/api/resources/get", params={"resource_id": resource_id})
     emit_result(ctx_obj, data)
