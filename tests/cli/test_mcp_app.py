@@ -14,8 +14,11 @@ from __future__ import annotations
 
 import logging
 import os
+import shutil
 import socket
+import tempfile
 from contextlib import asynccontextmanager
+from pathlib import Path
 from types import SimpleNamespace
 
 import click
@@ -583,13 +586,24 @@ def test_create_app_stateless_reaches_http_app_factory(patch_app_seam, monkeypat
 
 def _stale_uds_socket(path: str) -> None:
     """Create a socket-typed path with no listener — a connect refuses it."""
-    sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-    sock.bind(path)
-    sock.close()  # the filesystem entry persists; nothing is listening on it
+    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as sock:
+        sock.bind(path)  # the filesystem entry persists; nothing is listening on it
 
 
-def test_prepare_uds_unlinks_stale_socket(tmp_path) -> None:
-    path = str(tmp_path / "stale.sock")
+@pytest.fixture
+def uds_dir():
+    """A short-path directory for AF_UNIX sockets: ``tmp_path`` nests test-name
+    subdirs that can push a socket path past the ~104-char ``sun_path`` limit, so
+    bind under a shorter ``mkdtemp`` base instead."""
+    directory = tempfile.mkdtemp()
+    try:
+        yield Path(directory)
+    finally:
+        shutil.rmtree(directory, ignore_errors=True)
+
+
+def test_prepare_uds_unlinks_stale_socket(uds_dir) -> None:
+    path = str(uds_dir / "stale.sock")
     _stale_uds_socket(path)
     assert os.path.exists(path)
 
@@ -598,8 +612,8 @@ def test_prepare_uds_unlinks_stale_socket(tmp_path) -> None:
     assert not os.path.exists(path)  # stale socket removed, ready to rebind
 
 
-def test_prepare_uds_refuses_live_socket(tmp_path) -> None:
-    path = str(tmp_path / "live.sock")
+def test_prepare_uds_refuses_live_socket(uds_dir) -> None:
+    path = str(uds_dir / "live.sock")
     server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     server.bind(path)
     server.listen(1)
@@ -625,10 +639,10 @@ def test_prepare_uds_missing_path_is_noop(tmp_path) -> None:
     mcp_app._prepare_uds_path(str(tmp_path / "absent.sock"))
 
 
-def test_run_mcp_app_uds_cleans_stale_before_bind(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
+def test_run_mcp_app_uds_cleans_stale_before_bind(monkeypatch: pytest.MonkeyPatch, uds_dir) -> None:
     monkeypatch.setattr(mcp_app.sys, "platform", "linux")
     monkeypatch.delenv("TAI_RUN_MODE", raising=False)
-    path = str(tmp_path / "run.sock")
+    path = str(uds_dir / "run.sock")
     _stale_uds_socket(path)
     recorded: list = []
     monkeypatch.setattr(mcp_app.uvicorn, "run", lambda target, **kw: recorded.append((target, kw)))
