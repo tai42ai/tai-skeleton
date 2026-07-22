@@ -18,6 +18,7 @@ import asyncio
 import os
 import uuid
 from collections.abc import AsyncIterator
+from typing import LiteralString
 
 import pytest
 from tai42_kit.clients import client_ctx
@@ -33,7 +34,7 @@ _OPT_IN_ENV = "TAI42_SKELETON_REAL_PG"
 
 # The two tables + the partial-unique active index, verbatim from the skeleton init SQL
 # (idempotent ``IF NOT EXISTS`` so an already-migrated database is left untouched).
-_SCHEMA_SQL = (
+_SCHEMA_SQL: tuple[LiteralString, ...] = (
     "CREATE TABLE IF NOT EXISTS versioned_documents ("
     " id BIGSERIAL NOT NULL, kind TEXT NOT NULL, name TEXT NOT NULL,"
     " active_version INTEGER NOT NULL, is_active BOOLEAN NOT NULL DEFAULT TRUE,"
@@ -49,7 +50,7 @@ _SCHEMA_SQL = (
 )
 
 
-async def _exec(sql: str, params: tuple = ()) -> None:
+async def _exec(sql: LiteralString, params: tuple = ()) -> None:
     async with (
         client_ctx(PostgresClient, versioning_store_settings()) as pool,
         pool.connection() as conn,
