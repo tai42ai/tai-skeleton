@@ -241,29 +241,138 @@ async def _import_sub_mcp(payload: dict[str, Any]) -> _SectionReport:
 # -- webhooks ----------------------------------------------------------------
 
 
-async def _export_webhooks() -> list[dict[str, Any]]:
+async def _export_webhooks() -> dict[str, Any]:
     from tai42_skeleton.hooks.cache import get_hooks_manager
+    from tai42_skeleton.hooks.trigger_links import export_trigger_links
 
     hooks = await get_hooks_manager().list_hooks()
-    return [params.model_dump(mode="json") for params in hooks.values()]
+    # The section payload is an ENVELOPE: the hook registrations plus the trigger-link
+    # records + name index + tombstones (hashes and metadata only — never a raw
+    # token). An in-memory deployment holds no trigger links, so its envelope carries
+    # truthfully-empty ``trigger_links``/``tombstones`` and the hook export is
+    # unchanged.
+    return {"hooks": [params.model_dump(mode="json") for params in hooks.values()], **(await export_trigger_links())}
 
 
-async def _import_webhooks(payload: list[dict[str, Any]]) -> _SectionReport:
+async def _import_webhooks(payload: list[dict[str, Any]] | dict[str, Any]) -> _SectionReport:
     from tai42_contract.hooks import HookParams
 
     from tai42_skeleton.hooks.cache import get_hooks_manager
+    from tai42_skeleton.hooks.trigger_links import (
+        TriggerLinkError,
+        bound_hashes_by_name,
+        restore_tombstone,
+        restore_trigger_link,
+    )
 
     manager = get_hooks_manager()
-    existing = await manager.list_hooks()
     report = _empty_report()
-    for item in payload:
-        params = HookParams.model_validate(item)
-        await manager.register(params)
-        if params.name in existing:
+
+    async def _restore_hooks(hooks: list[dict[str, Any]]) -> None:
+        existing = await manager.list_hooks()
+        for item in hooks:
+            params = HookParams.model_validate(item)
+            await manager.register(params)
+            if params.name in existing:
+                report["updated"] += 1
+            else:
+                report["created"] += 1
+
+    # A bare LIST is the hooks-only backup shape (no trigger-link envelope); restore the hooks directly.
+    if isinstance(payload, list):
+        await _restore_hooks(payload)
+        return report
+
+    if not isinstance(payload, dict):
+        raise ValueError(
+            f"webhooks section payload must be a list (old shape) or an envelope dict, got {type(payload)}"
+        )
+    # A hand-edited envelope MISSING any key, or carrying a non-list value for one,
+    # raises loudly BEFORE any write — never default-empty a section silently, never
+    # let a bad type fail ungracefully deeper in.
+    for key in ("hooks", "trigger_links", "tombstones"):
+        if key not in payload:
+            raise ValueError(f"webhooks envelope is missing the required {key!r} key")
+        if not isinstance(payload[key], list):
+            raise ValueError(f"webhooks envelope {key!r} must be a list")
+    hooks = payload["hooks"]
+    trigger_links = payload["trigger_links"]
+    tombstones = payload["tombstones"]
+
+    # PRE-WRITE whole-section scan: refuse a payload binding ONE hash under TWO
+    # different names — internally, or against the LIVE index (a corrupt backup would
+    # otherwise leave a permanent zombie name index after one is revoked). The live
+    # index enumerates EVERY name:* binding on the store, orphans included, so a new
+    # name binding an already-orphaned hash is refused too (revoke would later destroy
+    # its live record). This runs BEFORE any write (hooks included) so the refusal
+    # touches zero keys. A NAME appearing twice is NOT refused — it resolves last-wins
+    # through displacement.
+    _reject_duplicate_hash_binding(trigger_links, await bound_hashes_by_name())
+
+    await _restore_hooks(hooks)
+
+    # Tombstones first, then records — a tombstoned hash then refuses its own record
+    # in-script (the tombstone wins over any imported record).
+    for token_hash in tombstones:
+        try:
+            await restore_tombstone(token_hash)
+        except TriggerLinkError as exc:
+            report["errors"].append(f"tombstone {token_hash!r}: {exc.message}")
+            report["skipped"] += 1
+
+    for item in trigger_links:
+        name = item.get("name") if isinstance(item, dict) else None
+        try:
+            if not isinstance(item, dict):
+                raise TriggerLinkError(400, "trigger link entry must be a JSON object")
+            outcome = await restore_trigger_link(
+                name=item["name"], token_hash=item["token_hash"], record=item["record"]
+            )
+        except (TriggerLinkError, KeyError) as exc:
+            message = exc.message if isinstance(exc, TriggerLinkError) else f"missing key {exc}"
+            report["errors"].append(f"trigger link {name!r}: {message}")
+            report["skipped"] += 1
+            continue
+        if outcome in ("skipped_expired", "skipped_tombstoned"):
+            report["skipped"] += 1
+        elif outcome == "updated":
             report["updated"] += 1
         else:
             report["created"] += 1
     return report
+
+
+def _reject_duplicate_hash_binding(trigger_links: Any, live_by_name: dict[str, str]) -> None:
+    """Raise if any single token hash is bound under two DIFFERENT names, either
+    within the payload or against the live store index — zero keys written.
+    ``live_by_name`` maps every ``name:*`` binding on the store (orphans included) to
+    its hash, so a payload binding a new name to an already-orphaned hash is refused
+    too (revoke treats an orphan binding as authoritative and would later destroy the
+    new name's live record). ``trigger_links`` is a list — the envelope-key check
+    validates that before this runs."""
+    # Only well-formed entries participate; malformed ones are left to the per-item
+    # restore to reject loudly in the report.
+    hash_to_name: dict[str, str] = {}
+    for item in trigger_links:
+        if not isinstance(item, dict):
+            continue
+        name, token_hash = item.get("name"), item.get("token_hash")
+        if not isinstance(name, str) or not isinstance(token_hash, str):
+            continue
+        prior = hash_to_name.get(token_hash)
+        if prior is not None and prior != name:
+            raise ValueError(
+                f"webhooks envelope binds token hash {token_hash!r} under two names ({prior!r} and {name!r})"
+            )
+        hash_to_name[token_hash] = name
+
+    live_by_hash = {token_hash: name for name, token_hash in live_by_name.items()}
+    for token_hash, name in hash_to_name.items():
+        live_name = live_by_hash.get(token_hash)
+        if live_name is not None and live_name != name:
+            raise ValueError(
+                f"import binds token hash {token_hash!r} to {name!r} but it is already live under {live_name!r}"
+            )
 
 
 # -- templates ---------------------------------------------------------------
@@ -371,7 +480,10 @@ def register_core_sections(registry: Any) -> None:
     registry.register_section("env", _export_env, _import_env, secret=True)
     registry.register_section("access_control", _export_access_control, _import_access_control, secret=True)
     registry.register_section("sub_mcp", _export_sub_mcp, _import_sub_mcp)
-    registry.register_section("webhooks", _export_webhooks, _import_webhooks)
+    # secret=True: the bulk export aggregates the whole surface's records — the hook
+    # ``tool_kwargs`` and the trigger-link envelope's full token hashes — which is
+    # broader than the grantable per-record list read.
+    registry.register_section("webhooks", _export_webhooks, _import_webhooks, secret=True)
     registry.register_section("templates", _export_templates, _import_templates)
     # Registered unconditionally: an unbound scheduling backend surfaces as a
     # per-section error through the router, never a hidden gap in the section list.

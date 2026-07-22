@@ -164,3 +164,132 @@ def test_hook_mutations_project_with_destructive_hint() -> None:
     assert app.tools.registered["set_topic_verifier"]["annotations"].destructiveHint is True
     # list_hooks is a read — no destructiveHint annotation.
     assert app.tools.registered["list_hooks"]["annotations"] is None
+
+
+# -- trigger-link operations --------------------------------------------------
+
+
+@pytest.fixture
+def gate_off(monkeypatch: pytest.MonkeyPatch):
+    """Access control OFF — the identity-less caller shape (created_by → None)."""
+    from types import SimpleNamespace
+
+    monkeypatch.setattr(hooks_ops, "access_control_settings", lambda: SimpleNamespace(enable=False))
+
+
+@pytest.fixture
+def capture_create(monkeypatch: pytest.MonkeyPatch):
+    """Capture the kwargs the op forwards to the trigger-link store, returning a
+    canned create result."""
+    seen: dict = {}
+
+    async def _create(**kwargs):
+        seen.update(kwargs)
+        return {
+            "name": kwargs["name"] or "trg-link-deadbeef",
+            "trigger_path": "/trigger/tok",
+            "token": "tok",
+            "topic": kwargs["topic"],
+            "expires_at": None,
+        }
+
+    monkeypatch.setattr(hooks_ops.trigger_links, "create_trigger_link", _create)
+    return seen
+
+
+async def test_create_trigger_link_ambient_created_by_gate_on(monkeypatch, capture_create) -> None:
+    from types import SimpleNamespace
+
+    monkeypatch.setattr(hooks_ops, "access_control_settings", lambda: SimpleNamespace(enable=True))
+    monkeypatch.setattr(hooks_ops, "get_current_user_id", lambda: "alice")
+    await hooks_ops.create_trigger_link(topic="t", name="n", ttl_seconds=None, tool_kwargs=None)
+    assert capture_create["created_by"] == "alice"
+
+
+async def test_create_trigger_link_identity_less_created_by_null(gate_off, capture_create) -> None:
+    await hooks_ops.create_trigger_link(topic="t", name="n", ttl_seconds=None, tool_kwargs=None)
+    assert capture_create["created_by"] is None
+
+
+async def test_create_trigger_link_gate_on_unset_identity_raises(monkeypatch) -> None:
+    from types import SimpleNamespace
+
+    monkeypatch.setattr(hooks_ops, "access_control_settings", lambda: SimpleNamespace(enable=True))
+    monkeypatch.setattr(hooks_ops, "get_current_user_id", lambda: None)
+    # A refactor must not quietly return None under gate-on — it RAISES (a 500).
+    with pytest.raises(RuntimeError, match="caller user id is unset"):
+        await hooks_ops.create_trigger_link(topic="t", name="n", ttl_seconds=None, tool_kwargs=None)
+
+
+@pytest.mark.parametrize(
+    ("status", "error_name"),
+    [(400, "BadRequestError"), (409, "ConflictError"), (501, "NotSupportedError")],
+)
+async def test_create_trigger_link_status_mapping(monkeypatch, gate_off, status, error_name) -> None:
+    from tai42_skeleton.hooks.trigger_links import TriggerLinkError
+
+    async def _raise(**kwargs):
+        raise TriggerLinkError(status, "boom")
+
+    from tai42_skeleton.operations.errors import OperationError
+
+    monkeypatch.setattr(hooks_ops.trigger_links, "create_trigger_link", _raise)
+    with pytest.raises(OperationError) as ei:
+        await hooks_ops.create_trigger_link(topic="t", name="n", ttl_seconds=None, tool_kwargs=None)
+    assert type(ei.value).__name__ == error_name
+    assert ei.value.status == status
+
+
+async def test_delete_trigger_link_404_and_501(monkeypatch, gate_off) -> None:
+    from tai42_skeleton.hooks.trigger_links import TriggerLinkError
+
+    async def _raise404(name):
+        raise TriggerLinkError(404, "unknown trigger link")
+
+    monkeypatch.setattr(hooks_ops.trigger_links, "revoke_trigger_link", _raise404)
+    with pytest.raises(NotFoundError):
+        await hooks_ops.delete_trigger_link(name="x")
+
+    async def _ok(name):
+        return None
+
+    monkeypatch.setattr(hooks_ops.trigger_links, "revoke_trigger_link", _ok)
+    assert await hooks_ops.delete_trigger_link(name="x") == {"removed": True, "name": "x"}
+
+
+def test_mutating_trigger_ops_are_authority_changing_and_excluded_from_projection() -> None:
+    from tai42_skeleton.operations.projection import is_tier2
+
+    create_meta = operation_metadata_of(hooks_ops.create_trigger_link)
+    delete_meta = operation_metadata_of(hooks_ops.delete_trigger_link)
+    list_meta = operation_metadata_of(hooks_ops.list_trigger_links)
+    # Direct flag pin (survives any future projection-tier reshuffle).
+    assert create_meta.authority_changing is True
+    assert delete_meta.authority_changing is True
+    assert list_meta.authority_changing is False
+    # And the default surface excludes both mutating ops.
+    assert is_tier2(create_meta)
+    assert is_tier2(delete_meta)
+
+    reg = OperationRegistry()
+    reg.register(create_meta)
+    reg.register(delete_meta)
+    reg.register(list_meta)
+
+    class _Rec:
+        def __init__(self) -> None:
+            self.registered: dict[str, dict] = {}
+
+        def tool(self, *, force, name, tags, annotations):
+            self.registered[name] = {"annotations": annotations}
+            return lambda fn: fn
+
+    class _App:
+        def __init__(self) -> None:
+            self.tools = _Rec()
+
+    app = _App()
+    names = project_operations(app, ApiToolsConfig(expose_destructive=True), registry=reg)
+    assert "create_trigger_link" not in names
+    assert "delete_trigger_link" not in names
+    assert "list_trigger_links" in names  # an ordinary read tool

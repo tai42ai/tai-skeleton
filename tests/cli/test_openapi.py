@@ -146,6 +146,7 @@ _EXPECTED_READS_BODY: set[tuple[str, str]] = {
     ("POST", "/api/connectors/oauth/complete"),
     ("POST", "/api/delete-template"),
     ("POST", "/api/hooks"),
+    ("POST", "/api/hooks/trigger-links"),
     ("PUT", "/api/hooks/topics/{topic}/verifier"),
     ("POST", "/api/interactions/{interaction_id}/answer"),
     ("POST", "/api/login/claim"),

@@ -48,14 +48,16 @@ def _build_client(monkeypatch, settings: RateLimitSettings, fake: FakeRedis) -> 
     routes = [
         Route("/universal_webhook/{topic}", _ok, methods=["GET", "POST"]),
         Route("/api/interactions/callback/{ticket}", _ok, methods=["GET", "POST"]),
+        Route("/trigger/{token}", _ok, methods=["GET", "POST"]),
         Route("/api/hooks", _ok, methods=["GET"]),  # an AUTHED route family — never limited
+        Route("/api/hooks/trigger-links", _ok, methods=["GET"]),  # authed CRUD — never limited
     ]
     app = Starlette(routes=routes)
     return TestClient(rate_limit.RateLimitMiddleware(app))
 
 
 def _settings(**overrides) -> RateLimitSettings:
-    base: dict[str, Any] = {"webhook_burst": 2, "interactions_callback_burst": 2}
+    base: dict[str, Any] = {"webhook_burst": 2, "interactions_callback_burst": 2, "trigger_burst": 2}
     base.update(overrides)
     return RateLimitSettings(**base)
 
@@ -73,10 +75,39 @@ def test_interactions_callback_family_limited_after_burst(monkeypatch):
     assert statuses[-1] == 429
 
 
+def test_trigger_family_limited_after_burst(monkeypatch):
+    client = _build_client(monkeypatch, _settings(), FakeRedis())
+    statuses = [client.get("/trigger/tok").status_code for _ in range(3)]
+    assert statuses[0] == 200
+    assert statuses[-1] == 429
+
+
+def test_trigger_family_has_independent_budget(monkeypatch):
+    client = _build_client(monkeypatch, _settings(), FakeRedis())
+    # Exhaust the webhook family; the trigger family still has its own budget.
+    for _ in range(3):
+        client.get("/universal_webhook/orders")
+    assert client.get("/universal_webhook/orders").status_code == 429
+    assert client.get("/trigger/tok").status_code == 200
+
+
+def test_trigger_family_disabled_passes_through(monkeypatch):
+    client = _build_client(monkeypatch, _settings(trigger_enabled=False), FakeRedis())
+    statuses = [client.get("/trigger/tok").status_code for _ in range(10)]
+    assert set(statuses) == {200}
+
+
 def test_authed_route_never_limited(monkeypatch):
     client = _build_client(monkeypatch, _settings(), FakeRedis())
     # Far past any burst; an authed (non-public-door) route is untouched.
     statuses = [client.get("/api/hooks").status_code for _ in range(10)]
+    assert set(statuses) == {200}
+
+
+def test_authed_trigger_links_crud_never_limited(monkeypatch):
+    # The authed management routes are NOT the public /trigger/ family.
+    client = _build_client(monkeypatch, _settings(), FakeRedis())
+    statuses = [client.get("/api/hooks/trigger-links").status_code for _ in range(10)]
     assert set(statuses) == {200}
 
 
@@ -113,7 +144,14 @@ def test_rate_limit_config_owns_both_public_door_families():
     from tai42_skeleton.interactions.settings import InteractionsSettings
 
     rate_fields = set(RateLimitSettings.model_fields)
-    for field in ("webhook_limit", "webhook_burst", "interactions_callback_limit", "interactions_callback_burst"):
+    for field in (
+        "webhook_limit",
+        "webhook_burst",
+        "interactions_callback_limit",
+        "interactions_callback_burst",
+        "trigger_limit",
+        "trigger_burst",
+    ):
         assert field in rate_fields
 
     interactions_fields = set(InteractionsSettings.model_fields)

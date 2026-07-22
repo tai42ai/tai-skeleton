@@ -530,6 +530,231 @@ async def test_over_cap_query_413(monkeypatch: pytest.MonkeyPatch) -> None:
     assert resp.status_code == 413
 
 
+# -- Trigger-link resolver (PUBLIC) ------------------------------------------
+
+
+class _ResolverManager:
+    """A hooks manager spied at ``on_event``, recording the override too."""
+
+    def __init__(self) -> None:
+        self.events: list[tuple[str, dict, dict | None]] = []
+
+    async def on_event(self, topic: str, payload: dict, *, tool_kwargs_override: dict | None = None) -> None:
+        self.events.append((topic, payload, tool_kwargs_override))
+
+
+def _trig_req(token: str = "tok", **kw) -> _FakeRequest:
+    req = _FakeRequest(token, **kw)
+    req.path_params = {"token": token}
+    return req
+
+
+def _wire_resolver(monkeypatch, manager, *, topic="orders", tool_kwargs=None, resolve_exc=None):
+    from tai42_skeleton.hooks.trigger_links import TriggerLinkError
+
+    async def _resolve(token):
+        if resolve_exc is not None:
+            raise resolve_exc
+        return topic, tool_kwargs
+
+    monkeypatch.setattr(hooks, "resolve_trigger_token", _resolve)
+    monkeypatch.setattr(hooks, "get_hooks_manager", lambda: manager)
+    return TriggerLinkError
+
+
+async def test_trigger_get_dispatches_payload_and_override(monkeypatch: pytest.MonkeyPatch) -> None:
+    manager = _ResolverManager()
+    _wire_resolver(monkeypatch, manager, topic="orders", tool_kwargs={"a": 1})
+
+    async def fake_parse(request, include_query=True):
+        return {"x": "1"}
+
+    monkeypatch.setattr(hooks, "parse_any_payload", fake_parse)
+    resp = await hooks.trigger_link(cast(Request, _trig_req("tok", method="GET", query="x=1")))
+    assert resp.status_code == 200
+    body = _body(resp)
+    assert body == {"status": "accepted"}  # NO topic echoed
+    assert resp.headers["Cache-Control"] == "no-store"
+    assert resp.background is not None
+    await resp.background()
+    assert manager.events == [("orders", {"x": "1"}, {"a": 1})]
+
+
+async def test_trigger_none_override_for_paramless_link(monkeypatch: pytest.MonkeyPatch) -> None:
+    manager = _ResolverManager()
+    _wire_resolver(monkeypatch, manager, topic="t", tool_kwargs=None)
+
+    async def fake_parse(request, include_query=True):
+        return {}
+
+    monkeypatch.setattr(hooks, "parse_any_payload", fake_parse)
+    resp = await hooks.trigger_link(cast(Request, _trig_req("tok", method="GET")))
+    assert resp.background is not None
+    await resp.background()
+    assert manager.events == [("t", {}, None)]
+
+
+async def test_trigger_post_json_honored(monkeypatch: pytest.MonkeyPatch) -> None:
+    manager = _ResolverManager()
+    _wire_resolver(monkeypatch, manager, topic="t")
+
+    async def fake_parse(request, include_query=True):
+        return {"from": "body"}
+
+    monkeypatch.setattr(hooks, "parse_any_payload", fake_parse)
+    resp = await hooks.trigger_link(cast(Request, _trig_req("tok", body=b'{"from":"body"}')))
+    assert resp.status_code == 200
+    assert resp.background is not None
+    await resp.background()
+    assert manager.events[0][1] == {"from": "body"}
+
+
+async def test_trigger_miss_uniform_404_headers(monkeypatch: pytest.MonkeyPatch) -> None:
+    from tai42_skeleton.hooks.trigger_links import TriggerLinkError
+
+    manager = _ResolverManager()
+    _wire_resolver(monkeypatch, manager, resolve_exc=TriggerLinkError(404, "unknown or expired trigger link"))
+
+    async def fake_parse(request, include_query=True):
+        return {}
+
+    monkeypatch.setattr(hooks, "parse_any_payload", fake_parse)
+    resp = await hooks.trigger_link(cast(Request, _trig_req("tok", method="GET")))
+    assert resp.status_code == 404
+    assert _body(resp)["error"] == "unknown or expired trigger link"
+    assert resp.headers["X-Content-Type-Options"] == "nosniff"
+    assert resp.headers["Cache-Control"] == "no-store"
+    assert manager.events == []  # nothing dispatched
+
+
+async def test_trigger_parse_error_400_without_topic(monkeypatch: pytest.MonkeyPatch) -> None:
+    manager = _ResolverManager()
+    _wire_resolver(monkeypatch, manager, topic="secret-topic")
+
+    async def fake_parse(request, include_query=True):
+        raise ValueError("bad body")
+
+    monkeypatch.setattr(hooks, "parse_any_payload", fake_parse)
+    resp = await hooks.trigger_link(cast(Request, _trig_req("tok", body=b"{bad")))
+    assert resp.status_code == 400
+    body = _body(resp)
+    assert body["status"] == "rejected"
+    assert "topic" not in body  # the link hides its topic even on rejection
+    assert "secret-topic" not in json.dumps(body)
+    assert resp.headers["Cache-Control"] == "no-store"
+    assert manager.events == []
+
+
+async def test_trigger_oversize_query_and_body_413(monkeypatch: pytest.MonkeyPatch) -> None:
+    manager = _ResolverManager()
+    _wire_resolver(monkeypatch, manager)
+    monkeypatch.setattr(hooks, "webhook_ingress_settings", lambda: SimpleNamespace(max_body_bytes=8))
+    resp_q = await hooks.trigger_link(cast(Request, _trig_req("tok", query="a=0123456789")))
+    assert resp_q.status_code == 413
+    assert resp_q.headers["Cache-Control"] == "no-store"
+    resp_b = await hooks.trigger_link(cast(Request, _trig_req("tok", body=b"0123456789")))
+    assert resp_b.status_code == 413
+
+
+async def test_trigger_disallowed_method_405_no_dispatch(monkeypatch: pytest.MonkeyPatch) -> None:
+    # The door accepts exactly GET|POST; a PUT is a 405 at the route and never
+    # reaches the handler, so nothing dispatches.
+    from starlette.applications import Starlette
+    from starlette.routing import Route
+    from starlette.testclient import TestClient
+
+    manager = _ResolverManager()
+    _wire_resolver(monkeypatch, manager)
+    monkeypatch.setattr(hooks, "parse_any_payload", lambda request, include_query=True: {})
+    app = Starlette(routes=[Route("/trigger/{token}", hooks.trigger_link, methods=["GET", "POST"])])
+    client = TestClient(app)
+    assert client.put("/trigger/tok").status_code == 405
+    assert manager.events == []
+
+
+# -- Trigger-link management routes (AUTHED) ---------------------------------
+
+
+@pytest.fixture
+def gate_off_ambient(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(hooks_ops, "access_control_settings", lambda: SimpleNamespace(enable=False))
+
+
+async def test_create_trigger_link_route_envelope(monkeypatch: pytest.MonkeyPatch, gate_off_ambient) -> None:
+    async def _create(**kwargs):
+        return {"name": "n", "trigger_path": "/trigger/tok", "token": "tok", "topic": "t", "expires_at": None}
+
+    monkeypatch.setattr(hooks_ops.trigger_links, "create_trigger_link", _create)
+    resp = await hooks.create_trigger_link(cast(Request, _JsonReq({"topic": "t", "ttl_seconds": None})))
+    assert resp.status_code == 200
+    assert _body(resp)["data"]["trigger_path"] == "/trigger/tok"
+
+
+async def test_create_trigger_link_route_ttl_absent_400(monkeypatch: pytest.MonkeyPatch, gate_off_ambient) -> None:
+    # The ttl_seconds KEY absent from the body → 400 (the request model requires it).
+    resp = await hooks.create_trigger_link(cast(Request, _JsonReq({"topic": "t"})))
+    assert resp.status_code == 400
+
+
+@pytest.mark.parametrize("bad_ttl", ["3600", 3600.0, 3600.5, True])
+async def test_create_trigger_link_route_wrong_type_ttl_400(
+    monkeypatch: pytest.MonkeyPatch, gate_off_ambient, bad_ttl
+) -> None:
+    resp = await hooks.create_trigger_link(cast(Request, _JsonReq({"topic": "t", "ttl_seconds": bad_ttl})))
+    assert resp.status_code == 400
+
+
+async def test_create_trigger_link_route_status_mapping(monkeypatch: pytest.MonkeyPatch, gate_off_ambient) -> None:
+    from tai42_skeleton.hooks.trigger_links import TriggerLinkError
+
+    async def _raise(**kwargs):
+        raise TriggerLinkError(409, "trigger link name already exists")
+
+    monkeypatch.setattr(hooks_ops.trigger_links, "create_trigger_link", _raise)
+    resp = await hooks.create_trigger_link(cast(Request, _JsonReq({"topic": "t", "name": "dup", "ttl_seconds": None})))
+    assert resp.status_code == 409
+
+
+async def test_trigger_link_route_roundtrip_and_token_not_listed(
+    monkeypatch: pytest.MonkeyPatch, gate_off_ambient
+) -> None:
+    # A stateful fake store behind the routes: create → list → delete, and the
+    # create reply's token never appears in the list output.
+    store: dict[str, dict] = {}
+
+    async def _create(*, topic, name, ttl_seconds, tool_kwargs, created_by):
+        link_name = name or "trg-link-deadbeef"
+        store[link_name] = {"name": link_name, "topic": topic, "token_hash_prefix": "abc123abc123", "expires_at": None}
+        return {
+            "name": link_name,
+            "trigger_path": "/trigger/SECRETTOKEN",
+            "token": "SECRETTOKEN",
+            "topic": topic,
+            "expires_at": None,
+        }
+
+    async def _list():
+        return {"items": list(store.values()), "total": len(store)}
+
+    async def _revoke(name):
+        store.pop(name)
+
+    monkeypatch.setattr(hooks_ops.trigger_links, "create_trigger_link", _create)
+    monkeypatch.setattr(hooks_ops.trigger_links, "list_trigger_links", _list)
+    monkeypatch.setattr(hooks_ops.trigger_links, "revoke_trigger_link", _revoke)
+
+    created = _body(
+        await hooks.create_trigger_link(cast(Request, _JsonReq({"topic": "t", "name": "n", "ttl_seconds": None})))
+    )["data"]
+    listed = _body(await hooks.list_trigger_links(cast(Request, _GetReq())))["data"]
+    assert {item["name"] for item in listed["items"]} == {"n"}
+    assert "SECRETTOKEN" not in json.dumps(listed)  # the token is never in list output
+    deleted = _body(await hooks.delete_trigger_link(cast(Request, _DelReq("n"))))["data"]
+    assert deleted == {"removed": True, "name": "n"}
+    assert _body(await hooks.list_trigger_links(cast(Request, _GetReq())))["data"]["total"] == 0
+    assert created["token"] == "SECRETTOKEN"
+
+
 async def test_topic_with_newline_does_not_break_log(monkeypatch: pytest.MonkeyPatch, caplog) -> None:
     manager = _FakeManager()
 

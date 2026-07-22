@@ -67,3 +67,45 @@ class HooksSettings(TaiBaseSettings):
         # Distinct namespace segment (a hash of topic -> verifier binding JSON) so
         # no topic name can collide with the per-topic hook keys above.
         return f"{self.prefix}:topic_verifiers"
+
+    # -- Trigger-link keys ---------------------------------------------------
+    #
+    # A trigger link is three STRING keys under the shared ``:trigger:`` segment.
+    # A record is findable ONLY by its token hash (the raw token is never stored);
+    # the name key is the revocation/list index the operator holds once the token
+    # is gone; the tombstone is the permanent revocation marker backup import
+    # honors. All literal key strings live here (never elsewhere), so the revoke
+    # and restore Lua scripts build rec/tomb keys from a hash read IN-SCRIPT by
+    # passing these PREFIX-FORM strings as ARGV rather than repeating the literal.
+
+    @property
+    def trigger_record_key_prefix(self) -> str:
+        return f"{self.prefix}:trigger:rec:"
+
+    @property
+    def trigger_name_key_prefix(self) -> str:
+        return f"{self.prefix}:trigger:name:"
+
+    @property
+    def trigger_tomb_key_prefix(self) -> str:
+        return f"{self.prefix}:trigger:tomb:"
+
+    def trigger_record_key(self, token_hash: str) -> str:
+        """The record STRING key for a token hash — the resolver's lookup key."""
+        return f"{self.trigger_record_key_prefix}{token_hash}"
+
+    def trigger_name_key(self, name: str) -> str:
+        """The name-index STRING key (value = the token hash) — the revocation and
+        list handle; revoke targets the name's CURRENT hash."""
+        return f"{self.trigger_name_key_prefix}{name}"
+
+    def trigger_tomb_key(self, token_hash: str) -> str:
+        """The permanent revocation tombstone marker key backup import refuses to
+        overwrite with a live record."""
+        return f"{self.trigger_tomb_key_prefix}{token_hash}"
+
+    def trigger_name_scan_pattern(self) -> str:
+        return f"{self.trigger_name_key_prefix}*"
+
+    def trigger_tomb_scan_pattern(self) -> str:
+        return f"{self.trigger_tomb_key_prefix}*"

@@ -1,11 +1,12 @@
-"""App-level rate limiter for the two PUBLIC webhook-receiving door families.
+"""App-level rate limiter for the three PUBLIC door families.
 
-Applied ONLY to ``/universal_webhook/*`` (the fully public hooks ingress) and
-``/api/interactions/callback/*`` (the ticket-gated interactions callback). Every
-other path — including all authed routes — passes straight through: the
-credential is the gate there. Each family has its own per-minute limit + a
-10-second burst window and an enable switch, so a flood on one public door
-cannot exhaust the other's budget.
+Applied ONLY to ``/universal_webhook/*`` (the fully public hooks ingress),
+``/api/interactions/callback/*`` (the ticket-gated interactions callback), and
+``/trigger/*`` (the trigger-link door, which executes tools per GET). Every other
+path — including all authed routes — passes straight through: the credential is
+the gate there. Each family has its own per-minute limit + a 10-second burst
+window and an enable switch, so a flood on one public door cannot exhaust
+another's budget.
 
 Keying and window semantics: a fixed-window Redis counter per client bucket,
 INCR + EXPIRE issued in one pipeline (a pipeline cannot branch on INCR's result;
@@ -34,10 +35,11 @@ from tai42_kit.clients.impl.redis import RedisClient
 
 from tai42_skeleton.settings.rate_limit import RateLimitSettings, rate_limit_settings
 
-# Path prefixes of the two public door families, mapped to the settings key that
+# Path prefixes of the three public door families, mapped to the settings key that
 # names their limit/burst/enable fields.
 _WEBHOOK_PREFIX = "/universal_webhook/"
 _CALLBACK_PREFIX = "/api/interactions/callback/"
+_TRIGGER_PREFIX = "/trigger/"
 
 
 def _bucket_ip(ip_str: str) -> str:
@@ -80,7 +82,7 @@ async def _retry_after(r: AsyncRedis, prefix: str, family: str, bucket: str, lim
     window is over its limit, else ``None``. INCR + EXPIRE are one pipeline with
     EXPIRE issued UNCONDITIONALLY (a pipeline cannot branch on INCR's result;
     re-setting the TTL every hit is harmless). Key TTL = 2x the window. The
-    ``family`` segment keeps the two public door families' counters disjoint."""
+    ``family`` segment keeps the public door families' counters disjoint."""
     now = time.time()
     unix_minute = int(now // 60)
     unix_10s = int(now // 10)
@@ -114,11 +116,15 @@ def _family(path: str, settings: RateLimitSettings) -> tuple[str, int, int] | No
         if not settings.interactions_callback_enabled:
             return None
         return "interactions_callback", settings.interactions_callback_limit, settings.interactions_callback_burst
+    if path.startswith(_TRIGGER_PREFIX):
+        if not settings.trigger_enabled:
+            return None
+        return "trigger", settings.trigger_limit, settings.trigger_burst
     return None
 
 
 class RateLimitMiddleware:
-    """Rate-limits the public webhook door families; passes everything else through."""
+    """Rate-limits the public door families; passes everything else through."""
 
     def __init__(self, app: ASGIApp) -> None:
         self.app = app

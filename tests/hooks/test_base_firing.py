@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from types import SimpleNamespace
 
 import pytest
 from tai42_contract.hooks import HookParams
@@ -206,6 +207,85 @@ def test_validate_jq_rejects_bad_expr():
     bad = HookParams(name="bad", topic="t", tool="noop", expr="this is ( not jq")
     with pytest.raises(ValueError, match="expr is not valid jq"):
         BaseHooksManager.validate_jq_fields(bad)
+
+
+# -- tool_kwargs_override ----------------------------------------------
+
+
+async def test_override_merges_last_over_event_input_and_hook_kwargs(make_app):
+    # Three colliding layers on key ``k``: expr-derived event_input (weakest),
+    # the hook's static tool_kwargs (middle), the link override (strongest).
+    app = make_app()
+    manager = InMemoryHooksManager(_settings())
+    await manager.register(
+        HookParams(name="h", topic="t", tool="tool", expr="{k: .k, e: 1}", tool_kwargs={"k": "hook", "h": 2})
+    )
+
+    await manager.on_event("t", {"k": "event"}, tool_kwargs_override={"k": "link", "l": 3})
+
+    assert app.tools.runs == [("tool", {"k": "link", "e": 1, "h": 2, "l": 3})]
+
+
+async def test_none_override_is_byte_identical(make_app):
+    # No override ⇒ exactly today's merge (regression guard for universal_webhook).
+    app = make_app()
+    manager = InMemoryHooksManager(_settings())
+    await manager.register(HookParams(name="h", topic="t", tool="tool", expr="{id: .id}", tool_kwargs={"x": 1}))
+
+    await manager.on_event("t", {"id": 9}, tool_kwargs_override=None)
+    assert app.tools.runs == [("tool", {"id": 9, "x": 1})]
+
+    app.tools.runs.clear()
+    await manager.on_event("t", {"id": 9})  # the universal_webhook call site (no arg)
+    assert app.tools.runs == [("tool", {"id": 9, "x": 1})]
+
+
+async def test_override_applies_to_every_hook_on_topic(make_app):
+    app = make_app()
+    manager = InMemoryHooksManager(_settings())
+    await manager.register(HookParams(name="a", topic="t", tool="tool_a"))
+    await manager.register(HookParams(name="b", topic="t", tool="tool_b"))
+
+    await manager.on_event("t", {}, tool_kwargs_override={"shared": True})
+
+    runs = dict(app.tools.runs)
+    assert runs == {"tool_a": {"shared": True}, "tool_b": {"shared": True}}
+
+
+async def test_span_writer_records_override_values(make_app, monkeypatch):
+    from tai42_skeleton.hooks.managers import base_hooks_manager as base
+
+    recorded: list[dict] = []
+
+    class _Span:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+    class _Writer:
+        def start_span(self, **kw):
+            return _Span()
+
+        def trace_attributes(self, **kw):
+            return _Span()
+
+        def update_current_span(self, **kw):
+            if "metadata" in kw:
+                recorded.append(kw["metadata"])
+
+    monkeypatch.setattr(base, "get_monitoring", lambda: SimpleNamespace(writer=_Writer()))
+
+    make_app()  # bind the fake tai42_app so the firing path resolves its tool runner
+    manager = InMemoryHooksManager(_settings())
+    await manager.register(HookParams(name="h", topic="t", tool="tool", tool_kwargs={"a": 1}))
+
+    await manager.on_event("t", {}, tool_kwargs_override={"o": 2})
+
+    run_span = next(m for m in recorded if m.get("tool") == "tool")
+    assert run_span["tool_kwargs"] == {"a": 1}
+    assert run_span["tool_kwargs_override"] == {"o": 2}
 
 
 def test_base_manager_cannot_be_constructed():

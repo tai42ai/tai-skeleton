@@ -4,8 +4,8 @@ Boots the app through the real ``app.app_context`` harness with an ``api_tools``
 manifest that loads no management tool modules and enables projection, then
 asserts the projected surface end-to-end (checklist items 1-6):
 
-1. the projected tool surface is exactly the expected op surface — the 89
-   default-projected ops (123 total - 30 tier-2 default-excluded - 4 tier-1
+1. the projected tool surface is exactly the expected op surface — the 91
+   default-projected ops (126 total - 32 tier-2 default-excluded - 3 tier-1
    hardcode-blocked);
 2. ``destructiveHint`` is present on destructive ops (a DELETE, a mutating POST)
    and absent on reads (a GET);
@@ -90,7 +90,7 @@ class _RecordingApp:
         self.tools = _RecordingTools()
 
 
-# -- checklist 1: the projected surface is exactly the 90 default ops ----------
+# -- checklist 1: the projected surface is exactly the 91 default ops ----------
 
 
 def test_d1_projected_surface_is_the_expected_op_count():
@@ -102,8 +102,8 @@ def test_d1_projected_surface_is_the_expected_op_count():
             tier1 = sorted(op.name for op in ops if is_tier1(op))
             tier2 = sorted(op.name for op in ops if is_tier2(op) and not is_tier1(op))
 
-            # The arithmetic the plan pins: 123 total - 30 tier-2 - 3 tier-1 = 90.
-            assert total == 123, total
+            # The arithmetic: 126 total - 32 tier-2 default-excluded - 3 tier-1 hardcode-blocked = 91.
+            assert total == 126, total
             # Tier-1 (never projectable): the two meta-executors (``run_tool`` and
             # ``submit_run``, each running a caller-named tool) PLUS ``get_me``, whose
             # params are the caller's own edge-derived identity (``caller_context=True``).
@@ -112,15 +112,18 @@ def test_d1_projected_surface_is_the_expected_op_count():
             # create_claim_link) + the five role-management ops (create/edit/delete/
             # versions/rollback under /api/auth/roles*) + logout + exchange_claim_token
             # (authority_changing — a public credential door that must never project) +
-            # import_backup + update_manifest + the three marketplace mutators — 30 in
+            # import_backup + update_manifest + the three marketplace mutators + the two
+            # trigger-link mutators (create/delete, both authority_changing) — 32 in
             # all. ``get_me`` is NOT here: it is tier-1 hardcode-blocked, not tier-2.
             assert set(tier2) == {
                 "add_scope_url",
                 "create_api_key",
                 "create_claim_link",
                 "create_role",
+                "create_trigger_link",
                 "delete_role",
                 "delete_scope",
+                "delete_trigger_link",
                 "edit_api_key",
                 "exchange_claim_token",
                 "get_capabilities",
@@ -147,17 +150,17 @@ def test_d1_projected_surface_is_the_expected_op_count():
                 "validate_condition",
             }, tier2
 
-            # The default-projected surface = 90, measured two ways.
+            # The default-projected surface = 91, measured two ways.
             recorder = _RecordingApp()
             projected = project_operations(recorder, ApiToolsConfig(), registry=reg)
-            assert len(projected) == 90, len(projected)
-            assert total - len(tier2) - len(tier1) == 90
+            assert len(projected) == 91, len(projected)
+            assert total - len(tier2) - len(tier1) == 91
 
-            # And the LIVE booted tool surface is exactly those 90 (no keep-set /
+            # And the LIVE booted tool surface is exactly those 91 (no keep-set /
             # plugin / toolbox tools are loaded in this projection-only stack).
             live = await app.tools.get_tools()
             assert set(live) == set(projected)
-            assert len(live) == 90
+            assert len(live) == 91
 
             # Tier-1 and default tier-2 never appear on the live surface.
             assert "run_tool" not in live
@@ -320,7 +323,7 @@ def test_d1_user_tools_curation_coexists_with_api_tools():
             live = await app.tools.get_tools()
             assert "remove_tool" in live
             assert "list_hooks" in live
-            assert len(live) == 90
+            assert len(live) == 91
 
             # user_tools curation is preserved and surfaced to the flow builder
             # (the read-time view over the registered set).

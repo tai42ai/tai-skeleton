@@ -105,7 +105,8 @@ class TaiMCP(TaiMCPLifecycleMixin):
         self._agent_binding = AgentBinding(self)
         self._backend_holder = BackendHolder()
         self._http_surface = HttpSurface(self)
-        # The public webhook doors (universal_webhook + interactions callback) are
+        # The public webhook doors (universal_webhook, the interactions callback, and
+        # the /trigger/{token} resolver) are
         # exposed by design; their flood limiter is registered here at construction
         # so it is always on (tunable/disable via TAI_RATE_LIMIT_*), never left to a
         # manifest opt-in an operator could forget. It no-ops for every other path.

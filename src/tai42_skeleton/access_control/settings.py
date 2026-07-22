@@ -150,8 +150,9 @@ class AccessControlSettings(TaiBaseSettings):
     # so a TEMPLATED public route is acknowledged by its template STRING (an ordinary key).
     # The app's intentional public-by-declaration GET routes are so acknowledged by default:
     # the operational probes (``/health``, ``/ready``, ``/metrics``), the webhook ingress
-    # door (``/universal_webhook/{topic}``), and the SPA history-fallback catch-all
-    # (``/{spa_path:path}``) that IS the public shell. A NEW such route halts boot until a
+    # door (``/universal_webhook/{topic}``), the trigger-link door (``/trigger/{token}``),
+    # and the SPA history-fallback catch-all (``/{spa_path:path}``) that IS the public
+    # shell. A NEW such route halts boot until a
     # reviewer acknowledges it. Entries must be absolute, canonical, and never under
     # ``/api``/``/mcp`` (an acknowledged PUBLIC control-plane route is a contradiction).
     acknowledged_public_routes: tuple[str, ...] = (
@@ -159,6 +160,7 @@ class AccessControlSettings(TaiBaseSettings):
         "/ready",
         "/metrics",
         "/universal_webhook/{topic}",
+        "/trigger/{token}",
         "/{spa_path:path}",
     )
 

@@ -23,12 +23,17 @@ from __future__ import annotations
 
 from typing import Any
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+from tai42_contract.access_control import get_current_user_id
 from tai42_contract.app import tai42_app
 from tai42_contract.hooks import HookParams
 
+from tai42_skeleton.access_control.settings import access_control_settings
+from tai42_skeleton.hooks import trigger_links
 from tai42_skeleton.hooks.cache import get_hooks_manager
+from tai42_skeleton.hooks.trigger_links import TriggerLinkError
 from tai42_skeleton.operations import BadRequestError, NotFoundError, operation
+from tai42_skeleton.operations.errors import ConflictError, NotSupportedError, OperationError
 
 
 class TopicVerifierBinding(BaseModel):
@@ -37,6 +42,55 @@ class TopicVerifierBinding(BaseModel):
 
     verifier: str
     config: dict[str, Any] = {}
+
+
+class TriggerLinkCreate(BaseModel):
+    """Mint a trigger link for a hook ``topic``.
+
+    ``ttl_seconds`` is REQUIRED (no default ⇒ the key must be present) and STRICT
+    (``"3600"``, ``3600.0``, ``3600.5`` and bools all reject under one regime): a
+    positive int is a timed link, ``null`` is a permanent link, and ``0``/negative
+    is a loud 400 — expiry is the creator's explicit choice with no default and no
+    product ceiling. ``tool_kwargs`` (optional) is stored on the link and merged
+    LAST into every fired hook's input, winning on a colliding key over the hook's
+    own ``tool_kwargs``."""
+
+    topic: str
+    name: str | None = None
+    ttl_seconds: int | None = Field(strict=True)
+    tool_kwargs: dict[str, Any] | None = None
+
+
+# The status → operation-error mapping shared by the three trigger-link adapters,
+# mirroring how ``ClaimLinkError`` maps to the operation error surface.
+_TRIGGER_ERROR_BY_STATUS: dict[int, type[OperationError]] = {
+    400: BadRequestError,
+    404: NotFoundError,
+    409: ConflictError,
+    501: NotSupportedError,
+}
+
+
+def _map_trigger_error(exc: TriggerLinkError) -> OperationError:
+    error_cls = _TRIGGER_ERROR_BY_STATUS.get(exc.status, OperationError)
+    return error_cls(exc.message)
+
+
+async def _resolve_trigger_caller_id() -> str | None:
+    """The AMBIENT caller identity stamped as ``created_by`` — never a request field
+    (which would be caller-spoofable). With the gate OFF there is no principal, so it
+    resolves to ``None`` (the record's nullable branch); with the gate ON but the
+    identity contextvar UNSET it RAISES (a 500), the same fail-closed posture the
+    key-management surface takes rather than a silent unattributed record."""
+    if not access_control_settings().enable:
+        return None
+    caller_id = get_current_user_id()
+    if caller_id is None:
+        raise RuntimeError(
+            "access_control: caller user id is unset on an authed trigger-link request — "
+            "the guard middleware must bind it; refusing to proceed"
+        )
+    return caller_id
 
 
 @operation(summary="List registered hooks", tags=["hooks"])
@@ -156,3 +210,69 @@ async def delete_topic_verifier(topic: str) -> dict[str, Any]:
     if not removed:
         raise NotFoundError(f"no verifier bound to topic: {topic!r}")
     return {"removed": True, "topic": topic}
+
+
+# -- Trigger links -----------------------------------------------------------
+#
+# A trigger link is a PUBLIC capability URL that fires a hook topic; the CRUD lives
+# under the ``hooks`` tag (grantable read/write). Both mutating ops are
+# ``authority_changing`` so an agent never silently mints or revokes a public
+# capability through the MCP tool surface. The redis hooks backend is required — an
+# in-memory deployment refuses with a loud 501 (``NotSupportedError``), a capability
+# the deployment does not provide, distinct from a transient 503 outage.
+
+
+@operation(
+    summary="Create a trigger link",
+    tags=["hooks"],
+    destructive=True,
+    authority_changing=True,
+    errors=[BadRequestError, ConflictError, NotSupportedError],
+    request_model=TriggerLinkCreate,
+)
+async def create_trigger_link(
+    topic: str, name: str | None, ttl_seconds: int | None, tool_kwargs: dict[str, Any] | None
+) -> dict[str, Any]:
+    """Mint a trigger link for ``topic``.
+
+    ``ttl_seconds`` is the creator's explicit choice (``null`` permanent, positive
+    timed; ``0``/negative → 400); a unique name is generated when omitted; a
+    verifier-bound topic is refused (400); ``tool_kwargs`` rides every
+    fire. Returns ``{"name", "trigger_path", "token", "topic", "expires_at"}``
+    — the token appears ONLY here (nothing else stores or lists it)."""
+    created_by = await _resolve_trigger_caller_id()
+    try:
+        return await trigger_links.create_trigger_link(
+            topic=topic, name=name, ttl_seconds=ttl_seconds, tool_kwargs=tool_kwargs, created_by=created_by
+        )
+    except TriggerLinkError as exc:
+        raise _map_trigger_error(exc) from exc
+
+
+@operation(summary="List trigger links", tags=["hooks"], errors=[NotSupportedError])
+async def list_trigger_links() -> dict[str, Any]:
+    """Every live trigger link's record plus its hash PREFIX — never a raw token
+    (none is stored; a listed link's QR is unrecoverable by design). Returns
+    ``{"items", "total"}``."""
+    try:
+        return await trigger_links.list_trigger_links()
+    except TriggerLinkError as exc:
+        raise _map_trigger_error(exc) from exc
+
+
+@operation(
+    summary="Delete a trigger link",
+    tags=["hooks"],
+    destructive=True,
+    authority_changing=True,
+    errors=[NotFoundError, NotSupportedError],
+)
+async def delete_trigger_link(name: str) -> dict[str, Any]:
+    """Revoke a trigger link by name — immediate and DURABLE (a permanent tombstone
+    keeps a restored backup from re-arming it). An unknown name is a loud 404.
+    Returns ``{"removed", "name"}``."""
+    try:
+        await trigger_links.revoke_trigger_link(name)
+    except TriggerLinkError as exc:
+        raise _map_trigger_error(exc) from exc
+    return {"removed": True, "name": name}

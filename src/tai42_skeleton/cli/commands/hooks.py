@@ -86,6 +86,87 @@ def delete_hook(ctx: typer.Context, name: Annotated[str, typer.Argument(help="Ho
     emit_result(ctx_obj, data)
 
 
+@app.command("trigger-links")
+@covers(("GET", "/api/hooks/trigger-links"))
+def list_trigger_links(ctx: typer.Context) -> None:
+    """List trigger links (name, topic, expiry, hash prefix; never a raw token).
+
+    Example: ``tai hooks trigger-links``
+    """
+    ctx_obj = app_context(ctx)
+    with ctx_obj.client() as client:
+        data = client.get("/api/hooks/trigger-links")
+    emit_records(ctx_obj, data, ["name", "topic", "expires_at", "token_hash_prefix"], items_key="items")
+
+
+@app.command("create-trigger-link")
+@covers(("POST", "/api/hooks/trigger-links"))
+def create_trigger_link(
+    ctx: typer.Context,
+    topic: Annotated[str, typer.Argument(help="The hook topic the link fires.")],
+    name: Annotated[
+        str | None,
+        typer.Option("--name", help="Link name (the revocation handle); a unique name is generated when omitted."),
+    ] = None,
+    ttl: Annotated[int | None, typer.Option("--ttl", help="Link lifetime in seconds (a timed link).")] = None,
+    permanent: Annotated[bool, typer.Option("--permanent", help="Mint a link that never expires.")] = False,
+    params_json: Annotated[
+        str | None, typer.Option("--params", help="Per-link tool_kwargs as a JSON object, merged last at each fire.")
+    ] = None,
+) -> None:
+    """Mint a trigger link — a PUBLIC URL that fires the topic's hooks.
+
+    Exactly ONE of ``--ttl SECONDS`` or ``--permanent`` is required (expiry is an
+    explicit choice — there is no default). The token is shown ONCE, in the printed
+    absolute URL; the link is MULTI-use and revocable by name (``tai hooks
+    delete-trigger-link NAME``). Regenerate = revoke + create.
+
+    Example: ``tai hooks create-trigger-link orders --ttl 3600 --params '{"priority":"high"}'``
+    """
+    ctx_obj = app_context(ctx)
+    if ttl is None and not permanent:
+        raise typer.BadParameter("exactly one of --ttl or --permanent is required", param_hint="--ttl/--permanent")
+    if ttl is not None and permanent:
+        raise typer.BadParameter("--ttl and --permanent are mutually exclusive", param_hint="--ttl/--permanent")
+
+    body: dict = {"topic": topic, "ttl_seconds": None if permanent else ttl}
+    if name is not None:
+        body["name"] = name
+    if params_json is not None:
+        body["tool_kwargs"] = parse_json_object(params_json, param_hint="--params")
+
+    with ctx_obj.client() as client:
+        data = client.post("/api/hooks/trigger-links", json=body)
+
+    # The server returns a PATH (it does not know its public origin); compose the
+    # absolute URL from the configured server base, stripping a trailing slash so the
+    # join never doubles it.
+    absolute_url = f"{ctx_obj.server_url.rstrip('/')}{data['trigger_path']}"
+    emit_result(
+        ctx_obj,
+        {
+            "name": data["name"],
+            "topic": data["topic"],
+            "url": absolute_url,
+            "expires_at": data["expires_at"],
+        },
+    )
+
+
+@app.command("delete-trigger-link")
+@covers(("DELETE", "/api/hooks/trigger-links/{name}"))
+def delete_trigger_link(ctx: typer.Context, name: Annotated[str, typer.Argument(help="Trigger link name.")]) -> None:
+    """Revoke a trigger link by name (immediate and durable — a restored backup
+    cannot re-arm it).
+
+    Example: ``tai hooks delete-trigger-link my-wall-qr``
+    """
+    ctx_obj = app_context(ctx)
+    with ctx_obj.client() as client:
+        data = client.delete(f"/api/hooks/trigger-links/{name}")
+    emit_result(ctx_obj, data)
+
+
 @app.command("set-verifier")
 @covers(("PUT", "/api/hooks/topics/{topic}/verifier"))
 def set_topic_verifier(

@@ -363,7 +363,12 @@ async def test_webhooks_roundtrip(monkeypatch):
 
     _install(monkeypatch)
     doc = _json(await export_backup(_post_req({"sections": ["webhooks"]})))
-    assert [h["name"] for h in doc["sections"]["webhooks"]] == ["h1"]
+    # The webhooks section is now an ENVELOPE; an in-memory deployment holds no
+    # trigger links, so the trigger halves are truthfully empty.
+    section = doc["sections"]["webhooks"]
+    assert [h["name"] for h in section["hooks"]] == ["h1"]
+    assert section["trigger_links"] == []
+    assert section["tombstones"] == []
 
     target = InMemoryHooksManager(HooksSettings())
     monkeypatch.setattr("tai42_skeleton.hooks.cache.get_hooks_manager", lambda: target)

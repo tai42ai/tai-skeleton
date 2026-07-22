@@ -1,10 +1,11 @@
 """``TAI_RATE_LIMIT_*`` config for the app-level public-door rate limiter.
 
-The limiter is an app middleware applied to the two PUBLIC door families —
-the interactions callback route and ``universal_webhook/*`` — leaving authed
-routes untouched (the credential is the gate there). Each family has its own
-per-minute limit + 10-second burst and an enable switch, so a flood on one door
-cannot exhaust the other's budget. Settings are read at call time.
+The limiter is an app middleware applied to the three PUBLIC door families —
+the interactions callback route, ``universal_webhook/*``, and the trigger-link
+door ``/trigger/{token}`` — leaving authed routes untouched (the credential is the
+gate there). Each family has its own per-minute limit + 10-second burst and an
+enable switch, so a flood on one door cannot exhaust another's budget. Settings are
+read at call time.
 """
 
 from pydantic import Field
@@ -50,6 +51,13 @@ class RateLimitSettings(TaiBaseSettings):
     interactions_callback_enabled: bool = True
     interactions_callback_limit: int = Field(default=60, gt=0)
     interactions_callback_burst: int = Field(default=10, gt=0)
+
+    # The public ``/trigger/{token}`` door family (trigger links). Same two-window
+    # shape and defaults as the webhook family — an independent budget, so a flood on
+    # one wall QR cannot exhaust the webhook ingress budget. Must be positive.
+    trigger_enabled: bool = True
+    trigger_limit: int = Field(default=60, gt=0)
+    trigger_burst: int = Field(default=10, gt=0)
 
     # Reverse proxies whose X-Forwarded-For may be trusted for the client-IP
     # resolution. Empty (default) = trust no proxy: the direct peer is the client.

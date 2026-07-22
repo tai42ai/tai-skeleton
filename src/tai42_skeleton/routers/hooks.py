@@ -23,6 +23,13 @@ authed management doors the Studio's hooks UI consumes.
   verifier binding; an unknown verifier name is rejected at bind time (400).
 - ``DELETE /api/hooks/topics/{topic}/verifier`` (AUTHED) — remove a binding;
   a missing binding is a loud 404.
+- ``GET|POST /trigger/{token}`` (PUBLIC) — the trigger-link door: resolve a minted
+  token to a hook topic and dispatch the payload, exactly like the ingress door but
+  hiding its topic and merging the link's stored ``tool_kwargs`` last. Every miss is
+  the uniform 404 (no oracle).
+- ``POST /api/hooks/trigger-links`` (AUTHED, ``write``) — mint a trigger link.
+- ``GET /api/hooks/trigger-links`` (AUTHED, ``read``) — list trigger links.
+- ``DELETE /api/hooks/trigger-links/{name}`` (AUTHED, ``write``) — revoke by name.
 
 The management doors are thin adapters over the operations in
 ``tai42_skeleton.operations.hooks`` (the same manager the MCP hook-management tools
@@ -46,9 +53,14 @@ from tai42_contract.webhooks import WebhookVerificationError
 
 from tai42_skeleton.hooks.cache import get_hooks_manager
 from tai42_skeleton.hooks.payload_parser import parse_any_payload
+from tai42_skeleton.hooks.trigger_links import TriggerLinkError, resolve_trigger_token
 from tai42_skeleton.operations import BadRequestError, operation_metadata_of, register_operation_route
+from tai42_skeleton.operations.hooks import TriggerLinkCreate
+from tai42_skeleton.operations.hooks import create_trigger_link as _create_trigger_link_op
 from tai42_skeleton.operations.hooks import delete_topic_verifier as _delete_topic_verifier_op
+from tai42_skeleton.operations.hooks import delete_trigger_link as _delete_trigger_link_op
 from tai42_skeleton.operations.hooks import list_hooks as _list_hooks_op
+from tai42_skeleton.operations.hooks import list_trigger_links as _list_trigger_links_op
 from tai42_skeleton.operations.hooks import list_verifiers as _list_verifiers_op
 from tai42_skeleton.operations.hooks import register_hook as _register_hook_op
 from tai42_skeleton.operations.hooks import set_topic_verifier as _set_topic_verifier_op
@@ -149,6 +161,57 @@ async def universal_webhook(request: Request) -> Response:
     return _ingress_json({"status": "accepted", "topic": topic}, background=task)
 
 
+@tai42_app.http.custom_route(
+    "/trigger/{token}",
+    methods=["POST", "GET"],
+    summary="Public trigger-link door",
+    tags=["hooks"],
+    response_model=None,
+    authed=False,
+)
+async def trigger_link(request: Request) -> Response:
+    """Fire a hook topic from a minted, token-bearing PUBLIC URL (a QR scan is a GET;
+    POST comes free for curl symmetry). The token is the capability — whoever holds
+    the URL fires the topic's registered hooks.
+
+    Every miss is the SAME 404 ``"unknown or expired trigger link"`` (unknown /
+    expired / revoked / verifier-bound / in-memory-mode are deliberately
+    indistinguishable — no oracle). The token is resolved BEFORE the payload is
+    parsed, so an unknown token 404s without ever reaching a parse-400. The accepted
+    response carries NO topic (a trigger link hides its topic from the URL holder);
+    the payload rides query/body under the ingress byte cap; and the link's stored
+    ``tool_kwargs`` merge LAST into each fired hook's input. Every route-emitted
+    response (accepted / 404 / 400 / 413) carries ``nosniff`` + ``no-store`` — a
+    capability-URL response must never be cached."""
+    token = request.path_params["token"]
+
+    cap = webhook_ingress_settings().max_body_bytes
+    if len(request.url.query.encode()) > cap:
+        return _error("payload too large", 413)
+    try:
+        raw = await _read_bounded_body(request, cap)
+    except _PayloadTooLarge:
+        return _error("payload too large", 413)
+    request._body = raw
+
+    # Resolve first: an unknown/expired/revoked/verifier-bound/in-memory token is the
+    # uniform 404 before any parse work.
+    try:
+        topic, tool_kwargs = await resolve_trigger_token(token)
+    except TriggerLinkError as exc:
+        return _error(exc.message, exc.status)
+
+    try:
+        payload = await parse_any_payload(request, include_query=True)
+    except ValueError as e:
+        # No topic echoed on the rejection — the link hides its topic.
+        return _ingress_json({"status": "rejected", "error": str(e)}, status_code=400)
+
+    manager = get_hooks_manager()
+    task = BackgroundTask(manager.on_event, topic=topic, payload=payload, tool_kwargs_override=tool_kwargs)
+    return _ingress_json({"status": "accepted"}, background=task)
+
+
 async def _verify_ingress(request: Request, raw: bytes, binding: dict, topic: str) -> tuple[Response | None, bool]:
     """Run the topic's bound verifier over the raw body. Return
     ``(deny_response, False)`` on any failure (nothing dispatched), or
@@ -221,6 +284,24 @@ async def _extract_hook_params(request: Request) -> dict:
     return params.model_dump()
 
 
+async def _extract_trigger_link_params(request: Request) -> dict:
+    """Parse + validate the ``TriggerLinkCreate`` body into the operation's flat
+    fields, rejecting a malformed body with an explicit 400 (the adapter's plain
+    parse would yield 422; the ttl contract demands 400 for an absent/invalid
+    ``ttl_seconds``)."""
+    try:
+        body = await request.json()
+    except ValueError as exc:
+        raise BadRequestError("invalid JSON body") from exc
+    if not isinstance(body, dict):
+        raise BadRequestError("body must be a JSON object of trigger-link params") from None
+    try:
+        params = TriggerLinkCreate.model_validate(body)
+    except ValidationError as exc:
+        raise BadRequestError(f"invalid trigger link params: {exc}") from exc
+    return params.model_dump()
+
+
 async def _extract_binding(request: Request) -> dict:
     """Parse + structurally validate a PUT binding body into the operation's flat
     ``verifier`` / ``config`` arguments (the unknown-verifier check is the
@@ -287,6 +368,31 @@ delete_topic_verifier = register_operation_route(
     tai42_app,
     operation_metadata_of(_delete_topic_verifier_op),
     path="/api/hooks/topics/{topic}/verifier",
+    method="DELETE",
+    action="write",
+)
+
+create_trigger_link = register_operation_route(
+    tai42_app,
+    operation_metadata_of(_create_trigger_link_op),
+    path="/api/hooks/trigger-links",
+    method="POST",
+    context_extractor=_extract_trigger_link_params,
+    action="write",
+)
+
+list_trigger_links = register_operation_route(
+    tai42_app,
+    operation_metadata_of(_list_trigger_links_op),
+    path="/api/hooks/trigger-links",
+    method="GET",
+    action="read",
+)
+
+delete_trigger_link = register_operation_route(
+    tai42_app,
+    operation_metadata_of(_delete_trigger_link_op),
+    path="/api/hooks/trigger-links/{name}",
     method="DELETE",
     action="write",
 )

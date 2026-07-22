@@ -1,15 +1,20 @@
 """Fakes for the redis-backed hooks feature.
 
-``FakeRedis`` covers exactly the hash + pipeline operations
-``RedisHooksManager`` calls (``hset``/``hdel``/``hget``/``hgetall`` direct and
-queued through a pipeline) plus the two atomic register/unregister ``eval``
+``FakeRedis`` covers the hash + pipeline operations ``RedisHooksManager`` calls
+(``hset``/``hdel``/``hget``/``hgetall`` direct and queued through a pipeline) plus
+the two atomic register/unregister ``eval`` scripts; and the STRING operations the
+trigger-link store calls (``set`` with ``ex=``, ``get``, ``delete``, ``exists``,
+``mget``, paging ``scan``) with an INJECTABLE CLOCK so ``ex=`` expiry is simulated
+deterministically, plus the three atomic trigger create/revoke/restore ``eval``
 scripts. ``bound_app`` binds a fake ``tai42_app`` impl exposing the template
 manager + tool runner the firing path reaches.
 """
 
 from __future__ import annotations
 
+import fnmatch
 from contextlib import asynccontextmanager
+from typing import Any
 
 import pytest
 
@@ -40,9 +45,74 @@ class _FakePipeline:
         return results
 
 
+# The fake pages SCAN deliberately small (ignoring the caller's ``count`` hint, as a
+# real server may) so a first-page-only cursor bug surfaces on any multi-key set.
+_SCAN_PAGE = 10
+
+
 class FakeRedis:
     def __init__(self) -> None:
         self._hashes: dict[str, dict[str, str]] = {}
+        # key -> (value, expire_at | None); expiry is simulated against ``_now``.
+        self._strings: dict[str, tuple[str, float | None]] = {}
+        self._now: float = 0.0
+
+    # -- injectable clock ----------------------------------------------------
+    def advance(self, seconds: float) -> None:
+        """Move the simulated clock forward so ``ex=`` records expire on schedule."""
+        self._now += seconds
+
+    def _is_expired(self, key) -> bool:
+        entry = self._strings.get(key)
+        if entry is None:
+            return True
+        _value, expire_at = entry
+        if expire_at is not None and self._now >= expire_at:
+            del self._strings[key]
+            return True
+        return False
+
+    # -- internal string impls ----------------------------------------------
+    def _set_str(self, key, value, ex=None) -> None:
+        expire_at = (self._now + ex) if ex is not None else None
+        self._strings[key] = (str(value), expire_at)
+
+    def _get_str(self, key):
+        if self._is_expired(key):
+            return None
+        return self._strings[key][0]
+
+    def _del(self, *keys) -> int:
+        return sum(1 for k in keys if self._strings.pop(k, None) is not None)
+
+    def _exists(self, key) -> int:
+        return 0 if self._is_expired(key) else 1
+
+    # -- direct string surface ----------------------------------------------
+    async def set(self, key, value, ex=None) -> bool:
+        self._set_str(key, value, ex=ex)
+        return True
+
+    async def get(self, key):
+        return self._get_str(key)
+
+    async def delete(self, *keys) -> int:
+        return self._del(*keys)
+
+    async def exists(self, key) -> int:
+        return self._exists(key)
+
+    async def mget(self, keys) -> list:
+        return [self._get_str(k) for k in keys]
+
+    async def scan(self, cursor=0, match=None, count=None):
+        live = sorted(
+            k for k in list(self._strings) if not self._is_expired(k) and (match is None or fnmatch.fnmatch(k, match))
+        )
+        start = int(cursor)
+        page = live[start : start + _SCAN_PAGE]
+        nxt = start + _SCAN_PAGE
+        return (nxt if nxt < len(live) else 0), page
 
     # internal command impls shared by direct calls + pipeline
     def _hset(self, key, field=None, value=None, **_kw) -> int:
@@ -69,7 +139,7 @@ class FakeRedis:
     async def hdel(self, key, *fields) -> int:
         return self._hdel(key, *fields)
 
-    async def eval(self, script: str, numkeys: int, *keys_and_args) -> int:
+    async def eval(self, script: str, numkeys: int, *keys_and_args) -> Any:
         """Emulate the atomic register/unregister Lua scripts.
 
         The real manager runs them server-side; the fake recognizes each by its
@@ -93,7 +163,50 @@ class FakeRedis:
             removed = self._hdel(f"{prefix}:topic:{topic}", name)
             removed_map = self._hdel(map_key, name)
             return 1 if (removed > 0 or removed_map > 0) else 0
-        raise NotImplementedError("FakeRedis.eval only emulates the register/unregister scripts")
+        if "trigger:create:atomic" in script:
+            name_key, rec_prefix, token_hash, record_json, ttl = keys_and_args
+            ttl = int(ttl)
+            if self._exists(name_key) == 1:
+                return 0
+            rec_key = f"{rec_prefix}{token_hash}"
+            ex = ttl if ttl > 0 else None
+            self._set_str(name_key, token_hash, ex=ex)
+            self._set_str(rec_key, record_json, ex=ex)
+            return 1
+        if "trigger:revoke:atomic" in script:
+            name_key, rec_prefix, tomb_prefix = keys_and_args
+            token_hash = self._get_str(name_key)
+            if not token_hash:
+                return None
+            self._del(f"{rec_prefix}{token_hash}")
+            self._del(name_key)
+            self._set_str(f"{tomb_prefix}{token_hash}", "1")
+            return token_hash
+        if "trigger:restore:atomic" in script:
+            name_key, rec_prefix, tomb_prefix, token_hash, record_json, ttl = keys_and_args
+            ttl = int(ttl)
+            if self._exists(f"{tomb_prefix}{token_hash}") == 1:
+                return "skipped_tombstoned"
+            rec_key = f"{rec_prefix}{token_hash}"
+            current = self._get_str(name_key)
+            ex = ttl if ttl > 0 else None
+
+            def _write_pair() -> None:
+                self._set_str(name_key, token_hash, ex=ex)
+                self._set_str(rec_key, record_json, ex=ex)
+
+            if current == token_hash:
+                _write_pair()
+                return "updated"
+            if self._exists(rec_key) == 1:
+                return "hash_conflict"
+            if current:
+                self._del(f"{rec_prefix}{current}")
+                _write_pair()
+                return "updated"
+            _write_pair()
+            return "created"
+        raise NotImplementedError("FakeRedis.eval only emulates the register/unregister/trigger scripts")
 
     def pipeline(self) -> _FakePipeline:
         return _FakePipeline(self)

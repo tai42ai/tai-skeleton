@@ -304,6 +304,118 @@ def test_hooks_verifiers_lists_names(monkeypatch: pytest.MonkeyPatch) -> None:
     assert json.loads(result.output) == ["github_hmac", "shared_secret"]
 
 
+def _trigger_link_reply(topic: str = "orders") -> dict:
+    return {
+        "name": "trg-link-deadbeef",
+        "trigger_path": "/trigger/SECRET",
+        "token": "SECRET",
+        "topic": topic,
+        "expires_at": None,
+    }
+
+
+def test_hooks_trigger_links_lists(monkeypatch: pytest.MonkeyPatch) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.method == "GET"
+        assert request.url.path == "/api/hooks/trigger-links"
+        return data_response(
+            {"items": [{"name": "l1", "topic": "orders", "expires_at": None, "token_hash_prefix": "abc"}], "total": 1}
+        )
+
+    result = run_cli(monkeypatch, handler, ["hooks", "trigger-links"])
+    assert result.exit_code == 0, result.output
+    assert "l1" in result.output
+
+
+def test_hooks_create_trigger_link_timed_composes_absolute_url(monkeypatch: pytest.MonkeyPatch) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.method == "POST"
+        assert request.url.path == "/api/hooks/trigger-links"
+        assert json.loads(request.content) == {"topic": "orders", "ttl_seconds": 3600}
+        return data_response(_trigger_link_reply())
+
+    result = run_cli(
+        monkeypatch, handler, ["hooks", "create-trigger-link", "orders", "--ttl", "3600"], json_output=True
+    )
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.output)["url"] == "http://testserver/trigger/SECRET"
+
+
+def test_hooks_create_trigger_link_permanent_null_ttl(monkeypatch: pytest.MonkeyPatch) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert json.loads(request.content) == {"topic": "orders", "ttl_seconds": None}
+        return data_response(_trigger_link_reply())
+
+    result = run_cli(monkeypatch, handler, ["hooks", "create-trigger-link", "orders", "--permanent"])
+    assert result.exit_code == 0, result.output
+
+
+def test_hooks_create_trigger_link_params_land_in_body(monkeypatch: pytest.MonkeyPatch) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        assert body["tool_kwargs"] == {"flow_graph_kwargs": {"x": 1}}
+        assert body["name"] == "mylink"
+        return data_response(_trigger_link_reply())
+
+    result = run_cli(
+        monkeypatch,
+        handler,
+        [
+            "hooks",
+            "create-trigger-link",
+            "orders",
+            "--permanent",
+            "--name",
+            "mylink",
+            "--params",
+            '{"flow_graph_kwargs":{"x":1}}',
+        ],
+    )
+    assert result.exit_code == 0, result.output
+
+
+def test_hooks_create_trigger_link_requires_neither_flag_fails(monkeypatch: pytest.MonkeyPatch) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:  # pragma: no cover - never reached
+        return data_response(_trigger_link_reply())
+
+    result = run_cli(monkeypatch, handler, ["hooks", "create-trigger-link", "orders"])
+    # Neither flag → a loud usage error (no silent default), never a request.
+    assert result.exit_code != 0
+
+
+def test_hooks_create_trigger_link_both_flags_fails(monkeypatch: pytest.MonkeyPatch) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:  # pragma: no cover - never reached
+        return data_response(_trigger_link_reply())
+
+    result = run_cli(monkeypatch, handler, ["hooks", "create-trigger-link", "orders", "--ttl", "60", "--permanent"])
+    # Both flags → a loud usage error, never a request.
+    assert result.exit_code != 0
+
+
+def test_hooks_create_trigger_link_trailing_slash_base_no_double_slash(monkeypatch: pytest.MonkeyPatch) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return data_response(_trigger_link_reply())
+
+    result = run_cli(
+        monkeypatch,
+        handler,
+        ["--server", "http://testserver/", "hooks", "create-trigger-link", "orders", "--permanent"],
+        json_output=True,
+    )
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.output)["url"] == "http://testserver/trigger/SECRET"
+
+
+def test_hooks_delete_trigger_link(monkeypatch: pytest.MonkeyPatch) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.method == "DELETE"
+        assert request.url.path == "/api/hooks/trigger-links/mylink"
+        return data_response({"removed": True, "name": "mylink"})
+
+    result = run_cli(monkeypatch, handler, ["hooks", "delete-trigger-link", "mylink"])
+    assert result.exit_code == 0, result.output
+
+
 def test_scopes_routes_renders_catalog(monkeypatch: pytest.MonkeyPatch) -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         assert request.method == "GET"

@@ -161,6 +161,28 @@ def test_derived_keys():
     assert settings.name_trigger_map_key == "hooks:name_trigger_map"
 
 
+def test_trigger_key_helpers_round_trip():
+    settings = HooksSettings()
+    token_hash = "a" * 64
+
+    # Each helper builds its documented ``hooks:trigger:rec:/name:/tomb:`` form.
+    assert settings.trigger_record_key(token_hash) == f"hooks:trigger:rec:{token_hash}"
+    assert settings.trigger_name_key("orders") == "hooks:trigger:name:orders"
+    assert settings.trigger_tomb_key(token_hash) == f"hooks:trigger:tomb:{token_hash}"
+
+    # The prefix properties match exactly what the key helpers prepend.
+    assert settings.trigger_record_key_prefix == "hooks:trigger:rec:"
+    assert settings.trigger_name_key_prefix == "hooks:trigger:name:"
+    assert settings.trigger_tomb_key_prefix == "hooks:trigger:tomb:"
+    assert settings.trigger_record_key(token_hash) == f"{settings.trigger_record_key_prefix}{token_hash}"
+    assert settings.trigger_name_key("orders") == f"{settings.trigger_name_key_prefix}orders"
+    assert settings.trigger_tomb_key(token_hash) == f"{settings.trigger_tomb_key_prefix}{token_hash}"
+
+    # The scan patterns glob their own prefixes.
+    assert settings.trigger_name_scan_pattern() == "hooks:trigger:name:*"
+    assert settings.trigger_tomb_scan_pattern() == "hooks:trigger:tomb:*"
+
+
 def test_max_workers_defaults_and_rejects_non_positive():
     # The global in-flight bound is always on: it defaults to 10 and a
     # non-positive value is a config error, never an unbounded mode.

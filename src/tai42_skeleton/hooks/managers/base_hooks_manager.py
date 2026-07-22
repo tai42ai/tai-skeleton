@@ -66,10 +66,16 @@ class BaseHooksManager(ABC):
             return bool(result)
 
     @staticmethod
-    async def _run_hook(hook: HookParams, payload: dict[str, Any]):
+    async def _run_hook(hook: HookParams, payload: dict[str, Any], tool_kwargs_override: dict[str, Any] | None = None):
         writer = get_monitoring().writer
         with writer.start_span(name="hook_run_tool", kind=SpanKind.CHAIN):
-            writer.update_current_span(metadata={"tool": hook.tool, "tool_kwargs": hook.tool_kwargs})
+            writer.update_current_span(
+                metadata={
+                    "tool": hook.tool,
+                    "tool_kwargs": hook.tool_kwargs,
+                    "tool_kwargs_override": tool_kwargs_override,
+                }
+            )
 
             rendered_expr = await tai42_app.storage.resource_manager.render_by_id_or_content(
                 content=hook.expr,
@@ -77,12 +83,18 @@ class BaseHooksManager(ABC):
                 kwargs=hook.expr_kwargs,
             )
             event_input = (await run_jq_first(rendered_expr, payload)) if rendered_expr else {}
-            tool_input = {**event_input, **(hook.tool_kwargs or {})}
+            # Shallow top-level merge, strongest last: scan-influenced expr input is
+            # the weakest, the hook's static ``tool_kwargs`` is the operator default,
+            # and the per-link override (when the caller passes one) wins on a
+            # colliding key.
+            tool_input = {**event_input, **(hook.tool_kwargs or {}), **(tool_kwargs_override or {})}
             await tai42_app.tools.run_tool(hook.tool, tool_input)
 
-    async def _run_hook_with_limit(self, hook: HookParams, payload: dict[str, Any]):
+    async def _run_hook_with_limit(
+        self, hook: HookParams, payload: dict[str, Any], tool_kwargs_override: dict[str, Any] | None = None
+    ):
         async with self._run_semaphore:
-            await self._run_hook(hook, payload)
+            await self._run_hook(hook, payload, tool_kwargs_override)
 
     @abstractmethod
     async def register(self, params: HookParams) -> bool: ...
@@ -116,7 +128,16 @@ class BaseHooksManager(ABC):
     @abstractmethod
     async def all_topic_verifiers(self) -> dict[str, dict[str, Any]]: ...
 
-    async def on_event(self, topic: str, payload: dict[str, Any]):
+    async def on_event(
+        self, topic: str, payload: dict[str, Any], *, tool_kwargs_override: dict[str, Any] | None = None
+    ):
+        """Fan the event out to every hook on ``topic``.
+
+        ``tool_kwargs_override`` (kw-only) is merged LAST into EVERY fired hook's
+        tool input, winning on a colliding key over both the rendered ``expr``
+        input and the hook's static ``tool_kwargs`` — the trigger-link resolver
+        passes the link's own params here; ``universal_webhook`` passes nothing, so
+        its dispatch is byte-identical."""
         writer = get_monitoring().writer
         with (
             writer.start_span(name="hook_on_event", kind=SpanKind.CHAIN),
@@ -133,7 +154,7 @@ class BaseHooksManager(ABC):
             # Every execution goes through the manager-wide semaphore, so this
             # event's fan-out shares the global in-flight bound with every
             # concurrently firing event.
-            tasks = [self._run_hook_with_limit(h, payload) for h in valid_hooks]
+            tasks = [self._run_hook_with_limit(h, payload, tool_kwargs_override) for h in valid_hooks]
 
             results = await asyncio.gather(*tasks, return_exceptions=True)
             for hook, result in zip(valid_hooks, results, strict=True):
