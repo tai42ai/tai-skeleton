@@ -35,7 +35,7 @@ import inspect
 import re
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from typing import Literal
+from typing import Literal, Protocol, cast
 
 from pydantic import BaseModel
 from starlette.requests import Request
@@ -362,6 +362,12 @@ class _SpecApp:
         self.http = HttpSurface(self)  # type: ignore[arg-type]
         self.lifecycle = _SpecLifecycle()
 
+    def effective_router_modules(self) -> None:
+        """No deployment is served under the spec harness, so the enumeration
+        universe is the whole ``tai42_skeleton.routers`` package — signalled by
+        ``None`` (never a curated started-manifest set)."""
+        return None
+
 
 def _tai_app_bound() -> bool:
     from tai42_contract.app import tai42_app
@@ -373,34 +379,66 @@ def _tai_app_bound() -> bool:
     return True
 
 
-def _ensure_routers_imported() -> None:
-    """Import every router module so its routes record into the registry.
+class _RouterUniverseSource(Protocol):
+    """The one method the shared importer asks of the currently-bound app to choose its
+    enumeration universe. The forwarding ``tai42_app`` handle is typed as the assembled
+    facade (which carries only namespace facets), so this Protocol types the flat method
+    the handle forwards to the bound impl — the started ``TaiMCP`` (answers its manifest's
+    effective router set) and the offline ``_SpecApp`` (answers ``None``) both satisfy it."""
 
-    When ``tai42_app`` is unbound (a CLI/test process that never booted a server),
-    a minimal offline harness is bound first so ``tai42_app.http.custom_route``
-    resolves. When a server is already running, its real binding stays and the
-    already-imported modules simply keep their registry entries.
-    """
+    def effective_router_modules(self) -> list[str] | None: ...
+
+
+def _import_all_router_modules() -> None:
+    """Import EVERY module under ``tai42_skeleton.routers`` — the whole-package
+    enumeration universe used only offline (CLI spec/parity tools, unbooted tests)."""
     import importlib
     import pkgutil
 
-    from tai42_contract.app import tai42_app
-
     import tai42_skeleton.routers as routers_pkg
-
-    if not _tai_app_bound():
-        tai42_app.bind(_SpecApp())
 
     for module_info in pkgutil.iter_modules(routers_pkg.__path__, routers_pkg.__name__ + "."):
         importlib.import_module(module_info.name)
 
 
+def _ensure_routers_imported() -> None:
+    """Import the router modules that define the enumeration universe.
+
+    There are exactly two universes. In a STARTED process the bound app answers its
+    manifest's EFFECTIVE router set, and THAT set is the universe: ``start()`` already
+    imported those modules, so re-importing them is an idempotent no-op and no other
+    router is pulled into the live route table. Offline — an unbound CLI/test process,
+    or a bound-but-unstarted spec harness (both answer ``None``) — the whole
+    ``tai42_skeleton.routers`` package is the universe, so an offline enumeration sees
+    every route with no server to boot. An unbound process is bound to the offline
+    ``_SpecApp`` first so ``tai42_app.http.custom_route`` resolves.
+    """
+    import importlib
+
+    from tai42_contract.app import tai42_app
+
+    if _tai_app_bound():
+        effective = cast("_RouterUniverseSource", tai42_app).effective_router_modules()
+        if effective is not None:
+            # A STARTED deployment: its effective router set IS the universe.
+            # start() already imported these; re-import is an idempotent no-op.
+            for module in effective:
+                importlib.import_module(module)
+            return
+        # Bound but NOT started (a spec-harness bind): fall through to the package universe.
+    else:
+        tai42_app.bind(_SpecApp())
+    _import_all_router_modules()
+
+
 def load_api_routes() -> list[RouteMetadata]:
     """The shared route-enumeration primitive: every registered ``/api/*`` route.
 
-    Imports the router modules (offline) if needed, then returns their metadata.
-    Both the OpenAPI emitter/coverage gate and the CLI↔route parity gate call
-    this so they enumerate the API surface identically.
+    Imports the enumeration universe if needed, then returns its metadata. In a STARTED
+    process that universe is the deployment's effective router set (so this enumerates
+    exactly the served surface); offline it is the whole router package. Both the OpenAPI
+    emitter/coverage gate and the CLI↔route parity gate call this so they enumerate the
+    API surface identically.
     """
     _ensure_routers_imported()
     return [meta for meta in route_registry.routes() if meta.path.startswith("/api/")]
@@ -410,10 +448,12 @@ def load_all_routes() -> list[RouteMetadata]:
     """Every registered route — the whole self-describing HTTP surface, ``/api/*`` and
     the non-``/api`` operational routes (``/health``, ``/ready``, ``/metrics``, …) alike.
 
-    Imports the router modules (offline) if needed, then returns their metadata. The
-    access-control resolver derives its SPA-shell reserved set from the non-``/api``
-    GET routes surfaced here, so a route added to a router joins the reserved set with
-    no static list to maintain.
+    Imports the enumeration universe if needed, then returns its metadata. In a STARTED
+    process that universe is the deployment's effective router set, so this enumerates
+    exactly the served surface and never pulls an un-mounted router into the live route
+    table; offline it is the whole router package. The access-control resolver derives its
+    SPA-shell reserved set from the non-``/api`` GET routes surfaced here, so a route added
+    to a router joins the reserved set with no static list to maintain.
     """
     _ensure_routers_imported()
     return route_registry.routes()
@@ -428,9 +468,11 @@ def route_action_violations() -> list[str]:
     exempt from the method-equals-action rule. Public (``authed=False``) routes are not
     gated — their action never enforces — so they are not audited here.
 
-    Enumerates through :func:`load_all_routes` so the router modules are imported before
-    the audit runs — iterating the raw registry could pass VACUOUSLY (an empty loop is a
-    silent no-op) had the routers not yet been imported."""
+    Enumerates through :func:`load_all_routes` so the enumeration universe is imported
+    before the audit runs — in a started process that is the deployment's served router
+    surface, so the audit judges exactly what the deployment serves; iterating the raw
+    registry could pass VACUOUSLY (an empty loop is a silent no-op) had the routers not
+    yet been imported."""
     violations: list[str] = []
     for meta in load_all_routes():
         if not meta.authed:

@@ -106,9 +106,10 @@ def _build_index() -> None:
     global _concrete_index, _templated_matchers
     concrete: dict[tuple[str, str], RouteMetadata] = {}
     templated: list[tuple[re.Pattern[str], frozenset[str], RouteMetadata]] = []
-    # ``load_all_routes`` ensures the router modules are imported (offline) so the
-    # registry is populated before the index builds — in a booted server they already
-    # are; in a CLI/test process this triggers the offline import.
+    # ``load_all_routes`` ensures the enumeration universe is imported so the registry is
+    # populated before the index builds — in a started process that is the deployment's
+    # served router surface (so the index matches what is served); in a CLI/test process it
+    # triggers the offline whole-package import.
     for meta in load_all_routes():
         methods = frozenset(meta.methods)
         # Key/compile on the CANONICALIZED registered path so the index and the

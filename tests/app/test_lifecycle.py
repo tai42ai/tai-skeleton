@@ -1124,3 +1124,109 @@ def test_default_boot_mounts_the_studio_and_cli_page_routes():
             assert getattr(routes[-1], "path", None) == "/{spa_path:path}"
 
     asyncio.run(run())
+
+
+# -- the shared router importer is manifest-aware -----------------------------
+
+
+def test_started_none_boot_serves_only_the_curated_routers(monkeypatch):
+    """Regression: an access-control-enabled boot with ``default_routers="none"`` and a
+    curated two-module ``routers_modules`` must serve ONLY those modules' routes. The
+    access-control startup audits enumerate the surface through ``load_all_routes``/``load_api_routes``;
+    that shared importer must NOT pull the whole ``tai42_skeleton.routers`` package into the
+    started app's live route table — doing so silently serves every router the manifest
+    excluded.
+
+    Asserted on the PER-INSTANCE served table of a FRESH app: the process-global
+    ``route_registry`` is legitimately polluted by other tests, and the singleton's served
+    table accumulates across boots. ``marketplace``/``connectors`` are popped from
+    ``sys.modules`` first, so the whole-package importer — if it ran — WOULD re-execute
+    their ``@custom_route`` decorators into this app's live table; the fix keeps them out."""
+    import sys
+
+    from tai42_skeleton.access_control.startup import (
+        check_accounts_providers_configured,
+        check_always_public_routes,
+        check_fenced_routes_resolvable,
+        check_route_actions,
+        check_spa_shell_public,
+        probe_identity_provider,
+        seed_roles,
+    )
+    from tai42_skeleton.app.server import TaiMCP
+
+    instance = TaiMCP(name="curation-under-test")
+    # Wire the access-control startup audits exactly as the real build does when access
+    # control is enabled, so every audit's route enumeration runs during this boot.
+    for audit in (
+        probe_identity_provider,
+        seed_roles,
+        check_always_public_routes,
+        check_spa_shell_public,
+        check_route_actions,
+        check_fenced_routes_resolvable,
+        check_accounts_providers_configured,
+    ):
+        instance.lifecycle.on_startup(audit)
+
+    excluded = ("tai42_skeleton.routers.marketplace", "tai42_skeleton.routers.connectors")
+    saved_impl = object.__getattribute__(tai42_app, "_impl")
+    saved_modules = {name: sys.modules.pop(name, None) for name in excluded}
+
+    manifest = Manifest.model_validate(
+        {
+            "default_routers": "none",
+            "routers_modules": ["tai42_skeleton.routers.tools", "tai42_skeleton.routers.health"],
+        }
+    )
+
+    async def run() -> set[str | None]:
+        async with instance.app_context(manifest):
+            return {getattr(route, "path", None) for route in instance._fast_mcp._additional_http_routes}
+
+    try:
+        served = asyncio.run(run())
+    finally:
+        tai42_app.bind(saved_impl)
+        for name, module in saved_modules.items():
+            if module is not None:
+                sys.modules[name] = module
+
+    # The curated modules' routes ARE served ...
+    assert "/api/tools" in served
+    assert "/health" in served
+    # ... and NOTHING from the excluded routers reached the live route table.
+    assert not any((path or "").startswith("/api/marketplace") for path in served)
+    assert not any((path or "").startswith("/api/connectors") for path in served)
+
+
+def test_load_all_routes_uses_the_effective_set_when_started_and_whole_package_offline(monkeypatch):
+    """The shared importer chooses its universe: a bound+STARTED app enumerates its
+    manifest's effective router set and must NEVER fall back to the whole-package importer;
+    an unbound (offline spec-harness) process MUST use it."""
+    from tai42_skeleton.app import route_registry as rr
+
+    # Started case: the whole-package importer must not run — the effective set is the
+    # universe. Patched inside the context so start()'s own router import is untouched.
+    def _forbidden() -> None:
+        raise AssertionError("_import_all_router_modules must not run in a started process")
+
+    manifest = Manifest.model_validate({"default_routers": "none", "routers_modules": ["tai42_skeleton.routers.tools"]})
+
+    async def run_started() -> None:
+        async with app.app_context(manifest):
+            monkeypatch.setattr(rr, "_import_all_router_modules", _forbidden)
+            rr.load_all_routes()  # no raise: the effective set is enumerated directly
+
+    asyncio.run(run_started())
+
+    # Offline case: with no deployment bound, the whole-package importer MUST run.
+    calls: list[int] = []
+    monkeypatch.setattr(rr, "_import_all_router_modules", lambda: calls.append(1))
+    saved_impl = object.__getattribute__(tai42_app, "_impl")
+    tai42_app.bind(None)  # unbind: no started deployment answers effective_router_modules()
+    try:
+        rr.load_all_routes()
+    finally:
+        tai42_app.bind(saved_impl)
+    assert calls == [1]

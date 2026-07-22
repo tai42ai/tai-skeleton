@@ -703,6 +703,12 @@ class TaiMCPLifecycleMixin(ABC):
             effective.append(STUDIO_SPA_ROUTER)
         return effective
 
+    def effective_router_modules(self) -> list[str] | None:
+        """The started manifest's effective router set, or None before start()."""
+        if self._manifest is None:
+            return None
+        return self._effective_router_modules()
+
     def _initialize_components(self):
         if self._manifest is None:
             raise RuntimeError("TaiMCP is not started — call start()/app_context first.")

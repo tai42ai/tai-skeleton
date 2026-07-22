@@ -409,6 +409,12 @@ class _FakeApp:
     def __init__(self) -> None:
         self.storage = _FakeStorage()
 
+    def effective_router_modules(self) -> None:
+        # Not a started router deployment: the shared route importer reads this to
+        # choose its enumeration universe, and ``None`` selects the whole-package
+        # universe (the offline default) rather than a curated served set.
+        return None
+
 
 @pytest.fixture
 def bound_app():

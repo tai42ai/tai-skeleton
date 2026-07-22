@@ -240,9 +240,11 @@ async def check_fenced_routes_resolvable() -> None:
     registered — the boot then validates the live surface, and leaves the runtime index
     consistent with what it verified rather than trusting a possibly-stale earlier build.
 
-    Enumerates through ``load_all_routes`` so the router modules are imported before the
-    audit runs — iterating the raw registry could pass VACUOUSLY (an empty loop verifies
-    nothing) had the routers not yet been imported.
+    Enumerates through ``load_all_routes`` so the enumeration universe is imported before
+    the audit runs — in this started process that is the deployment's served router
+    surface, so the fence guarantee is verified against exactly what the deployment serves;
+    iterating the raw registry could pass VACUOUSLY (an empty loop verifies nothing) had the
+    routers not yet been imported.
     """
     from tai42_skeleton.access_control.role_gate import reset_route_index, resolve_route_meta
     from tai42_skeleton.app.route_registry import load_all_routes
