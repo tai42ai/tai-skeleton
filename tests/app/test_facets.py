@@ -306,7 +306,18 @@ def test_http_facet_forwarding():
     )
     assert route_result is app._http_surface.custom_route.return_value
     app._http_surface.custom_route.assert_called_once_with(
-        "/p", ["GET"], "n", False, summary="P", tags=["t"], response_model=None, request_model=None, authed=True
+        "/p",
+        ["GET"],
+        "n",
+        False,
+        summary="P",
+        tags=["t"],
+        response_model=None,
+        request_model=None,
+        authed=True,
+        destructive=False,
+        action=None,
+        declared=None,
     )
 
 

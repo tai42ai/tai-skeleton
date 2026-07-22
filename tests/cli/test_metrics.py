@@ -40,17 +40,23 @@ def test_main_publishes_multiproc_dir_before_serving(monkeypatch: pytest.MonkeyP
     # The suite-wide conftest pre-sets ``PROMETHEUS_MULTIPROC_DIR`` (to freeze the mmap
     # value class), so asserting the published env ``==`` a fresh ``metrics_settings()``
     # reading that same env would hold even if ``main`` published nothing. Drop the env
-    # and reset the settings cache so ``metrics_settings()`` falls back to its CODED
-    # absolute default, then assert ``main`` published exactly that.
+    # so ``metrics_settings()`` falls back to its CODED absolute default, then assert
+    # ``main`` published exactly that.
+    #
+    # ``main`` reads the ``metrics_settings`` accessor ``cli.metrics`` imported at module
+    # load. ``reset_all_settings()`` clears every accessor REGISTERED in the reset
+    # registry, but a test that reloads a routers submodule (route/import discovery)
+    # re-runs ``@settings_cache`` on ``routers.metrics_settings``, which re-registers a
+    # fresh cache under the same key and drops this already-imported accessor from that
+    # registry — leaving its cache unclearable by ``reset_all_settings()``. So clear the
+    # exact accessor object the CLI calls, which is immune to that re-registration.
     import os
     import tempfile
-
-    from tai42_kit.settings import reset_all_settings
 
     captured: dict[str, str | None] = {}
 
     monkeypatch.delenv("PROMETHEUS_MULTIPROC_DIR", raising=False)
-    reset_all_settings()
+    metrics.metrics_settings.cache_clear()
     monkeypatch.setattr(metrics, "create_app", lambda: object())
     monkeypatch.setattr(
         metrics.uvicorn,
@@ -70,9 +76,9 @@ def test_main_publishes_multiproc_dir_before_serving(monkeypatch: pytest.MonkeyP
         assert os.path.isabs(published)
     finally:
         # ``main`` cached ``metrics_settings()`` at the coded default while the env was
-        # unset; clear the cache so it rebuilds against the conftest env (restored by
-        # ``cli/conftest.py``) that the rest of the suite relies on.
-        reset_all_settings()
+        # unset; clear that accessor so it rebuilds against the conftest env (restored by
+        # monkeypatch) that the rest of the suite relies on.
+        metrics.metrics_settings.cache_clear()
 
 
 def test_main_launches_uvicorn_with_overridden_bind(monkeypatch: pytest.MonkeyPatch) -> None:

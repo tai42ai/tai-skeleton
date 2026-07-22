@@ -39,6 +39,7 @@ if TYPE_CHECKING:
     from tai42_contract.versioning import VersionedStore
     from tai42_contract.webhooks import WebhookVerifier
 
+    from tai42_skeleton.app.route_registry import DeclaredRouteMetadata, RouteAction
     from tai42_skeleton.app.server import TaiMCP
     from tai42_skeleton.manifest import Manifest as ManifestImpl
     from tai42_skeleton.template import ResourceManager
@@ -259,6 +260,9 @@ class HttpFacet(_Facet):
         response_model: type[BaseModel] | None,
         request_model: type[BaseModel] | None = None,
         authed: bool = True,
+        destructive: bool = False,
+        action: RouteAction | None = None,
+        declared: DeclaredRouteMetadata | None = None,
     ) -> Callable[[Callable[[Request], Awaitable[Response]]], Callable[[Request], Awaitable[Response]]]:
         return self._app._http_surface.custom_route(
             path,
@@ -270,6 +274,9 @@ class HttpFacet(_Facet):
             response_model=response_model,
             request_model=request_model,
             authed=authed,
+            destructive=destructive,
+            action=action,
+            declared=declared,
         )
 
 
