@@ -20,6 +20,7 @@ from tai42_contract.app import tai42_app
 from tai42_skeleton.operations import BadRequestError, ForbiddenError, NotFoundError, UnavailableError
 from tai42_skeleton.operations import tool_runs as ops
 from tai42_skeleton.operations.decorator import operation_metadata_of
+from tai42_skeleton.operations.errors import PermissionDenied
 from tai42_skeleton.operations.tool_runs import ToolRunStore
 from tai42_skeleton.routers.tool_runs_settings import ToolRunsSettings
 from tests._fakes.tool_runs_redis import FakeRedis
@@ -82,6 +83,36 @@ async def test_submit_returns_run_id_and_runs_through_the_offload_seam(wired):
     assert tools.calls == [("alpha", {"x": 2}, True)]
     record = await wired.store.get_run(wired.fake, out["run_id"])
     assert record["status"] == "succeeded"
+
+
+async def test_submit_authorizes_the_submitted_tool_before_recording(wired):
+    # The submitted tool is authorized against the live caller — with its exact arguments —
+    # before a slot is reserved or a record is written.
+    wired.install(registered={"alpha"})
+    seen: list[tuple] = []
+
+    async def _spy(tool_name, arguments):
+        seen.append((tool_name, dict(arguments)))
+
+    wired.monkeypatch.setattr(ops, "authorize_submitted_tool", _spy)
+    await ops.submit_run("alpha", {"x": 2})
+    assert seen == [("alpha", {"x": 2})]
+    await _drain()
+
+
+async def test_submit_denied_tool_is_refused_before_any_record(wired):
+    # A denial from the submitted-tool authorization is the caller's 403, raised before any
+    # slot is reserved, record written, or supervisor spawned.
+    wired.install(registered={"write_env"})
+
+    async def _deny(tool_name, arguments):
+        raise PermissionDenied("access denied: POST /api/config/env is not permitted")
+
+    wired.monkeypatch.setattr(ops, "authorize_submitted_tool", _deny)
+    with pytest.raises(PermissionDenied, match="not permitted"):
+        await ops.submit_run("write_env", {"k": "v"})
+    assert list(ops._SUPERVISORS) == []
+    assert ops._ACTIVE_RUNS == 0
 
 
 async def test_submit_unknown_tool_raises_not_found_before_any_record(wired):

@@ -30,7 +30,7 @@ from typing import TYPE_CHECKING, Any
 from pydantic import BaseModel, Field
 from tai42_contract.app import tai42_app
 
-from tai42_skeleton.operations import BadRequestError, NotFoundError, OperationFailed, operation
+from tai42_skeleton.operations import BadRequestError, NotFoundError, OperationError, OperationFailed, operation
 from tai42_skeleton.operations._broadcast import broadcast
 from tai42_skeleton.tools.binding import UnknownToolError, is_unknown_tool_error
 
@@ -139,6 +139,12 @@ async def run_tool(tool_name: str, arguments: dict[str, object]) -> Any:
         # The tool was resolved above but vanished before the run (a concurrent
         # reload) — still an unknown-tool 404, not a masked 500.
         raise NotFoundError(f"unknown tool: {tool_name}") from exc
+    except OperationError:
+        # A typed operation error is already the answer the surfaces owe the caller —
+        # most sharply a ``PermissionDenied`` taken by the tool-dispatch seam, which is a
+        # 403 denial, not a crash. Flattening it into ``OperationFailed`` would report a
+        # routine refusal as a 500 with an exception traceback.
+        raise
     except Exception as exc:
         logger.exception("run-tool %s raised during execution", tool_name)
         raise OperationFailed(str(exc)) from exc

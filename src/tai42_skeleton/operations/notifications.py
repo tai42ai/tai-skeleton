@@ -8,7 +8,8 @@
   reads. No reply, no blocking wait. It delivers over the channels feature's
   ``notify_user`` helper, mapping the helper's loud
   failures to the operation's typed errors: a blank message / unknown channel /
-  blank recipient/audience is a :class:`BadRequestError` (400), a restricted caller
+  blank recipient/audience — or a caller-supplied ``sender_identity`` (an
+  internal-only control) — is a :class:`BadRequestError` (400), a restricted caller
   addressing another identity is a cross-identity authorization denial mapped to a
   :class:`ForbiddenError` (403) — the same 403 the read-side answer door raises for the
   symmetric read denial — a channel that cannot notify
@@ -27,6 +28,7 @@ from tai42_contract.channels import ChannelDeliveryError
 
 from tai42_skeleton.access_control.user import CrossIdentityAudienceError, request_identity
 from tai42_skeleton.channels.notifications_sink import read_notifications
+from tai42_skeleton.channels.notify import SenderIdentityNotAllowedError
 from tai42_skeleton.channels.notify import notify_user as _notify_user
 from tai42_skeleton.operations import BadRequestError, ForbiddenError, NotSupportedError, UpstreamError, operation
 
@@ -46,6 +48,14 @@ class NotifyUser(BaseModel):
             "The identity (user_id) whose in-app inbox shows this (honored even with a channel set); "
             "leave unset for an operator/broadcast notification. Distinct from recipient, which is a "
             "channel delivery address."
+        ),
+    )
+    sender_identity: str | None = Field(
+        default=None,
+        description=(
+            "Reserved: the sending identity a channel message leaves FROM, set by the conversation "
+            "bridge on the notification it builds to answer a route. Callers MUST NOT supply it here — "
+            "a set value is rejected with a 400, never forwarded."
         ),
     )
 
@@ -69,7 +79,11 @@ async def list_notifications() -> dict:
     request_model=NotifyUser,
 )
 async def notify_user(
-    message: str, channel: str | None = None, recipient: str | None = None, audience: str | None = None
+    message: str,
+    channel: str | None = None,
+    recipient: str | None = None,
+    audience: str | None = None,
+    sender_identity: str | None = None,
 ) -> str:
     """Send a human a one-way notification, fire-and-forget.
 
@@ -79,19 +93,31 @@ async def notify_user(
     notifications sink the Studio inbox reads. One send attempt, no retry; every
     failure raises loudly, never a silent no-op:
 
-    * a blank message, an unknown channel name, or a blank recipient/audience → 400;
+    * a blank message, an unknown channel name, a blank recipient/audience, or a
+      caller-supplied ``sender_identity`` → 400;
     * a restricted caller addressing another identity (cross-identity denial) → 403;
     * a channel that cannot notify → 501;
     * a channel delivery failure → 502.
 
     ``audience`` addresses the in-app record to an identity's feed; it is honored
     even when a channel also delivers the message (channel push AND in-app record).
+    ``sender_identity`` is the sending identity a channel message leaves FROM, which the
+    conversation bridge sets on the notification it builds to answer a route; a caller may
+    not supply it here and a set value is rejected loudly, never forwarded to the channel.
 
     Returns a short confirmation string — ``"notification sent via '<channel>'"``
     for a channel send, ``"notification recorded to the internal sink"`` otherwise.
     """
     try:
+        if sender_identity is not None:
+            # Rejected BEFORE any send: a caller must not choose which operator identity a
+            # message leaves from.
+            raise SenderIdentityNotAllowedError(
+                "sender_identity is set internally by the conversation bridge and cannot be supplied by a caller"
+            )
         await _notify_user(message, channel=channel, recipient=recipient, audience=audience)
+    except SenderIdentityNotAllowedError as exc:
+        raise BadRequestError(str(exc)) from exc
     except CrossIdentityAudienceError as exc:
         # A restricted caller addressing another identity is a cross-identity boundary
         # violation — an AUTHORIZATION denial (403), the write-side mirror of the read

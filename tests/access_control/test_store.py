@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import pytest
 from psycopg.errors import UniqueViolation
+from tai42_contract.access_control import KEY_FINGERPRINT_CLAIM
 
 from tai42_skeleton.access_control.settings import access_control_settings
 from tai42_skeleton.access_control.store import access_control_store
@@ -344,6 +345,25 @@ async def test_update_explicit_clear(pg: FakeAccessControlPg) -> None:
     assert body["policy_data"] == {}
     assert body["condition"] is None
     assert body["scopes"] == ["s1"]
+
+
+async def test_update_forces_live_fingerprint_over_a_client_supplied_one(pg: FakeAccessControlPg) -> None:
+    # The fingerprint is server-owned: an edit carries the stored one forward and drops any
+    # client value, so it can never rewrite the anchor a fire resolves against.
+    pg.add_policy("u1", scopes=["s1"], policy_data={"k": 1, KEY_FINGERPRINT_CLAIM: "live"})
+    body = await STORE().update_policy_fields("u1", {"policy_data": {"k": 2, KEY_FINGERPRINT_CLAIM: "forged"}})
+    assert body is not None
+    assert body["policy_data"] == {"k": 2, KEY_FINGERPRINT_CLAIM: "live"}
+
+
+async def test_update_onto_never_minted_row_drops_a_client_supplied_fingerprint(pg: FakeAccessControlPg) -> None:
+    # A row provisioned without a mint stays without a fingerprint, so a client edit cannot
+    # forge one that would resurrect a stale binding.
+    pg.add_policy("u1", scopes=["s1"], policy_data={"k": 1})
+    body = await STORE().update_policy_fields("u1", {"policy_data": {"k": 2, KEY_FINGERPRINT_CLAIM: "forged"}})
+    assert body is not None
+    assert KEY_FINGERPRINT_CLAIM not in body["policy_data"]
+    assert body["policy_data"] == {"k": 2}
 
 
 async def test_update_unknown_user_returns_none(pg: FakeAccessControlPg) -> None:

@@ -50,24 +50,23 @@ def _route_registering_modules() -> set[str]:
     discovered by re-importing each against a recording app."""
     from tai42_contract.app import tai42_app
 
-    saved_impl = object.__getattribute__(tai42_app, "_impl")
     app = _RecordingApp()
-    tai42_app.bind(app)
     module_names = [info.name for info in pkgutil.iter_modules(_routers_pkg.__path__, _routers_pkg.__name__ + ".")]
     try:
-        registering: set[str] = set()
-        for name in module_names:
-            before = len(app._fast_mcp.paths)
-            sys.modules.pop(name, None)
-            importlib.import_module(name)
-            if len(app._fast_mcp.paths) > before:
-                registering.add(name)
-        return registering
+        # The recording app is bound only for the probe, so the prior binding is back
+        # as soon as it ends.
+        with tai42_app.bound(app):
+            registering: set[str] = set()
+            for name in module_names:
+                before = len(app._fast_mcp.paths)
+                sys.modules.pop(name, None)
+                importlib.import_module(name)
+                if len(app._fast_mcp.paths) > before:
+                    registering.add(name)
+            return registering
     finally:
-        # Restore the prior binding and drop the recording-bound router modules so
-        # the next consumer re-imports them fresh against whatever is then bound
-        # (the same pop+reimport the loader does on every boot).
-        tai42_app.bind(saved_impl)
+        # Drop the recording-bound router modules so the next consumer re-imports them
+        # fresh, as the loader does on every boot.
         for name in module_names:
             sys.modules.pop(name, None)
 

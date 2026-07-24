@@ -37,20 +37,29 @@ class CallerIdentity:
     did rather than re-deriving an owned key's unattenuated policy scopes. ``None``
     means no attenuation decision was carried — the check then falls back to the
     caller's own policy scopes, which for a non-owned key ARE the effective scopes.
-    An authenticated request always carries it (the guard binds it with the id).
+    An authenticated request always carries it (the guard binds it with the id); a
+    background fire carries NONE, so the check re-derives that fire's attenuation live
+    from the key's and the owner's current policies at every dispatch.
 
-    ``claims`` is the caller's verified token claims, carried from the same guard
-    binding, so the tool-edge check builds its jq context with the SAME
-    ``.identity.*`` the HTTP backend uses AND reads the owner reference (under
-    ``OWNER_USER_ID_CLAIM``) that drives the owner second-pass enforce. ``None``
-    means no caller was bound — the check then reads an empty identity, matching a
-    request that carried no claims.
+    ``claims`` on an authenticated request is the caller's verified token claims,
+    carried from the same guard binding, so the tool-edge check builds its jq context
+    with the SAME ``.identity.*`` the HTTP backend uses AND reads the owner reference
+    (under ``OWNER_USER_ID_CLAIM``) that drives the owner second-pass enforce. A
+    background fire presents no token and carries a SYNTHETIC claim set from the key's
+    stored ``policy_data`` — the owner reference alone, or ``{}`` when ownerless.
+    ``None`` means no caller was bound (read as an empty identity) or a gate-off fire.
+
+    ``execution_key_fingerprint`` is set ONLY on a fire's synthetic identity: the per-mint
+    key identity the firing record captured at bind, carried so a capability dispatch's
+    mid-turn liveness re-read asserts the SAME equality. NEVER a jq-context claim, so it
+    stays out of the ``.identity.*`` a condition sees. ``None`` otherwise.
     """
 
     user_id: str | None = None
     is_internal: bool = False
     effective_scopes: tuple[str, ...] | None = None
     claims: Mapping[str, Any] | None = None
+    execution_key_fingerprint: str | None = None
 
 
 # The platform-internal principal — always allowed.

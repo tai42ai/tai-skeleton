@@ -184,31 +184,30 @@ async def test_run_backend_beat_reaches_import_registered_backend(monkeypatch: p
     from tai42_skeleton.app import instance
 
     real_app = instance.build_app()
-    bound_before = object.__getattribute__(tai42_app, "_impl")
+    saved_backend = real_app._backend_holder._backend
+    real_app._backend_holder._backend = None
     # Model a fresh process: the handle is unbound until start() binds it, so an
     # import-before-bind registration raises instead of landing anywhere. The
     # plugin module is therefore NOT imported here — start() imports it, after
-    # the bind.
-    tai42_app.bind(None)
-    saved_backend = real_app._backend_holder._backend
-    real_app._backend_holder._backend = None
+    # the bind. The unbind is scoped, so whatever this process had bound is back
+    # when the test ends.
     try:
-        monkeypatch.setattr(
-            real_app.config.config_manager,
-            "read_manifest",
-            lambda: {"backend_module": "tests._fakes.beat_backend"},
-        )
+        with tai42_app.bound(None):
+            monkeypatch.setattr(
+                real_app.config.config_manager,
+                "read_manifest",
+                lambda: {"backend_module": "tests._fakes.beat_backend"},
+            )
 
-        await backend.run_backend(["beat"])
+            await backend.run_backend(["beat"])
 
-        # start() freshly (re)imported the module inside app_context, so its
-        # import-time registration landed and launch received the args.
-        plugin = sys.modules["tests._fakes.beat_backend"]
-        assert plugin.LaunchRecordingBackend.launched == [["beat"]]
-        plugin.LaunchRecordingBackend.launched.clear()
+            # start() freshly (re)imported the module inside app_context, so its
+            # import-time registration landed and launch received the args.
+            plugin = sys.modules["tests._fakes.beat_backend"]
+            assert plugin.LaunchRecordingBackend.launched == [["beat"]]
+            plugin.LaunchRecordingBackend.launched.clear()
     finally:
         real_app._backend_holder._backend = saved_backend
-        tai42_app.bind(bound_before)
 
 
 def test_main_sets_manifest_env_and_runs_loop(monkeypatch: pytest.MonkeyPatch) -> None:

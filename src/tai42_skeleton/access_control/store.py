@@ -40,6 +40,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from tai42_contract.access_control import KEY_FINGERPRINT_CLAIM
 from tai42_kit.clients import client_ctx
 from tai42_kit.clients.impl.postgres import Json, PostgresClient
 
@@ -453,7 +454,17 @@ class PostgresAccessControlStore:
                 if "scopes" in updates:
                     body["scopes"] = updates["scopes"]
                 if "policy_data" in updates:
-                    body["policy_data"] = updates["policy_data"] or {}
+                    new_policy_data = dict(updates["policy_data"] or {})
+                    # The per-mint key fingerprint is server-owned and immutable, and an
+                    # edit rewrites policy_data wholesale: drop any incoming value and
+                    # carry the stored one forward, so a client can never write the anchor
+                    # and a hook bound to an edited (not reminted) key keeps resolving. A
+                    # row that was never minted has no fingerprint and stays without one.
+                    new_policy_data.pop(KEY_FINGERPRINT_CLAIM, None)
+                    stored_fingerprint = body["policy_data"].get(KEY_FINGERPRINT_CLAIM)
+                    if stored_fingerprint is not None:
+                        new_policy_data[KEY_FINGERPRINT_CLAIM] = stored_fingerprint
+                    body["policy_data"] = new_policy_data
                 if "condition" in updates:
                     body["condition"] = updates["condition"]
                 if "condition_id" in updates:
@@ -470,10 +481,16 @@ class PostgresAccessControlStore:
         rather than resurrecting a revoked key). Unlike ``update_policy_fields`` the
         restored scopes are NOT re-validated against live routes: a historical body
         must restore verbatim even if a scope's route was removed afterwards (such a
-        scope is inert at enforcement). Committed in one transaction."""
+        scope is inert at enforcement).
+
+        The per-mint key fingerprint is the ONE field a rollback does NOT restore: it is
+        the live key's identity, not policy content. The live-stored value is forced onto
+        the restored ``policy_data``, since restoring a historical body's old fingerprint
+        verbatim would revive a hook bound to a revoked key. A never-minted row has none
+        to preserve. Committed in one transaction."""
         resolved = {
             "scopes": list(body.get("scopes") or []),
-            "policy_data": body.get("policy_data") or {},
+            "policy_data": dict(body.get("policy_data") or {}),
             "condition": body.get("condition"),
             "condition_id": body.get("condition_id"),
             "condition_kwargs": body.get("condition_kwargs"),
@@ -484,11 +501,17 @@ class PostgresAccessControlStore:
         ):
             async with conn.transaction(), conn.cursor() as cur:
                 await cur.execute(
-                    "SELECT 1 FROM access_control_policies WHERE user_id = %s FOR UPDATE",
+                    f"SELECT {_POLICY_COLUMNS} FROM access_control_policies WHERE user_id = %s FOR UPDATE",
                     (user_id,),
                 )
-                if await cur.fetchone() is None:
+                row = await cur.fetchone()
+                if row is None:
                     return None
+                stored_fingerprint = _policy_body(row)["policy_data"].get(KEY_FINGERPRINT_CLAIM)
+                if stored_fingerprint is not None:
+                    resolved["policy_data"][KEY_FINGERPRINT_CLAIM] = stored_fingerprint
+                else:
+                    resolved["policy_data"].pop(KEY_FINGERPRINT_CLAIM, None)
                 await self._write_policy_body(cur, user_id, resolved)
             return resolved
 

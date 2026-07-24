@@ -97,6 +97,10 @@ def edit_key(
     Only the flags you pass are written; omitted fields are preserved. Pass an
     empty value to clear an optional condition gate.
 
+    De-scoping this key (or its owner) also NARROWS what every hook and trigger link
+    bound to it as its ``execution_key`` may call at its next fire — see ``tai hooks
+    list`` for which records bind it.
+
     Example: ``tai keys edit alice --scope read --scope write``
     """
     ctx_obj = app_context(ctx)
@@ -124,6 +128,10 @@ def edit_key(
 @covers(("DELETE", "/api/auth/api-keys/{user_id}"))
 def delete_key(ctx: typer.Context, user: Annotated[str, typer.Argument(help="The key's user id.")]) -> None:
     """Revoke a key (immediate: the next request fails to auth).
+
+    Revoking also STOPS every hook and trigger link bound to this key as its
+    ``execution_key`` — their next fire is refused. Run ``tai hooks list`` and
+    ``tai hooks trigger-links`` first to see which records bind it.
 
     Example: ``tai keys delete alice``
     """

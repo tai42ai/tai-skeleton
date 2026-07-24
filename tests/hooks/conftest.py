@@ -5,18 +5,33 @@
 the two atomic register/unregister ``eval`` scripts; and the STRING operations the
 trigger-link store calls (``set`` with ``ex=``, ``get``, ``delete``, ``exists``,
 ``mget``, paging ``scan``) with an INJECTABLE CLOCK so ``ex=`` expiry is simulated
-deterministically, plus the three atomic trigger create/revoke/restore ``eval``
-scripts. ``bound_app`` binds a fake ``tai42_app`` impl exposing the template
+deterministically, plus the four atomic trigger create/revoke/restore/tombstone
+``eval`` scripts. ``bound_app`` binds a fake ``tai42_app`` impl exposing the template
 manager + tool runner the firing path reaches.
+
+``execution_gate_off`` short-circuits the execution-key machinery, so these oracles
+read hook/link behavior rather than a policy store.
 """
 
 from __future__ import annotations
 
 import fnmatch
-from contextlib import asynccontextmanager
+import json
+from contextlib import ExitStack, asynccontextmanager
 from typing import Any
 
 import pytest
+
+from tai42_skeleton.access_control.settings import AccessControlSettings
+from tai42_skeleton.authz import execution as execution_module
+
+
+@pytest.fixture(autouse=True)
+def execution_gate_off(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Access control OFF, so the fire's identity bind and the restore's evaluability
+    assertion short-circuit and these oracles stay on hook/link behavior. A test needing
+    the gate ON re-patches the same seam."""
+    monkeypatch.setattr(execution_module, "access_control_settings", lambda: AccessControlSettings(enable=False))
 
 
 class _FakePipeline:
@@ -206,6 +221,20 @@ class FakeRedis:
                 return "updated"
             _write_pair()
             return "created"
+        if "trigger:tombstone:atomic" in script:
+            tomb_key, rec_prefix, name_prefix, token_hash = keys_and_args
+            self._set_str(tomb_key, "1")
+            rec_key = f"{rec_prefix}{token_hash}"
+            record = self._get_str(rec_key)
+            if not record:
+                return 0
+            self._del(rec_key)
+            name = json.loads(record).get("name")
+            if name:
+                name_key = f"{name_prefix}{name}"
+                if self._get_str(name_key) == token_hash:
+                    self._del(name_key)
+            return 1
         raise NotImplementedError("FakeRedis.eval only emulates the register/unregister/trigger scripts")
 
     def pipeline(self) -> _FakePipeline:
@@ -271,18 +300,15 @@ class _FakeApp:
 
 @pytest.fixture
 def make_app():
-    """Factory binding a fake ``tai42_app`` impl; unbinds after the test."""
+    """Factory binding a fake ``tai42_app`` impl for the test. Each binding is SCOPED,
+    so teardown restores what another suite had bound rather than unbinding outright."""
     from tai42_contract.app import tai42_app
 
-    created: list = []
+    with ExitStack() as stack:
 
-    def _make(*, by_id: dict | None = None, raise_tools: set[str] | None = None) -> _FakeApp:
-        app = _FakeApp(by_id=by_id, raise_tools=raise_tools)
-        tai42_app.bind(app)
-        created.append(app)
-        return app
+        def _make(*, by_id: dict | None = None, raise_tools: set[str] | None = None) -> _FakeApp:
+            app = _FakeApp(by_id=by_id, raise_tools=raise_tools)
+            stack.enter_context(tai42_app.bound(app))
+            return app
 
-    try:
         yield _make
-    finally:
-        tai42_app.bind(None)

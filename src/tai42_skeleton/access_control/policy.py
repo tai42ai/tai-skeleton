@@ -22,7 +22,18 @@ class PolicyEvaluationError(Exception):
     infrastructure fault PROPAGATE loudly instead of silently swallowing it as a
     deny — a vanished route in an otherwise-200 projection. The runtime gate
     (``backend``/``authz``) catches broad ``Exception`` and so still fails closed on
-    it exactly as before."""
+    it."""
+
+
+def policy_is_empty(policy: AccessPolicy) -> bool:
+    """Whether ``policy`` grants nothing at all — no scope and no condition.
+
+    The ONE spelling of "this principal has no policy": an unknown or deleted key reads
+    back as exactly this, so every layer that must refuse such a principal (the tokenless
+    identity build, the tool edge's live re-read, the execution-key bind door, the HTTP
+    backend's owner check) asks the same question and can never disagree about which
+    keys exist."""
+    return not policy.scopes and policy.condition is None and policy.condition_id is None
 
 
 class PolicyEnforcer:
@@ -45,7 +56,21 @@ class PolicyEnforcer:
         bumps that version, so the stale per-worker cache entry is bypassed on the
         next read without waiting out the ttl.
         """
-        version = await self._current_policy_version()
+        return await self.get_policy_at(user_id, await self._current_policy_version())
+
+    async def get_policy_at(self, user_id: str, version: int) -> AccessPolicy:
+        """Fetch policy for a specific user at an ALREADY-READ ``version`` — the form
+        :meth:`get_policy` is built on, for a decision that reads several policies (a
+        key's and its owner's) and then keys a further pass on the same version.
+
+        ``version`` is a CACHE key, not a store coordinate: the fetch always reads the
+        row as it stands, and a bumped version simply lands on a fresh slot. Threading
+        one version through a whole decision therefore buys two things — one version
+        round trip instead of several, and every cache that version keys (the policy
+        cache here, the role-grant cache) answering from the same generation, so no layer
+        of the decision serves a pre-bump cached copy while another serves a post-bump
+        one. The underlying reads stay independent and live, which is what a fire needs.
+        """
         return await self._fetch_policy(user_id, version)
 
     async def current_policy_version(self) -> int:

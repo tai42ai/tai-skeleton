@@ -331,11 +331,19 @@ def test_hooks_create_trigger_link_timed_composes_absolute_url(monkeypatch: pyte
     def handler(request: httpx.Request) -> httpx.Response:
         assert request.method == "POST"
         assert request.url.path == "/api/hooks/trigger-links"
-        assert json.loads(request.content) == {"topic": "orders", "ttl_seconds": 3600}
+        assert json.loads(request.content) == {
+            "topic": "orders",
+            "execution_key": "svc-orders",
+            "ttl_seconds": 3600,
+            "require_api_key": False,
+        }
         return data_response(_trigger_link_reply())
 
     result = run_cli(
-        monkeypatch, handler, ["hooks", "create-trigger-link", "orders", "--ttl", "3600"], json_output=True
+        monkeypatch,
+        handler,
+        ["hooks", "create-trigger-link", "orders", "--execution-key", "svc-orders", "--ttl", "3600"],
+        json_output=True,
     )
     assert result.exit_code == 0, result.output
     assert json.loads(result.output)["url"] == "http://testserver/trigger/SECRET"
@@ -343,10 +351,17 @@ def test_hooks_create_trigger_link_timed_composes_absolute_url(monkeypatch: pyte
 
 def test_hooks_create_trigger_link_permanent_null_ttl(monkeypatch: pytest.MonkeyPatch) -> None:
     def handler(request: httpx.Request) -> httpx.Response:
-        assert json.loads(request.content) == {"topic": "orders", "ttl_seconds": None}
+        assert json.loads(request.content) == {
+            "topic": "orders",
+            "execution_key": "svc-orders",
+            "ttl_seconds": None,
+            "require_api_key": False,
+        }
         return data_response(_trigger_link_reply())
 
-    result = run_cli(monkeypatch, handler, ["hooks", "create-trigger-link", "orders", "--permanent"])
+    result = run_cli(
+        monkeypatch, handler, ["hooks", "create-trigger-link", "orders", "--execution-key", "svc-orders", "--permanent"]
+    )
     assert result.exit_code == 0, result.output
 
 
@@ -355,6 +370,8 @@ def test_hooks_create_trigger_link_params_land_in_body(monkeypatch: pytest.Monke
         body = json.loads(request.content)
         assert body["tool_kwargs"] == {"flow_graph_kwargs": {"x": 1}}
         assert body["name"] == "mylink"
+        assert body["execution_key"] == "svc-orders"
+        assert body["require_api_key"] is True
         return data_response(_trigger_link_reply())
 
     result = run_cli(
@@ -364,7 +381,10 @@ def test_hooks_create_trigger_link_params_land_in_body(monkeypatch: pytest.Monke
             "hooks",
             "create-trigger-link",
             "orders",
+            "--execution-key",
+            "svc-orders",
             "--permanent",
+            "--require-api-key",
             "--name",
             "mylink",
             "--params",
@@ -378,7 +398,7 @@ def test_hooks_create_trigger_link_requires_neither_flag_fails(monkeypatch: pyte
     def handler(request: httpx.Request) -> httpx.Response:  # pragma: no cover - never reached
         return data_response(_trigger_link_reply())
 
-    result = run_cli(monkeypatch, handler, ["hooks", "create-trigger-link", "orders"])
+    result = run_cli(monkeypatch, handler, ["hooks", "create-trigger-link", "orders", "--execution-key", "svc-orders"])
     # Neither flag → a loud usage error (no silent default), never a request.
     assert result.exit_code != 0
 
@@ -387,7 +407,11 @@ def test_hooks_create_trigger_link_both_flags_fails(monkeypatch: pytest.MonkeyPa
     def handler(request: httpx.Request) -> httpx.Response:  # pragma: no cover - never reached
         return data_response(_trigger_link_reply())
 
-    result = run_cli(monkeypatch, handler, ["hooks", "create-trigger-link", "orders", "--ttl", "60", "--permanent"])
+    result = run_cli(
+        monkeypatch,
+        handler,
+        ["hooks", "create-trigger-link", "orders", "--execution-key", "svc-orders", "--ttl", "60", "--permanent"],
+    )
     # Both flags → a loud usage error, never a request.
     assert result.exit_code != 0
 
@@ -399,7 +423,16 @@ def test_hooks_create_trigger_link_trailing_slash_base_no_double_slash(monkeypat
     result = run_cli(
         monkeypatch,
         handler,
-        ["--server", "http://testserver/", "hooks", "create-trigger-link", "orders", "--permanent"],
+        [
+            "--server",
+            "http://testserver/",
+            "hooks",
+            "create-trigger-link",
+            "orders",
+            "--execution-key",
+            "svc-orders",
+            "--permanent",
+        ],
         json_output=True,
     )
     assert result.exit_code == 0, result.output

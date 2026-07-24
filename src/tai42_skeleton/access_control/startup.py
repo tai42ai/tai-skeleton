@@ -226,18 +226,22 @@ async def check_route_actions() -> None:
 
 
 async def check_fenced_routes_resolvable() -> None:
-    """Boot-fail if a registered fenced/secret route does not resolve back to itself.
+    """Fail the boot — and every in-place reload — if a registered fenced/secret route
+    does not resolve back to itself.
 
     The admin-only fence is enforced ONLY where ``resolve_route_meta`` returns the route:
     a genuinely-unregistered path resolves to ``None`` and the per-tag gate correctly
     does not act on it, but a REGISTERED fenced/secret route that fails to resolve would
     be a SILENT fail-open — the fence would never fire. This check closes that by
     construction: every ``fenced``/``secret`` route must resolve via
-    ``resolve_route_meta(path, method)`` to ITSELF for each of its methods, or the boot
-    refuses to start. Runs after the routers register so the whole surface is audited.
+    ``resolve_route_meta(path, method)`` to ITSELF for each of its methods, or the run
+    refuses to proceed. Wired as both a startup and a reload handler, so a reload that
+    mounts a fenced route resolving elsewhere (or nowhere) fails the reload op loudly
+    rather than serving that route past its fence until a restart. Runs after the routers
+    register so the whole surface is audited.
 
     The resolver's route index is rebuilt first so it reflects the routes that just
-    registered — the boot then validates the live surface, and leaves the runtime index
+    registered — the audit then validates the live surface, and leaves the runtime index
     consistent with what it verified rather than trusting a possibly-stale earlier build.
 
     Enumerates through ``load_all_routes`` so the enumeration universe is imported before

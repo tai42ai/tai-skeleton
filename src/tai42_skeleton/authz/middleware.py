@@ -3,10 +3,13 @@
 ``AuthzMiddleware`` runs at tool DISPATCH — caller-side, before the tool's
 extension/transform chain (so before any backend enqueue) — on EVERY MCP-serving
 FastMCP instance (the main server and every sub-MCP mount). It resolves the
-dispatched tool name to its base operation and, for a projected operation, runs
-:func:`authz.check`. A denial raises a :class:`~fastmcp.exceptions.ToolError`
-backed by :class:`PermissionDenied`; a non-operation tool passes straight
-through (its authorization is a separate concern).
+dispatched tool name to the operation it runs — and to the arguments it runs with,
+a preset's baked kwargs included — and, for a projected operation, runs
+:func:`authz.check` against the REAL caller. A denial raises a
+:class:`~fastmcp.exceptions.ToolError` backed by :class:`PermissionDenied`; a
+non-operation tool passes straight through (its authorization is a separate concern).
+A dispatch the resolver cannot classify is refused with the retriable ``reloading``
+``ToolError`` rather than passed through.
 """
 
 from __future__ import annotations
@@ -18,7 +21,7 @@ from fastmcp.server.middleware import Middleware, MiddlewareContext
 
 from tai42_skeleton.authz.check import check
 from tai42_skeleton.authz.identity import resolve_caller_identity
-from tai42_skeleton.authz.resolver import resolve_base_operation
+from tai42_skeleton.authz.resolver import OperationSurfaceUnsettledError, resolve_dispatch
 from tai42_skeleton.operations.errors import PermissionDenied
 
 if TYPE_CHECKING:
@@ -40,15 +43,19 @@ class AuthzMiddleware(Middleware):
         name = context.message.name
         arguments = dict(context.message.arguments or {})
 
-        op = resolve_base_operation(
-            name,
-            tool_registry=getattr(self._app, "_tool_registry", None),
-            preset_manager=getattr(self._app, "preset_manager", None),
-        )
-        if op is not None:
+        try:
+            resolved = resolve_dispatch(
+                name,
+                arguments,
+                tool_registry=getattr(self._app, "_tool_registry", None),
+                preset_manager=getattr(self._app, "preset_manager", None),
+            )
+        except OperationSurfaceUnsettledError as exc:
+            raise ToolError(str(exc)) from exc
+        if resolved is not None:
             identity = resolve_caller_identity()
             try:
-                await check(identity, op, arguments)
+                await check(identity, resolved.operation, resolved.call_arguments)
             except PermissionDenied as exc:
                 raise ToolError(str(exc)) from exc
 

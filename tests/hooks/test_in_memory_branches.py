@@ -13,8 +13,12 @@ from tai42_skeleton.hooks.settings import HooksSettings
 
 async def test_unregister_one_of_two_keeps_topic_bucket():
     manager = InMemoryHooksManager(HooksSettings())
-    await manager.register(HookParams(name="a", topic="t", tool="x"))
-    await manager.register(HookParams(name="b", topic="t", tool="y"))
+    await manager.register(
+        HookParams(name="a", topic="t", tool="x", execution_key="k-fire", execution_key_fingerprint="fp-fire")
+    )
+    await manager.register(
+        HookParams(name="b", topic="t", tool="y", execution_key="k-fire", execution_key_fingerprint="fp-fire")
+    )
 
     assert await manager.unregister("a") is True
     # The topic bucket survives because "b" is still registered under it.
@@ -30,8 +34,16 @@ async def test_reregister_under_new_topic_moves_hook(make_app):
     # and unregister still works afterwards.
     app = make_app()
     manager = InMemoryHooksManager(HooksSettings())
-    await manager.register(HookParams(name="mv", topic="topic-a", tool="mv_tool"))
-    await manager.register(HookParams(name="mv", topic="topic-b", tool="mv_tool"))
+    await manager.register(
+        HookParams(
+            name="mv", topic="topic-a", tool="mv_tool", execution_key="k-fire", execution_key_fingerprint="fp-fire"
+        )
+    )
+    await manager.register(
+        HookParams(
+            name="mv", topic="topic-b", tool="mv_tool", execution_key="k-fire", execution_key_fingerprint="fp-fire"
+        )
+    )
 
     await manager.on_event("topic-a", {})
     assert app.tools.runs == []

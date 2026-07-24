@@ -570,10 +570,23 @@ class TaiMCPLifecycleMixin(ABC):
         # the router modules, which re-fire their module-level @operation
         # decorators; without this a reload would trip the duplicate-name guard.
         # Mirrors the agent/webhook/channel resets above.
-        operation_registry.clear()
+        #
+        # Clear AND replay must both run inside ``rebuilding()``: the serving loop keeps
+        # dispatching through this window, and the mark tells a reader that the registry's
+        # silence about a name is not yet an answer. It releases even on a failed reload.
+        with operation_registry.rebuilding():
+            operation_registry.clear()
 
-        self._initialize_registries()
-        self._initialize_components()
+            self._initialize_registries()
+            self._initialize_components()
+
+        # The route index must be dropped HERE, AFTER the reimport re-attached every
+        # route: a request served in the reload window can have rebuilt it against the
+        # previous surface. A stale index resolves an added route to None, which denies
+        # every caller at the tool edge and skips the route's fence at the request gate.
+        from tai42_skeleton.access_control.role_gate import reset_route_index
+
+        reset_route_index()
 
         logger.info("[tools]")
         for t in sorted(self._registry_names_sync()["tool"]):

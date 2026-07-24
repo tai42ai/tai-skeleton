@@ -5,8 +5,9 @@ Every mutation validates the grant map BEFORE persisting (fail-closed), guards t
 reserved permanent ``admin`` role (block-downgrade + block-delete), rejects deleting a
 role still assigned to any principal, bumps the policy version so the LIVE grant caches
 miss, and appends a who/before→after audit record. These routes live under ``/api/auth``
-(the control-plane gate admin-gates them); the op-level ``_require_admin`` is defense in
-depth and the gate-off authority.
+(the control-plane gate admin-gates them); the op-level ``require_admin`` is defense in
+depth. With access control off it, like every other rule, allows: there is no principal
+to classify and the surface is already reachable by anyone.
 """
 
 from __future__ import annotations
@@ -29,7 +30,7 @@ from tai42_skeleton.access_control.roles import (
     role_store,
 )
 from tai42_skeleton.access_control.store import access_control_store
-from tai42_skeleton.operations.api_keys import _require_admin, _resolve_caller
+from tai42_skeleton.operations._authority import require_admin, resolve_caller
 from tai42_skeleton.operations.decorator import operation
 from tai42_skeleton.operations.errors import BadRequestError, ConflictError, ForbiddenError, NotFoundError
 
@@ -117,8 +118,8 @@ def _resolved_create(name: str, description: str, base_tier: str, grants: Mappin
 async def create_role(name: str, description: str, base_tier: str, grants: dict[str, str]) -> dict[str, Any]:
     """Create an operator-authored role. Admin-only; validates the grant map + base tier
     before persist; 409 on a name collision. Bumps the policy version and audits."""
-    caller = await _resolve_caller()
-    _require_admin(caller)
+    caller = await resolve_caller()
+    require_admin(caller)
     role = _resolved_create(name, description, base_tier, grants)
     body = role.model_dump()
     # Atomic unit of work: the role create and its audit append commit together, so a
@@ -148,8 +149,8 @@ async def update_role(name: str, grants: dict[str, str] | None, description: str
     ``description`` preserves the stored value, so a description-only edit never wipes the
     grant map. Validates a supplied grant map before persist; LIVE — the edit changes every
     holder's reach on their next request via the policy-version bump. Audits."""
-    caller = await _resolve_caller()
-    _require_admin(caller)
+    caller = await resolve_caller()
+    require_admin(caller)
     if name == RESERVED_ADMIN_ROLE:
         raise ForbiddenError("the 'admin' role is reserved and permanent; it cannot be edited (block-downgrade)")
     if grants is not None:
@@ -191,8 +192,8 @@ async def delete_role(name: str) -> dict[str, Any]:
     """Delete a role. Admin-only; the reserved ``admin`` role is undeletable; a role still
     assigned to any principal (its LIVE pointer held by any policy) is rejected loudly so
     a holder can never be orphaned. Bumps the version and audits."""
-    caller = await _resolve_caller()
-    _require_admin(caller)
+    caller = await resolve_caller()
+    require_admin(caller)
     if name == RESERVED_ADMIN_ROLE:
         raise ForbiddenError("the 'admin' role is reserved and permanent; it cannot be deleted")
     # The assigned-role guard reads a DIFFERENT store (``access_control_store``) that cannot
@@ -226,8 +227,8 @@ async def delete_role(name: str) -> dict[str, Any]:
 async def list_role_versions(name: str) -> dict[str, Any]:
     """The role's append-only version history plus its who/when/before→after audit trail.
     Admin-only. A store-less deployment keeps no history, so the read is an empty pair."""
-    caller = await _resolve_caller()
-    _require_admin(caller)
+    caller = await resolve_caller()
+    require_admin(caller)
     from tai42_skeleton.versioning import versioned_store_configured
 
     if not versioned_store_configured():
@@ -252,8 +253,8 @@ async def rollback_role(name: str, version: int) -> dict[str, Any]:
     """Re-point a role's active version to a prior one (LIVE — holders follow on their
     next request). Admin-only; the reserved ``admin`` role has no editable history.
     Bumps the version and audits."""
-    caller = await _resolve_caller()
-    _require_admin(caller)
+    caller = await resolve_caller()
+    require_admin(caller)
     if name == RESERVED_ADMIN_ROLE:
         raise ForbiddenError("the 'admin' role is reserved and permanent; it has no editable history")
     # The locking read, the re-point, the target-version read, and the audit append all

@@ -7,7 +7,9 @@ own subsystem's export/import through a thin exporter/importer pair.
 * ``list_sections`` returns the registered sections as ``{name, secret}`` so the
   UI renders one checkbox per live section (plugins included).
 * ``import_backup`` imports each SELECTED section from a backup ``document`` and
-  collects a per-section report. A document whose ``version`` is not 1 is a loud
+  collects a per-section report. The selection is a SET: the sections are replayed in
+  REGISTRATION order (the declared dependency order), never in the order the caller
+  listed them. A document whose ``version`` is not 1 is a loud
   400; a selected section that is unknown (not registered) or absent from the
   document, or one whose importer fails, carries its error in the report and makes
   the overall result ``ok: false`` — none is a transport error, because the
@@ -57,6 +59,23 @@ def _registered_section_names() -> set[str]:
     return {info.name for info in tai42_app.backup.sections()}
 
 
+def _import_order(requested: list[str]) -> list[str]:
+    """``requested`` replayed in REGISTRATION order, with the names this host does not
+    register appended so each still gets its report.
+
+    The section list is a SET of names, not a sequence. Registration order is a declared
+    DEPENDENCY order: the webhooks importer decides each record against the LIVE policy
+    store AND against the LIVE template store — its execution-key scan renders each
+    bound key's policy condition, which a ``condition_id`` reads out of a template — so
+    both ``access_control`` and ``templates`` are registered before ``webhooks``.
+    Replaying in the caller's list order would let one document produce different stored
+    state and a different report depending only on how the name list was typed."""
+    registered = [info.name for info in tai42_app.backup.sections()]
+    selected = list(dict.fromkeys(requested))
+    known = set(registered)
+    return [name for name in registered if name in selected] + [name for name in selected if name not in known]
+
+
 @operation(summary="List backup sections", tags=["backup"])
 async def list_sections() -> list:
     return [{"name": info.name, "secret": info.secret} for info in tai42_app.backup.sections()]
@@ -85,7 +104,7 @@ async def import_backup(document: dict[str, Any], sections: list[str]) -> dict:
     registered = _registered_section_names()
     reports: dict[str, Any] = {}
     ok = True
-    for name in sections:
+    for name in _import_order(sections):
         if name not in registered:
             # A well-formed request naming a section this host does not register —
             # a section report error, not a transport failure.
@@ -103,10 +122,13 @@ async def import_backup(document: dict[str, Any], sections: list[str]) -> dict:
             continue
         try:
             report = await _maybe_await(tai42_app.backup.import_section(name, document_sections[name]))
-        except Exception as exc:  # a failed importer imports nothing for its section
-            # Still surfaced in the returned report; also logged so a genuine
-            # importer code bug is visible server-side, not just an absent
-            # subsystem indistinguishable from it.
+        except Exception as exc:
+            # An importer that raises is reported with zero counts plus its error
+            # message: importers write record by record with no cross-record
+            # transaction, so records a multi-phase importer committed before the
+            # raising one still stand while the counts here read zero — the failure
+            # itself is never lost. Logged too, so a genuine importer code bug is
+            # visible server-side, not just an absent subsystem indistinguishable from it.
             logger.warning("backup import of section %r failed: %s", name, exc, exc_info=True)
             reports[name] = {"created": 0, "updated": 0, "skipped": 0, "errors": [str(exc)]}
             ok = False

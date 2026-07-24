@@ -2,8 +2,13 @@
 topic.
 
 A trigger link resolves a raw token to a hook TOPIC (plus optional per-link
-``tool_kwargs``) and lets whoever holds the URL dispatch the topic's registered
-hooks — the QR-on-a-wall backend. Three STRING keys per link, all built ONLY by
+``tool_kwargs``, which fill only the arguments each fired hook's author left unpinned)
+and lets whoever holds the URL dispatch the topic's registered hooks — the
+QR-on-a-wall backend. Every link binds an ``execution_key`` gating its DISPATCH — a fire
+is refused once that key is deleted, disabled, emptied of policy, or its owner is —
+while each fired hook is authorized against its OWN bound key. A link also records
+whether the door demands an authenticated caller (``require_api_key``).
+Three STRING keys per link, all built ONLY by
 the :class:`HooksSettings` key helpers (the literal key strings live nowhere else):
 
 - a RECORD key (keyed by ``sha256(token)``) — the record JSON; the resolver's
@@ -34,17 +39,21 @@ import logging
 import math
 import re
 import secrets
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, ValidationError, field_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 from tai42_kit.clients import client_ctx
 from tai42_kit.clients.impl.redis import RedisClient
 from tai42_kit.utils.data.string_util import hash_api_key
 
+from tai42_skeleton.authz.execution import ExecutionKeyAuthorityError, ExecutionKeyScan
+from tai42_skeleton.authz.token_free import TokenFreeConditionError
 from tai42_skeleton.hooks.cache import get_hooks_manager
 from tai42_skeleton.hooks.managers.in_memory_hooks_manager import InMemoryHooksManager
 from tai42_skeleton.hooks.settings import HooksSettings
+from tai42_skeleton.hooks.trigger_auth import link_trigger_auth
 from tai42_skeleton.utils.redis_typing import awaited, eval_script
 
 logger = logging.getLogger(__name__)
@@ -164,6 +173,31 @@ write_pair()
 return 'created'
 """
 
+# One atomic tombstone import. KEYS[1]=tomb key. ARGV = rec_prefix, name_prefix,
+# token_hash. Writes the tombstone AND, atomically, kills any record still live under
+# that hash plus the name key indexing it (only while that name key still points at this
+# hash). Returns 1 when a live pair was killed, 0 otherwise.
+_TOMBSTONE_LUA = """
+-- trigger:tombstone:atomic
+local tomb_key = KEYS[1]
+local rec_prefix, name_prefix, token_hash = ARGV[1], ARGV[2], ARGV[3]
+redis.call('SET', tomb_key, '1')
+local rec_key = rec_prefix .. token_hash
+local record = redis.call('GET', rec_key)
+if not record then
+  return 0
+end
+redis.call('DEL', rec_key)
+local name = cjson.decode(record)['name']
+if name then
+  local name_key = name_prefix .. name
+  if redis.call('GET', name_key) == token_hash then
+    redis.call('DEL', name_key)
+  end
+end
+return 1
+"""
+
 
 class TriggerLinkError(Exception):
     """A typed trigger-link failure carrying the HTTP status the adapters map it to.
@@ -178,6 +212,21 @@ class TriggerLinkError(Exception):
         self.message = message
 
 
+@dataclass(frozen=True)
+class ResolvedTrigger:
+    """What a resolved trigger token dispatches.
+
+    ``execution_key`` gates the dispatch and must still carry ``execution_key_fingerprint``
+    (a revoke+remint fails this and denies the fire). ``tool_kwargs`` merges BELOW each
+    fired hook's own static ``tool_kwargs``."""
+
+    topic: str
+    execution_key: str
+    execution_key_fingerprint: str
+    require_api_key: bool
+    tool_kwargs: dict[str, Any] | None
+
+
 class _TriggerRecord(BaseModel):
     """The stored record body, validated on restore so a malformed backup never
     revives a live URL that 500s at every fire."""
@@ -186,6 +235,12 @@ class _TriggerRecord(BaseModel):
 
     name: str
     topic: str
+    # Required: an imported record carrying no gate key is refused, not revived unkillable.
+    execution_key: str = Field(min_length=1)
+    # Required: the bound key's per-mint anchor; a revoked+reminted key fails the restore.
+    execution_key_fingerprint: str = Field(min_length=1)
+    # Required: absence is corruption, not a token-only link (no writer omits it).
+    require_api_key: bool
     tool_kwargs: dict[str, Any] | None = None
     created_by: str | None = None
     created_at: str
@@ -247,17 +302,32 @@ async def create_trigger_link(
     name: str | None,
     ttl_seconds: int | None,
     tool_kwargs: dict[str, Any] | None,
+    execution_key: str,
+    execution_key_fingerprint: str,
+    require_api_key: bool,
     created_by: str | None,
 ) -> dict:
     """Mint a trigger link for ``topic`` and return its carrier.
 
-    ``ttl_seconds`` is the creator's explicit choice (``null`` permanent, positive
-    timed); a verifier-bound topic is refused; ``tool_kwargs`` is stored
-    verbatim and merged last at each fire. Returns
-    ``{"name", "trigger_path", "token", "topic", "expires_at"}`` — the ONLY place
-    the raw token ever appears."""
+    ``ttl_seconds`` is the creator's explicit choice (``null`` permanent, positive timed);
+    a verifier-bound topic is refused; ``tool_kwargs`` is stored verbatim and merges at
+    each fire BELOW every fired hook's own static ``tool_kwargs``; ``execution_key`` gates
+    every fire (the caller's authority to delegate it, and the server-side derivation of
+    ``execution_key_fingerprint``, are settled at the operation door before this write);
+    ``require_api_key`` is the door's own authentication requirement. Returns
+    ``{"name", "trigger_path", "token", "topic", "expires_at"}`` — the ONLY place the raw
+    token ever appears.
+
+    Empty ``topic``/``execution_key`` are refused HERE, the one point every minting edge
+    passes through, so a minted record can never be one the restore path would reject."""
     manager = _redis_manager()
     settings: HooksSettings = manager.settings
+
+    if not topic:
+        raise TriggerLinkError(400, "topic must be a non-empty string")
+
+    if not execution_key:
+        raise TriggerLinkError(400, "execution_key must be a non-empty string")
 
     ttl = _validate_ttl(ttl_seconds)
 
@@ -286,6 +356,9 @@ async def create_trigger_link(
                 {
                     "name": link_name,
                     "topic": topic,
+                    "execution_key": execution_key,
+                    "execution_key_fingerprint": execution_key_fingerprint,
+                    "require_api_key": require_api_key,
                     "tool_kwargs": tool_kwargs,
                     "created_by": created_by,
                     "created_at": now.isoformat(),
@@ -330,13 +403,16 @@ def _default_name() -> str:
 
 async def list_trigger_links() -> dict:
     """Every live trigger link's record plus its hash PREFIX (never a raw token,
-    none is stored). A name key whose record is absent is a PERMANENT orphan (a
-    corrupt hand-edited backup) — logged at WARNING and skipped, not left invisibly
-    409-squatting its name; a name key whose value is nil (expired between SCAN and
-    MGET) is a pure TTL race, skipped silently."""
+    none is stored) and its DERIVED ``trigger_auth`` — how the door authenticates its
+    caller, derived from the record AND the topic verifier bindings as they stand NOW, so
+    a topic that gained a verifier after the mint reads ``out-of-service``, not open.
+    A name key whose record is absent is a PERMANENT orphan (a corrupt backup) — logged at
+    WARNING and skipped, not left invisibly 409-squatting its name; a name key whose
+    value is nil (expired between SCAN and MGET) is a pure TTL race, skipped silently."""
     manager = _redis_manager()
     settings: HooksSettings = manager.settings
     prefix = settings.trigger_name_key_prefix
+    verifiers = await manager.all_topic_verifiers()
 
     items: list[dict] = []
     async with client_ctx(RedisClient, settings.redis) as r:
@@ -355,7 +431,21 @@ async def list_trigger_links() -> dict:
                 logger.warning("hooks: trigger link name %r has no record (permanent orphan); skipping", name)
                 continue
             record = json.loads(_as_str(record_raw))
+            try:
+                require_api_key = record["require_api_key"]
+                topic = record["topic"]
+            except KeyError as exc:
+                # Corrupt body: skipped like a permanent orphan, so one bad record cannot
+                # hide the healthy links the operator needs in order to revoke it.
+                logger.warning(
+                    "hooks: trigger link name %r is missing required field %s (corrupt record); skipping", name, exc
+                )
+                continue
             record["token_hash_prefix"] = _as_str(token_hash)[:_LOG_HASH_PREFIX]
+            record["trigger_auth"] = link_trigger_auth(
+                require_api_key=require_api_key,
+                verifier_bound=topic in verifiers,
+            )
             items.append(record)
     return {"items": items, "total": len(items)}
 
@@ -380,13 +470,15 @@ async def revoke_trigger_link(name: str) -> None:
     logger.info("hooks: trigger link revoked name=%s hash=%s", name, _as_str(token_hash)[:_LOG_HASH_PREFIX])
 
 
-async def resolve_trigger_token(token: str) -> tuple[str, dict | None]:
-    """Resolve a raw token to ``(topic, tool_kwargs)`` for a fire — multi-use, NO
-    burn. ONE ``MGET`` of record + tombstone: a record miss OR a tombstone
+async def resolve_trigger_token(token: str) -> ResolvedTrigger:
+    """Resolve a raw token to the dispatch facts of its link for a fire — multi-use,
+    NO burn. ONE ``MGET`` of record + tombstone: a record miss OR a tombstone
     present ⇒ the uniform 404 (a tombstoned hash is dead at the door itself, not
-    only at backup import). A corrupt stored record raises (a 500, nothing
-    dispatched). The verifier binding is re-checked: a topic verified after the
-    link was minted answers the SAME 404 + a server log naming the cause."""
+    only at backup import). A corrupt stored record — one carrying no ``execution_key``
+    included — raises (a 500, nothing dispatched). The verifier binding is re-checked: a
+    topic verified after the link was minted answers the SAME 404 + a server log naming
+    the cause. ``require_api_key`` rides back for the door to decide — only it holds the
+    request."""
     manager = get_hooks_manager()
     if isinstance(manager, InMemoryHooksManager):
         # Trigger links cannot exist in-memory; the CRUD refuses them, so a resolve
@@ -419,7 +511,13 @@ async def resolve_trigger_token(token: str) -> tuple[str, dict | None]:
         raise TriggerLinkError(404, _UNKNOWN_OR_EXPIRED)
 
     logger.info("hooks: trigger resolve hit hash=%s outcome=accepted", hash_prefix)
-    return topic, record.get("tool_kwargs")
+    return ResolvedTrigger(
+        topic=topic,
+        execution_key=record["execution_key"],
+        execution_key_fingerprint=record["execution_key_fingerprint"],
+        require_api_key=record["require_api_key"],
+        tool_kwargs=record.get("tool_kwargs"),
+    )
 
 
 # -- Backup seams — the section module calls ONLY these -----------------
@@ -495,13 +593,18 @@ async def bound_hashes_by_name() -> dict[str, str]:
     return bindings
 
 
-async def restore_trigger_link(*, name: str, token_hash: str, record: dict) -> str:
-    """Restore one exported record atomically. Refuses malformed triples loudly
-    (name mismatch, pattern-violating name, non-hex hash, unparseable ``expires_at``,
-    a record body failing full model validation); refuses a tombstoned hash
-    (``skipped_tombstoned``) and a hash already live under a different name; skips an
-    already-expired record (``skipped_expired``). Returns one of
-    created / updated / skipped_tombstoned / skipped_expired."""
+async def restore_trigger_link(*, name: str, token_hash: str, record: dict, scan: ExecutionKeyScan) -> str:
+    """Restore one exported record atomically. Refuses malformed triples loudly (name
+    mismatch, pattern-violating name, non-hex hash, an ``expires_at`` that is unparseable
+    or naive, a body failing model validation, an execution key that is unusable, whose
+    live fingerprint no longer matches, or whose policy a tokenless fire cannot evaluate);
+    refuses a tombstoned hash (``skipped_tombstoned``) and a hash already live under a
+    different name; skips an already-expired record (``skipped_expired``). Returns one of
+    created / updated / skipped_tombstoned / skipped_expired.
+
+    Key usability and token-free evaluability are asserted here exactly as at the mint
+    door; the pass-role half is not — this route is admin-only fenced. ``scan`` batches
+    those reads so one execution key is read once across the whole restore."""
     manager = _redis_manager()
     settings: HooksSettings = manager.settings
 
@@ -524,6 +627,20 @@ async def restore_trigger_link(*, name: str, token_hash: str, record: dict) -> s
         return "skipped_expired"
     assert isinstance(ttl, int)
 
+    # Settle the tombstone BEFORE reading the key, so an unusable key on an already-revoked
+    # record stays a benign ``skipped_tombstoned`` instead of an import error. The check
+    # inside ``_RESTORE_LUA`` stays authoritative; tombstones are never removed, so this
+    # earlier read can only miss one, never invent one.
+    async with client_ctx(RedisClient, settings.redis) as r:
+        if await awaited(r.exists(settings.trigger_tomb_key(token_hash))):
+            return "skipped_tombstoned"
+
+    # Asserted before the write; a record that revives nothing never has its key read.
+    try:
+        await scan.assert_usable(model.execution_key, bound_fingerprint=model.execution_key_fingerprint)
+    except (ExecutionKeyAuthorityError, TokenFreeConditionError) as exc:
+        raise TriggerLinkError(400, str(exc)) from exc
+
     async with client_ctx(RedisClient, settings.redis) as r:
         result = await eval_script(
             r,
@@ -533,7 +650,9 @@ async def restore_trigger_link(*, name: str, token_hash: str, record: dict) -> s
             settings.trigger_record_key_prefix,
             settings.trigger_tomb_key_prefix,
             token_hash,
-            json.dumps(record),
+            # Store the VALIDATED body, so a field coerced under validation cannot be
+            # re-coerced differently at a read.
+            json.dumps(model.model_dump()),
             str(ttl),
         )
     outcome = _as_str(result)
@@ -545,7 +664,11 @@ async def restore_trigger_link(*, name: str, token_hash: str, record: dict) -> s
 async def restore_tombstone(token_hash: str) -> None:
     """Restore a tombstone marker (idempotent). Refuses loudly in-memory and on a
     non-hex hash — an imported tombstone is a permanent kill switch, never written
-    for garbage."""
+    for garbage.
+
+    The kill is ATOMIC with the marker: a link still live locally under that hash is
+    deleted with it, record and name index together — otherwise the pair keeps showing
+    up in listings and later backups while its door already answers the uniform 404."""
     manager = _redis_manager()
     settings: HooksSettings = manager.settings
     if not isinstance(token_hash, str):
@@ -553,7 +676,17 @@ async def restore_tombstone(token_hash: str) -> None:
     if not _HEX64.match(token_hash):
         raise TriggerLinkError(400, "token_hash must be a 64-character lowercase sha256 hexdigest")
     async with client_ctx(RedisClient, settings.redis) as r:
-        await awaited(r.set(settings.trigger_tomb_key(token_hash), "1"))
+        killed = await eval_script(
+            r,
+            _TOMBSTONE_LUA,
+            1,
+            settings.trigger_tomb_key(token_hash),
+            settings.trigger_record_key_prefix,
+            settings.trigger_name_key_prefix,
+            token_hash,
+        )
+    if killed:
+        logger.info("hooks: imported tombstone killed a live trigger link hash=%s", token_hash[:_LOG_HASH_PREFIX])
 
 
 # -- internals ----------------------------------------------------------------
@@ -570,14 +703,19 @@ _EXPIRED = _Expired()
 def _remaining_ttl(expires_at: str | None) -> int | _Expired:
     """The Lua ``ttl`` arg for a restore: 0 for a permanent link; ``_EXPIRED`` when
     nothing remains; else the whole seconds remaining, CEILed so a sub-second
-    remainder restores with EX 1 (never EX 0, a Redis error). An unparseable
-    ``expires_at`` is a loud, typed refusal."""
+    remainder restores with EX 1 (never EX 0, a Redis error).
+
+    An ``expires_at`` that is unparseable, or parseable but NAIVE, is a loud typed
+    refusal: the subtraction below would otherwise raise a bare ``TypeError`` that escapes
+    the caller's per-record ``TriggerLinkError`` handler and tears the section mid-write."""
     if expires_at is None:
         return 0
     try:
         deadline = datetime.fromisoformat(expires_at)
     except ValueError as exc:
         raise TriggerLinkError(400, f"record expires_at {expires_at!r} is not a parseable timestamp") from exc
+    if deadline.tzinfo is None or deadline.tzinfo.utcoffset(deadline) is None:
+        raise TriggerLinkError(400, f"record expires_at {expires_at!r} carries no timezone offset")
     remaining = (deadline - datetime.now(UTC)).total_seconds()
     if remaining <= 0:
         return _EXPIRED

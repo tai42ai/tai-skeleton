@@ -103,6 +103,27 @@ class _RenamingAgent(_FakeAgent):
         return data
 
 
+class _ConfigInput(BaseModel):
+    """Carries the LangGraph configs a run's ``thread_id``/``checkpoint_id`` ride in:
+    the plain one plus a voting agent's judge/voter pair."""
+
+    prompt: str = "hi"
+    langgraph_config: dict[str, Any] = {}
+    judge_langgraph_config: dict[str, Any] = {}
+    voter_langgraph_config: dict[str, Any] = {}
+
+
+class _ConfigAgent(_FakeAgent):
+    """Maps every config field straight through to a run kwarg, which is what the
+    bridge reservation guard scans."""
+
+    ToolInput = _ConfigInput
+
+    @classmethod
+    def from_tool_input(cls, validated: BaseModel) -> dict[str, Any]:
+        return {name: getattr(validated, name) for name in validated.model_fields_set}
+
+
 # -- request builders --------------------------------------------------------
 
 
@@ -403,3 +424,36 @@ async def test_run_from_tool_input_valueerror_400(one_agent):
     resp = await router.run_agent(_make_run_request("faker", b'{"prompt":"hi"}'))
     assert resp.status_code == 400
     assert "invalid agent input" in json.loads(bytes(resp.body))["error"]
+
+
+# -- run route: reserved bridge: thread namespace ----------------------------
+
+# Any caller config steering a run into the reserved ``bridge:`` thread namespace —
+# top-level or per judge/voter, on ``thread_id`` or ``checkpoint_id`` — is a loud 400.
+_RESERVED_CONFIGS = [
+    ("langgraph_config", "thread_id"),
+    ("langgraph_config", "checkpoint_id"),
+    ("judge_langgraph_config", "thread_id"),
+    ("voter_langgraph_config", "checkpoint_id"),
+]
+
+
+@pytest.mark.parametrize(("config_field", "key"), _RESERVED_CONFIGS)
+async def test_run_rejects_caller_supplied_bridge_namespace(one_agent, config_field, key):
+    one_agent(_ConfigAgent([MessageFinal(text="x")]))
+    body = json.dumps({"prompt": "hi", config_field: {"configurable": {key: "bridge:route:1.2.3.4"}}}).encode()
+    resp = await router.run_agent(_make_run_request("faker", body))
+    assert resp.status_code == 400
+    error = json.loads(bytes(resp.body))["error"]
+    assert key in error
+    assert "bridge:" in error
+
+
+async def test_run_allows_a_normal_thread_id(one_agent):
+    # A thread_id outside the reserved namespace is not the bridge's to protect — the
+    # run streams as usual.
+    one_agent(_ConfigAgent([MessageFinal(text="ok")]))
+    body = json.dumps({"prompt": "hi", "langgraph_config": {"configurable": {"thread_id": "user-42"}}}).encode()
+    resp = await router.run_agent(_make_run_request("faker", body))
+    frames = _data_frames(await _collect(resp))
+    assert frames[-1] == {"type": "stream.end"}

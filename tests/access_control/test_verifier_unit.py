@@ -70,6 +70,17 @@ class _MintProvider(ApiKeyIdentityProvider):
         return []
 
 
+@pytest.fixture(autouse=True)
+def _isolate_registered_reserved_memo():
+    """Drop the module-level SPA-shell reserved-set memo around each test: it outlives any
+    single verifier instance, so a warmed or faked surface would leak into the next test."""
+    verifier_module.reset_registered_reserved_paths()
+    try:
+        yield
+    finally:
+        verifier_module.reset_registered_reserved_paths()
+
+
 def _verifier(settings: AccessControlSettings | None = None, identity=None) -> AccessControlVerifier:
     return AccessControlVerifier(settings or AccessControlSettings(), providers=[_Provider(identity)])
 
@@ -541,6 +552,31 @@ async def test_spa_reserved_set_is_derived_not_static(monkeypatch):
     assert await v.resolve_resource_ids("/newpage", method="GET") == []
     # A genuinely unmapped, unregistered path still reaches the shell.
     assert await v.resolve_resource_ids("/otherpage", method="GET") == [settings.public_resource_id]
+
+
+async def test_reload_added_route_not_served_anonymously_after_reset(monkeypatch):
+    # The HTTP-edge verifier is built once and baked into the ASGI stack, so the same
+    # instance answers across a reload: its reserved set must not stay frozen on the
+    # pre-reload surface, or a reload-added route is served the anonymous SPA shell.
+    from types import SimpleNamespace
+
+    settings = AccessControlSettings()
+    _wire(monkeypatch, FakeAccessControlPg())
+    v = _verifier(settings)  # one persistent verifier across the reload
+
+    # Pre-reload surface: /status is NOT a registered route, so a GET reaches the shell.
+    monkeypatch.setattr(verifier_module, "load_all_routes", list)
+    assert await v.resolve_resource_ids("/status", method="GET") == [settings.public_resource_id]
+
+    # The reload re-imports a router that registers an authed GET /status.
+    monkeypatch.setattr(verifier_module, "load_all_routes", lambda: [SimpleNamespace(path="/status", methods=("GET",))])
+
+    # Until the reset drops it the memo is stale, so /status still gets the anonymous shell.
+    assert await v.resolve_resource_ids("/status", method="GET") == [settings.public_resource_id]
+
+    # After the reload's drop the same verifier derives /status into the reserved set.
+    verifier_module.reset_registered_reserved_paths()
+    assert await v.resolve_resource_ids("/status", method="GET") == []
 
 
 # -- H1 bypass corpus (MUST): one canonical form, segment-aware prefixes ------

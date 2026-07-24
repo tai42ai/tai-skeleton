@@ -1,10 +1,11 @@
 """The ``notify_user`` helper: with a named channel, one fire-and-forget send
-through that channel (the notification reaches its ``notify`` verbatim); with no
-channel, the message is recorded to the internal notifications sink. Every
-failure propagates loudly (``ChannelDeliveryError``, and the protocol's
-default-body ``NotImplementedError`` from a channel that cannot notify), and a
-blank message, an unknown channel name, or a blank recipient is rejected before
-any send.
+through that channel (the notification, recipient and all, reaches its ``notify``
+verbatim) that returns the medium-assigned outbound ids (an empty set for a channel
+that answers ``None``, and for the sink path); with
+no channel, the message is recorded to the internal notifications sink. Every failure
+propagates loudly (``ChannelDeliveryError``, and the protocol's default-body
+``NotImplementedError`` from a channel that cannot notify), and a blank message, an
+unknown channel name, or a blank recipient is rejected before any send.
 """
 
 from __future__ import annotations
@@ -21,13 +22,27 @@ from tai42_skeleton.channels.notify import notify_user
 
 
 class RecordingChannel:
-    """Records every notification handed to ``notify``."""
+    """Records every notification handed to ``notify``. Its ``notify`` returns
+    ``None`` — a channel not yet on the id-returning contract."""
 
     def __init__(self) -> None:
         self.notifications: list[ChannelNotification] = []
 
     async def notify(self, notification: ChannelNotification) -> None:
         self.notifications.append(notification)
+
+
+class IdReturningChannel:
+    """Records every notification and returns the medium-assigned outbound ids — a
+    channel on the id-returning ``notify`` contract."""
+
+    def __init__(self, ids: list[str]) -> None:
+        self.notifications: list[ChannelNotification] = []
+        self._ids = ids
+
+    async def notify(self, notification: ChannelNotification) -> list[str]:
+        self.notifications.append(notification)
+        return self._ids
 
 
 class FailingChannel:
@@ -74,6 +89,33 @@ async def test_notify_forwards_recipient_verbatim(register_channel):
     await notify_user("Ping", channel="fake", recipient="123456")
 
     assert channel.notifications == [ChannelNotification(message="Ping", recipient="123456")]
+
+
+async def test_notify_sends_from_the_channels_own_identity(register_channel):
+    # The helper builds a notification with no sender_identity, so the channel sends
+    # from its configured identity.
+    channel = register_channel("fake", RecordingChannel())
+
+    await notify_user("Ping", channel="fake", recipient="123")
+
+    assert channel.notifications == [ChannelNotification(message="Ping", recipient="123")]
+    assert channel.notifications[0].sender_identity is None
+
+
+async def test_notify_returns_channel_outbound_ids(register_channel):
+    # A channel on the id-returning contract: the helper surfaces the medium-assigned
+    # ids (one per split part) so a later delivery receipt can be correlated back.
+    register_channel("ids", IdReturningChannel(["m1", "m2"]))
+
+    assert await notify_user("split message", channel="ids") == ["m1", "m2"]
+
+
+async def test_notify_none_return_becomes_empty_id_list(register_channel):
+    # A channel whose ``notify`` returns ``None`` yields an EMPTY id set: an accepted
+    # send with no correlatable id, never an error.
+    register_channel("legacy", RecordingChannel())
+
+    assert await notify_user("hi", channel="legacy") == []
 
 
 # -- loud failures: every error propagates, nothing is swallowed -----------------
@@ -132,6 +174,12 @@ async def test_channel_none_stores_recipient(sink_redis):
 
     records = await notifications_sink.read_notifications()
     assert records[0]["recipient"] == "ops"
+
+
+async def test_channel_none_returns_empty_id_list(sink_redis):
+    # The internal-sink path records an in-app entry that has no medium-assigned id,
+    # so the helper returns an empty id set.
+    assert await notify_user("recorded") == []
 
 
 @pytest.mark.parametrize("bad_recipient", ["", "   "])

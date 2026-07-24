@@ -41,6 +41,7 @@ from typing import Any, cast
 import pytest
 from fastmcp.exceptions import ToolError
 from fastmcp.server.middleware import MiddlewareContext
+from tai42_contract.access_control import OWNER_USER_ID_CLAIM
 from tai42_contract.access_control.context import reset_request_user_id, set_request_user_id
 
 import tai42_skeleton.routers as _routers_pkg
@@ -49,8 +50,11 @@ from tai42_skeleton.access_control import store as store_module
 from tai42_skeleton.access_control import verifier as verifier_module
 from tai42_skeleton.access_control.request_scopes import (
     reset_request_effective_scopes,
+    reset_request_identity_claims,
     set_request_effective_scopes,
+    set_request_identity_claims,
 )
+from tai42_skeleton.access_control.role_gate import reset_route_index
 from tai42_skeleton.access_control.settings import AccessControlSettings
 from tai42_skeleton.app.instance import app
 from tai42_skeleton.authz.middleware import AuthzMiddleware
@@ -82,17 +86,20 @@ def _all_router_modules() -> list[str]:
 # Two routes carry the whole sweep: the plain/derivative ops all key on
 # ``/api/tools/remove`` (``remove_tool`` and every derivative over it), and the
 # included tier-2 op keys on ``/api/manifest/replace``. ``admin`` is the scope both
-# guard; ``alice`` holds it, ``bob`` holds nothing.
+# guard. Both routes are FENCED, so the per-tag level pass admits only the admin
+# discriminator: ``alice`` is an unowned condition-free ``"*"``, ``bob`` holds nothing.
 def _seed_ac(monkeypatch: pytest.MonkeyPatch) -> FakeAccessControlPg:
     pg = FakeAccessControlPg()
     redis = FakeRedis()
     pg.add_route("/api/tools/remove", "admin")
     pg.add_route("/api/manifest/replace", "admin")
-    pg.add_policy("alice", scopes=["admin"])
+    pg.add_policy("alice", scopes=["*"])
     pg.add_policy("bob", scopes=[])
     monkeypatch.setattr(store_module, "client_ctx", make_pg_ctx(pg))
     monkeypatch.setattr(verifier_module, "client_ctx", make_client_ctx(redis))
     monkeypatch.setattr(policy_module, "client_ctx", make_client_ctx(redis))
+    # The route index is process-global; rebuild it or an earlier boot's index un-fences a route.
+    reset_route_index()
     return pg
 
 
@@ -278,15 +285,15 @@ def test_d1_sweep_deny_with_insufficient_scope_over_every_modality(monkeypatch: 
 
 
 def test_d1_sweep_allow_with_sufficient_identity_over_every_modality(monkeypatch: pytest.MonkeyPatch):
-    """ALLOW parity: a caller whose scope covers the op's resource passes the check
-    on every modality and reaches ``call_next`` (the tool body would run)."""
+    """ALLOW parity: a caller the whole edge decision admits (the swept ops are fenced, so
+    that is the admin discriminator) reaches ``call_next`` on every modality."""
     _seed_ac(monkeypatch)
 
     async def run():
         async with app.app_context(_sweep_manifest()):
             await _register_preset()
             d = _main_dispatcher()
-            tok = set_request_user_id("alice")  # alice holds "admin"
+            tok = set_request_user_id("alice")  # alice is the admin discriminator
             try:
                 for name in _MAIN_MODALITIES:
                     await d.assert_allowed(name)
@@ -357,7 +364,7 @@ def test_d1_sweep_sub_mcp_mount_deny_and_allow(monkeypatch: pytest.MonkeyPatch):
             # Deny without identity — the SUB-app's middleware fires.
             await d.assert_denied(_A_PLAIN)
 
-            # Allow with a sufficient identity.
+            # Allow with an identity the whole edge decision admits.
             tok = set_request_user_id("alice")
             try:
                 await d.assert_allowed(_A_PLAIN)
@@ -376,21 +383,28 @@ def test_d1_owned_key_attenuation_holds_on_the_mcp_dispatch_edge(monkeypatch: py
     BELOW an op's requirement is denied at the tool edge even though its OWN policy
     scopes would allow it — MCP never out-permits HTTP.
 
+    On a FENCED op the fence keys on the CALLER, not the owner: an admin cannot delegate
+    fence access by minting a broad owned key. The two legs therefore deny for two distinct
+    reasons — insufficient scope, then the hard fence.
+
     (The full HTTP↔MCP owner-attenuation parity is pinned end-to-end through the
     real guard in ``tests/authz/test_check.py::test_owned_key_attenuation_parity_
     http_mcp``; this asserts the same attenuation is honored on the real
     ``AuthzMiddleware`` DISPATCH path for a projected op.)"""
     pg = _seed_ac(monkeypatch)
     # A delegated key whose OWN policy scopes include "admin", but whose
-    # owner-attenuated effective scopes do NOT.
-    pg.add_policy("delegated", scopes=["admin"])
+    # owner-attenuated effective scopes do NOT. Its owner is the admin discriminator, yet
+    # the swept ops are FENCED, so it never clears the fence.
+    pg.add_policy("delegated", scopes=["admin"], policy_data={OWNER_USER_ID_CLAIM: "alice"})
 
     async def run():
         async with app.app_context(_sweep_manifest()):
             d = _main_dispatcher()
+            # The guard binds id, effective scopes and verified claims as one set.
             tok_id = set_request_user_id("delegated")
+            tok_cl = set_request_identity_claims({OWNER_USER_ID_CLAIM: "alice"})
             # Attenuated below the requirement: the guard bound effective_scopes
-            # that EXCLUDE "admin" (owner ∩ key). The tool edge must deny.
+            # that EXCLUDE "admin" (owner ∩ key). The scope term denies first.
             tok_sc = set_request_effective_scopes(("read",))
             try:
                 with pytest.raises(ToolError) as excinfo:
@@ -401,12 +415,18 @@ def test_d1_owned_key_attenuation_holds_on_the_mcp_dispatch_edge(monkeypatch: py
             finally:
                 reset_request_effective_scopes(tok_sc)
 
-            # Attenuation that PERMITS the op: allowed on the same edge (parity).
+            # Scope-sufficient: the scope term passes, but an owned key is never the admin
+            # principal, so the hard fence denies.
             tok_sc = set_request_effective_scopes(("admin",))
             try:
-                await d.assert_allowed(_A_PLAIN)
+                with pytest.raises(ToolError) as excinfo:
+                    await d.dispatch(_A_PLAIN)
+                assert isinstance(excinfo.value.__cause__, PermissionDenied)
+                assert "is not permitted" in str(excinfo.value)
+                assert d.reached == 0
             finally:
                 reset_request_effective_scopes(tok_sc)
+                reset_request_identity_claims(tok_cl)
                 reset_request_user_id(tok_id)
 
     asyncio.run(run())

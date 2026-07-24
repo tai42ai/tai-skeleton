@@ -137,6 +137,7 @@ class RouteMetadata:
     reads_body: bool
     error_statuses: tuple[int, ...]
     success_status: int
+    additional_success_statuses: tuple[int, ...]
     success_media_types: dict[str, tuple[str, ...]]
     action: RouteAction
     destructive: bool = False
@@ -273,11 +274,13 @@ class RouteRegistry:
             reads_body = False
             error_statuses: tuple[int, ...] = ()
             success_status = 200
+            additional_success_statuses: tuple[int, ...] = ()
         else:
             reload_gated = declared.reload_gated
             reads_body = declared.reads_body
             error_statuses = declared.error_statuses
             success_status = declared.success_status
+            additional_success_statuses = declared.additional_success_statuses
         self._routes[path, method_key] = RouteMetadata(
             path=path,
             methods=method_key,
@@ -292,6 +295,7 @@ class RouteRegistry:
             reads_body=reads_body,
             error_statuses=error_statuses,
             success_status=success_status,
+            additional_success_statuses=additional_success_statuses,
             success_media_types=_success_media_types(source, method_key),
             action=resolved_action,
             destructive=destructive,
@@ -353,16 +357,6 @@ class _SpecApp:
         return None
 
 
-def _tai_app_bound() -> bool:
-    from tai42_contract.app import tai42_app
-
-    try:
-        tai42_app.http  # noqa: B018 — attribute access probes the bind state
-    except AttributeError:
-        return False
-    return True
-
-
 class _RouterUniverseSource(Protocol):
     """The one method the shared importer asks of the currently-bound app to choose its
     enumeration universe. The forwarding ``tai42_app`` handle is typed as the assembled
@@ -371,6 +365,18 @@ class _RouterUniverseSource(Protocol):
     effective router set) and the offline ``_SpecApp`` (answers ``None``) both satisfy it."""
 
     def effective_router_modules(self) -> list[str] | None: ...
+
+
+def _started_router_modules() -> list[str] | None:
+    """The EFFECTIVE router set of a started deployment, or ``None`` when none answers one
+    (unbound process, offline spec harness, partially-faked app). The probe must stay a
+    ``hasattr`` on the forwarding handle — a facet probe reads a partially-faked app as
+    unbound."""
+    from tai42_contract.app import tai42_app
+
+    if not hasattr(tai42_app, "effective_router_modules"):
+        return None
+    return cast("_RouterUniverseSource", tai42_app).effective_router_modules()
 
 
 def _import_all_router_modules() -> None:
@@ -392,27 +398,27 @@ def _ensure_routers_imported() -> None:
     manifest's EFFECTIVE router set, and THAT set is the universe: ``start()`` already
     imported those modules, so re-importing them is an idempotent no-op and no other
     router is pulled into the live route table. Offline — an unbound CLI/test process,
-    or a bound-but-unstarted spec harness (both answer ``None``) — the whole
+    or a process whose bound impl answers no router set — the whole
     ``tai42_skeleton.routers`` package is the universe, so an offline enumeration sees
-    every route with no server to boot. An unbound process is bound to the offline
-    ``_SpecApp`` first so ``tai42_app.http.custom_route`` resolves.
-    """
-    import importlib
+    every route with no server to boot.
 
+    A router module resolves ``tai42_app.http.custom_route`` at import, so the offline
+    import runs under the ``_SpecApp`` stand-in bound for that import ALONE — this
+    enumeration is a read and must leave the process's app binding as it found it.
+    """
     from tai42_contract.app import tai42_app
 
-    if _tai_app_bound():
-        effective = cast("_RouterUniverseSource", tai42_app).effective_router_modules()
-        if effective is not None:
-            # A STARTED deployment: its effective router set IS the universe.
-            # start() already imported these; re-import is an idempotent no-op.
-            for module in effective:
-                importlib.import_module(module)
-            return
-        # Bound but NOT started (a spec-harness bind): fall through to the package universe.
-    else:
-        tai42_app.bind(_SpecApp())
-    _import_all_router_modules()
+    effective = _started_router_modules()
+    if effective is not None:
+        # A STARTED deployment: its effective router set IS the universe.
+        # start() already imported these; re-import is an idempotent no-op.
+        import importlib
+
+        for module in effective:
+            importlib.import_module(module)
+        return
+    with tai42_app.bound(_SpecApp()):
+        _import_all_router_modules()
 
 
 def load_api_routes() -> list[RouteMetadata]:

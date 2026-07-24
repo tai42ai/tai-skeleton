@@ -139,6 +139,40 @@ class LockedAgent(Agent):
         yield MessageFinal(text=f"secret={kwargs.get('secret_config')}")
 
 
+class _ConfigInput(BaseModel):
+    """Carries the LangGraph configs a run's ``thread_id``/``checkpoint_id`` ride in:
+    the plain one plus a voting agent's judge/voter pair."""
+
+    user_message: str = ""
+    langgraph_config: dict[str, Any] = {}
+    judge_langgraph_config: dict[str, Any] = {}
+    voter_langgraph_config: dict[str, Any] = {}
+
+
+@tai42_app.agents.agent("config_agent")
+class ConfigAgent(Agent):
+    """Maps every config field straight through to a run kwarg, which is what the
+    bridge reservation guard scans."""
+
+    tool_name = "config_agent"
+    tool_description = "A fake agent whose run kwargs carry LangGraph configs."
+    ToolInput = _ConfigInput
+
+    def __init__(self) -> None:
+        self.received_kwargs: dict[str, Any] | None = None
+
+    @classmethod
+    def from_tool_input(cls, validated: BaseModel) -> dict[str, Any]:
+        return {name: getattr(validated, name) for name in validated.model_fields_set}
+
+    async def run(self, **kwargs: Any) -> Any:
+        return await self._drain(self.astream(**kwargs))
+
+    async def astream(self, **kwargs: Any) -> AsyncIterator[StreamEvent]:  # type: ignore[override]
+        self.received_kwargs = kwargs
+        yield MessageFinal(text="ran")
+
+
 @tai42_app.agents.agent("aliased_agent")
 class AliasedAgent(Agent):
     # Registered under ``aliased_agent`` but declaring a DIFFERENT ``tool_name`` —

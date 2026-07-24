@@ -391,7 +391,8 @@ list_roles = register_operation_route(
 # Role management is the access-control admin surface: each mutation is an admin-only
 # ``fenced`` route (no per-tag level opens it), and each version-history read is a
 # ``secret`` read (raw jq + audit). The action-class is the gate fence; the op-level
-# ``_require_admin`` is defense in depth and the gate-off authority.
+# ``require_admin`` is defense in depth behind it (with access control off there is no
+# principal to classify, so it allows exactly as the fence does).
 create_role = register_operation_route(
     tai42_app, operation_metadata_of(_create_role_op), path="/api/auth/roles", method="POST", action="fenced"
 )

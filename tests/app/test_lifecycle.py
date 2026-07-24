@@ -1141,7 +1141,7 @@ def test_started_none_boot_serves_only_the_curated_routers(monkeypatch):
     ``route_registry`` is legitimately polluted by other tests, and the singleton's served
     table accumulates across boots. ``marketplace``/``connectors`` are popped from
     ``sys.modules`` first, so the whole-package importer — if it ran — WOULD re-execute
-    their ``@custom_route`` decorators into this app's live table; the fix keeps them out."""
+    their ``@custom_route`` decorators into this app's live table; this test asserts that importer does not run."""
     import sys
 
     from tai42_skeleton.access_control.startup import (
@@ -1170,7 +1170,6 @@ def test_started_none_boot_serves_only_the_curated_routers(monkeypatch):
         instance.lifecycle.on_startup(audit)
 
     excluded = ("tai42_skeleton.routers.marketplace", "tai42_skeleton.routers.connectors")
-    saved_impl = object.__getattribute__(tai42_app, "_impl")
     saved_modules = {name: sys.modules.pop(name, None) for name in excluded}
 
     manifest = Manifest.model_validate(
@@ -1185,9 +1184,11 @@ def test_started_none_boot_serves_only_the_curated_routers(monkeypatch):
             return {getattr(route, "path", None) for route in instance._fast_mcp._additional_http_routes}
 
     try:
-        served = asyncio.run(run())
+        # ``app_context`` binds the instance under test; scoping that bind restores
+        # whatever this process had bound when the boot is over.
+        with tai42_app.bound(None):
+            served = asyncio.run(run())
     finally:
-        tai42_app.bind(saved_impl)
         for name, module in saved_modules.items():
             if module is not None:
                 sys.modules[name] = module
@@ -1223,10 +1224,42 @@ def test_load_all_routes_uses_the_effective_set_when_started_and_whole_package_o
     # Offline case: with no deployment bound, the whole-package importer MUST run.
     calls: list[int] = []
     monkeypatch.setattr(rr, "_import_all_router_modules", lambda: calls.append(1))
-    saved_impl = object.__getattribute__(tai42_app, "_impl")
-    tai42_app.bind(None)  # unbind: no started deployment answers effective_router_modules()
-    try:
+    # Unbound for the call: no started deployment answers effective_router_modules().
+    with tai42_app.bound(None):
         rr.load_all_routes()
-    finally:
-        tai42_app.bind(saved_impl)
     assert calls == [1]
+
+
+def test_load_all_routes_leaves_the_bound_app_exactly_as_it_found_it(monkeypatch):
+    """The enumeration is a READ: it must never replace the process's app binding.
+
+    A bound impl that answers no router universe — a partially-faked app, a harness
+    stand-in — takes the offline branch, whose router import runs under the ``_SpecApp``
+    stand-in for that import alone. Overwriting the binding instead would strand
+    whichever component owns the real one, and an unbound process must come back
+    unbound rather than silently acquiring a spec app.
+    """
+    from types import SimpleNamespace
+
+    from tai42_skeleton.app import route_registry as rr
+
+    imports: list[str] = []
+
+    def _record_universe_app() -> None:
+        # The offline import needs a stand-in exposing ``http``; record which impl is
+        # bound while it runs.
+        imports.append(type(tai42_app.http._app).__name__)  # pyright: ignore[reportAttributeAccessIssue]
+
+    monkeypatch.setattr(rr, "_import_all_router_modules", _record_universe_app)
+
+    partial = SimpleNamespace(storage="fake-storage")
+    with tai42_app.bound(partial):
+        rr.load_all_routes()
+        assert tai42_app.storage == "fake-storage"
+
+    with tai42_app.bound(None):
+        rr.load_all_routes()
+        with pytest.raises(AttributeError, match="accessed before bind"):
+            _ = tai42_app.storage
+
+    assert imports == ["_SpecApp", "_SpecApp"]

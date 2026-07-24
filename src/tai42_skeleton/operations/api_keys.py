@@ -32,14 +32,12 @@ authority changes even if the audit write then fails.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import Any
 
 from jinja2 import TemplateError
 from pydantic import BaseModel, Field, ValidationError
 from starlette.routing import Mount, Route
-from tai42_contract.access_control import OWNER_USER_ID_CLAIM, get_current_user_id
-from tai42_contract.access_control.models import AccessPolicy, JqAuthContext
+from tai42_contract.access_control.models import JqAuthContext
 from tai42_contract.app import tai42_app
 from tai42_contract.versioning.errors import DocumentNotFoundError, DocumentVersionNotFoundError
 from tai42_kit.utils.data import run_jq_first
@@ -48,13 +46,18 @@ from tai42_kit.utils.data.jq_util import get_compiled_jq
 from tai42_skeleton.access_control import management
 from tai42_skeleton.access_control.claim_links import ClaimLinkError
 from tai42_skeleton.access_control.claim_links import create_claim_link as _create_claim_link
-from tai42_skeleton.access_control.policy import PolicyEnforcer
 from tai42_skeleton.access_control.policy_store import ac_policy_store
 from tai42_skeleton.access_control.projection import ProjectionResult, build_projection, synthetic_full_projection
 from tai42_skeleton.access_control.roles import role_store
 from tai42_skeleton.access_control.settings import access_control_settings
-from tai42_skeleton.access_control.user import is_admin_policy
 from tai42_skeleton.operations import BadRequestError, ForbiddenError, NotFoundError, operation
+from tai42_skeleton.operations._authority import (
+    Caller,
+    owner_of,
+    require_admin,
+    require_owned_by_caller,
+    resolve_caller,
+)
 from tai42_skeleton.template import TemplateNotFoundError
 
 # -- Request models (spec metadata; the route extractors do the byte-stable parse) --
@@ -140,59 +143,10 @@ class PublicRouteUnpin(BaseModel):
     url: str
 
 
-# -- Caller resolution + ownership rules -------------------------------------
+# -- Ownership rules ---------------------------------------------------------
 
 
-@dataclass(frozen=True)
-class _Caller:
-    """The request caller resolved for the key-management ownership rules."""
-
-    caller_id: str | None
-    policy: AccessPolicy
-    is_admin: bool
-    owner_claim: str | None
-
-
-async def _resolve_caller() -> _Caller:
-    """Resolve the request caller and classify it for the ownership rules.
-
-    ``caller_owner_claim`` is read from the caller's OWN stored policy_data (the
-    management/listing dual-home), NOT from any request-scoped claim — no claims
-    contextvar exists (only ``user_id`` is bound). ``is_admin`` iff the caller holds a
-    condition-free ``"*"`` policy AND is not itself an owned key: role-holders carry
-    ``["*"]`` scopes plus a jq condition, so a scopes-only test would hand every
-    editor/viewer the admin path; a condition-bearing caller is never admin here; and
-    the owner-claim conjunct denies admin to an owned key (an editor-minted
-    condition-free ``["*"]`` key would otherwise read as admin from its raw stored
-    policy — a you-plus escalation).
-
-    With the gate OFF there is no principal to attenuate against and the surface
-    is already reachable by anyone, so the caller is treated as admin. With the gate ON
-    but the caller contextvar UNSET, that is an invariant breach (the guard middleware
-    populates it on every authed request): RAISE, surfaced as a 500, never a silent
-    admin escalation on this key-management surface."""
-    settings = access_control_settings()
-    if not settings.enable:
-        return _Caller(caller_id=None, policy=AccessPolicy(scopes=["*"]), is_admin=True, owner_claim=None)
-
-    caller_id = get_current_user_id()
-    if caller_id is None:
-        raise RuntimeError(
-            "access_control: caller user id is unset on an authed key-management request — "
-            "the guard middleware must bind it; refusing to proceed"
-        )
-
-    policy = await PolicyEnforcer(settings).get_policy(caller_id)
-    owner_claim = policy.policy_data.get(OWNER_USER_ID_CLAIM)
-    return _Caller(
-        caller_id=caller_id,
-        policy=policy,
-        is_admin=is_admin_policy(policy, owner_claim),
-        owner_claim=owner_claim,
-    )
-
-
-def _check_scope_subset(caller: _Caller, scopes: list[str]) -> None:
+def _check_scope_subset(caller: Caller, scopes: list[str]) -> None:
     """A non-admin caller may only grant scopes ⊆ its OWN current scopes (a ``"*"``
     caller may grant anything). Raises ``BadRequestError`` naming the offending scopes."""
     if "*" in caller.policy.scopes:
@@ -200,27 +154,6 @@ def _check_scope_subset(caller: _Caller, scopes: list[str]) -> None:
     excess = sorted(set(scopes) - set(caller.policy.scopes))
     if excess:
         raise BadRequestError(f"requested scopes exceed your own: {excess}")
-
-
-def _require_admin(caller: _Caller) -> None:
-    """The policy-administration surface (``/policy/versions`` + ``/policy/rollback``)
-    is admin-only: a non-admin editor/viewer must never list another user's policy
-    version history (a version body carries the raw jq condition) nor roll back an
-    enforced policy (which could re-point a policy to a prior, more-privileged version).
-    Raises ``ForbiddenError`` for a non-admin caller."""
-    if not caller.is_admin:
-        raise ForbiddenError("policy administration is restricted to administrators")
-
-
-async def _require_owned_by_caller(caller: _Caller, user_id: str) -> None:
-    """A non-admin caller may act only on a key whose stored management/listing owner
-    (``policy_data[OWNER_USER_ID_CLAIM]``) is the caller. Raises ``NotFoundError`` for an
-    unknown key and ``ForbiddenError`` for someone else's key."""
-    body = await management.get_policy_body(user_id)
-    if body is None:
-        raise NotFoundError(f"user not found: {user_id!r}")
-    if (body.get("policy_data") or {}).get(OWNER_USER_ID_CLAIM) != caller.caller_id:
-        raise ForbiddenError("you may only act on API keys you own")
 
 
 async def _record_policy_version(user_id: str, body: dict[str, Any]) -> None:
@@ -431,10 +364,10 @@ async def unpin_public_route(url: str) -> dict[str, str]:
 async def list_tokens_payload() -> list[dict[str, Any]]:
     """Every provisioned key's identity + policy (NEVER key material). Non-admin callers
     see ONLY the keys they own (management/listing owner home); admin sees every key."""
-    caller = await _resolve_caller()
+    caller = await resolve_caller()
     payload = await management.get_all_existing_tokens_payload()
     if not caller.is_admin:
-        payload = [p for p in payload if (p.get("policy_data") or {}).get(OWNER_USER_ID_CLAIM) == caller.caller_id]
+        payload = [p for p in payload if owner_of(p.get("policy_data")) == caller.caller_id]
     return payload
 
 
@@ -454,9 +387,11 @@ async def create_api_key(
     condition_id: str | None,
     condition_kwargs: dict[str, Any] | None,
     owner_user_id: str | None,
-) -> str:
-    """Provision a key; the raw ``sk-…`` is returned ONCE."""
-    caller = await _resolve_caller()
+) -> dict[str, Any]:
+    """Provision a key, returning ``{"api_key", "key_fingerprint"}``. The raw ``sk-…``
+    ``api_key`` is surfaced ONCE; ``key_fingerprint`` is the key's immutable per-mint
+    identity a caller binds a hook against so the binding survives only this exact mint."""
+    caller = await resolve_caller()
     # An owned key cannot mint keys — ownership is exactly one level deep.
     if caller.owner_claim is not None:
         raise ForbiddenError("an owned API key may not mint API keys")
@@ -469,7 +404,7 @@ async def create_api_key(
         _check_scope_subset(caller, scopes)
 
     try:
-        raw_key, committed_body = await management.add_user_api_key(
+        raw_key, committed_body, key_fingerprint = await management.add_user_api_key(
             user_id=user_id,
             description=description,
             scopes=scopes,
@@ -488,7 +423,7 @@ async def create_api_key(
     # bump nor the history is touched.
     await management.bump_policy_version()
     await _record_policy_version(user_id, committed_body)
-    return raw_key
+    return {"api_key": raw_key, "key_fingerprint": key_fingerprint}
 
 
 @operation(
@@ -505,7 +440,7 @@ async def edit_api_key(user_id: str, updates: dict[str, Any]) -> dict[str, Any]:
     ``policy_data`` gate. ``updates`` is the sparse set of present fields (a single dict
     rather than flattened params, so "field absent" stays distinct from "field is
     ``null``" — the partial-edit semantics a flat signature cannot express)."""
-    caller = await _resolve_caller()
+    caller = await resolve_caller()
     # Ownership + owner-claim immutability pre-checks, reading the stored body once when
     # any check needs it (a non-admin ownership gate, or a policy_data edit whose owner
     # claim must not change).
@@ -513,7 +448,7 @@ async def edit_api_key(user_id: str, updates: dict[str, Any]) -> dict[str, Any]:
         stored_body = await management.get_policy_body(user_id)
         if stored_body is None:
             raise NotFoundError(f"user not found: {user_id!r}")
-        stored_owner = (stored_body.get("policy_data") or {}).get(OWNER_USER_ID_CLAIM)
+        stored_owner = owner_of(stored_body.get("policy_data"))
         if not caller.is_admin:
             if stored_owner != caller.caller_id:
                 raise ForbiddenError("you may only edit API keys you own")
@@ -524,7 +459,7 @@ async def edit_api_key(user_id: str, updates: dict[str, Any]) -> dict[str, Any]:
             # echoes policy_data back verbatim), but a CHANGED, newly-introduced, or
             # absent/cleared owner claim is rejected — ownership never changes post-mint
             # (re-mint instead), and a silent strip would orphan the owner's visibility.
-            new_owner = (updates["policy_data"] or {}).get(OWNER_USER_ID_CLAIM)
+            new_owner = owner_of(updates["policy_data"])
             if new_owner != stored_owner:
                 raise ForbiddenError("the owner of an API key is immutable; re-mint to change ownership")
 
@@ -551,18 +486,22 @@ async def revoke_api_key(user_id: str) -> dict[str, Any]:
     """Revoke a key (immediate: next request fails to auth). Deletes the key record, its
     enforced policy row, and its live context; the user's ``ac_policy`` version history
     is deliberately NOT touched (it belongs to the identity, so a key later re-created
-    for the same ``user_id`` resumes that history)."""
-    caller = await _resolve_caller()
+    for the same ``user_id`` resumes that history).
+
+    No version bump here, unlike every other mutation on this surface: revocation's
+    cache-buster is atomic with the policy-row delete inside
+    :func:`~tai42_skeleton.access_control.management.revoke_api_key`, so no fault in the
+    steps behind it can leave the revoked key's authority live in a warm cache slot."""
+    caller = await resolve_caller()
     if not caller.is_admin:
         # A non-admin may revoke only a key it owns.
-        await _require_owned_by_caller(caller, user_id)
+        await require_owned_by_caller(caller, user_id)
     try:
         revoked = await management.revoke_api_key(user_id)
     except ValueError as exc:
         raise BadRequestError(str(exc)) from exc
     if not revoked:
         raise NotFoundError(f"user not found: {user_id!r}")
-    await management.bump_policy_version()
     return {"user_id": user_id, "revoked": True}
 
 
@@ -585,7 +524,7 @@ async def create_claim_link(api_key: str, ttl_seconds: int | None) -> dict[str, 
     from garbage. This adds NO capability the ``/api/auth/me`` carve-out does not already
     grant a caller holding a candidate key. The uniform-404 no-oracle rule governs the
     unauthenticated EXCHANGE surface, never this authed creation."""
-    caller = await _resolve_caller()
+    caller = await resolve_caller()
     try:
         return await _create_claim_link(
             api_key=api_key,
@@ -626,8 +565,8 @@ async def list_roles() -> list[dict[str, Any]]:
     Admin-only: a listing exposes every role's raw base-tier jq condition, so a non-admin
     caller is denied 403. This op-level check is defense in depth behind the ``secret``
     route action-class that already fences the route."""
-    caller = await _resolve_caller()
-    _require_admin(caller)
+    caller = await resolve_caller()
+    require_admin(caller)
     from tai42_skeleton.versioning import versioned_store_configured
 
     if not versioned_store_configured():
@@ -751,8 +690,8 @@ async def list_policy_versions(user_id: str) -> list[dict[str, Any]]:
     body carries the raw condition) and admin-only: a non-admin caller is denied 403 so
     it can never read another user's policy history. 404 when the user has no policy
     history."""
-    caller = await _resolve_caller()
-    _require_admin(caller)
+    caller = await resolve_caller()
+    require_admin(caller)
     # A store-less deployment (no versioned store configured) keeps no policy version
     # history, so short-circuit an empty list rather than let the store read raw-500 on
     # an absent Postgres backend.
@@ -781,8 +720,8 @@ async def rollback_policy(user_id: str, version: int) -> dict[str, Any]:
     follows, then the durable history pointer is advanced. Admin-only: a non-admin caller
     is denied 403 so it can never roll back another user's (or its own) enforced policy.
     404 if the version is absent or the user has no live key."""
-    caller = await _resolve_caller()
-    _require_admin(caller)
+    caller = await resolve_caller()
+    require_admin(caller)
 
     # A store-less deployment (no versioned store configured) keeps no policy version
     # history, so no version can exist to roll back to — return the same clean 404 an

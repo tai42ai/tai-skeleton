@@ -20,14 +20,19 @@ from __future__ import annotations
 import json
 from types import SimpleNamespace
 
+import pytest
 from starlette.requests import Request
+from tai42_contract.access_control import KEY_FINGERPRINT_CLAIM
 from tai42_contract.app import tai42_app
 from tai42_contract.hooks import HookParams
 
+from tai42_skeleton.access_control.settings import AccessControlSettings
 from tai42_skeleton.app import instance
+from tai42_skeleton.authz import execution as execution_module
 from tai42_skeleton.backup.registry import BackupRegistry
 from tai42_skeleton.backup.sections import _empty_report, register_core_sections
 from tai42_skeleton.routers.backup import export_backup, import_backup, list_sections
+from tai42_skeleton.template import TemplateNotFoundError
 from tests._fakes.bus import FakeBus
 
 # -- request builders --------------------------------------------------------
@@ -114,6 +119,16 @@ class _FakeResourceManager:
     async def upload_template(self, path: str, content: str) -> None:
         self._templates[path] = content
 
+    async def render_by_id_or_content(self, *, content, template_id, kwargs) -> str:
+        """The condition render, resolving a ``template_id`` against the SAME store
+        ``upload_template`` writes into — so a condition template that has not been
+        restored yet raises exactly as the real manager does."""
+        if template_id is None:
+            return content or ""
+        if template_id not in self._templates:
+            raise TemplateNotFoundError(template_id)
+        return self._templates[template_id]
+
 
 class _FakeRouteConfig:
     def __init__(self, tools, transport="http"):
@@ -136,6 +151,14 @@ def _registry() -> BackupRegistry:
     registry = BackupRegistry()
     register_core_sections(registry)
     return registry
+
+
+@pytest.fixture
+def execution_gate_off(monkeypatch):
+    """Access control OFF for the token-free-evaluable assertion each imported hook
+    record runs, so the webhooks round-trips below read the section's own envelope
+    behavior; the execution-key rules have their own coverage."""
+    monkeypatch.setattr(execution_module, "access_control_settings", lambda: AccessControlSettings(enable=False))
 
 
 def _install(monkeypatch, *, registry=None, **facets) -> SimpleNamespace:
@@ -166,6 +189,7 @@ async def test_sections_lists_core_sections_with_secret_flags(monkeypatch):
         "access_control",
         "sub_mcp",
         "webhooks",
+        "conversations",
         "templates",
         "schedules",
         "connector_catalog",
@@ -184,6 +208,9 @@ async def test_sections_lists_core_sections_with_secret_flags(monkeypatch):
     assert by_name["versioned_documents"] is True
     # The connector catalog is a public template — no secrets — so it is not flagged.
     assert by_name["connector_catalog"] is False
+    # The routing rows' export equals the grantable route-list read (each row's
+    # callback_secret is excluded and re-minted on import), so it is not flagged.
+    assert by_name["conversations"] is False
 
 
 # -- manifest / env round-trips (sync sections) ------------------------------
@@ -353,13 +380,15 @@ async def test_sub_mcp_roundtrip(monkeypatch):
 # -- webhooks round-trip (hooks manager faked) -------------------------------
 
 
-async def test_webhooks_roundtrip(monkeypatch):
+async def test_webhooks_roundtrip(monkeypatch, execution_gate_off):
     from tai42_skeleton.hooks.managers.in_memory_hooks_manager import InMemoryHooksManager
     from tai42_skeleton.hooks.settings import HooksSettings
 
     source = InMemoryHooksManager(HooksSettings())
     monkeypatch.setattr("tai42_skeleton.hooks.cache.get_hooks_manager", lambda: source)
-    await source.register(HookParams(name="h1", topic="t1", tool="mytool"))
+    await source.register(
+        HookParams(name="h1", topic="t1", tool="mytool", execution_key="k-fire", execution_key_fingerprint="fp-fire")
+    )
 
     _install(monkeypatch)
     doc = _json(await export_backup(_post_req({"sections": ["webhooks"]})))
@@ -373,6 +402,59 @@ async def test_webhooks_roundtrip(monkeypatch):
     target = InMemoryHooksManager(HooksSettings())
     monkeypatch.setattr("tai42_skeleton.hooks.cache.get_hooks_manager", lambda: target)
     data = _json(await import_backup(_post_req({"document": doc, "sections": ["webhooks"]})))["data"]
+    assert data["ok"] is True
+    assert data["sections"]["webhooks"] == {"created": 1, "updated": 0, "skipped": 0, "errors": []}
+    assert set((await target.list_hooks()).keys()) == {"h1"}
+
+
+async def test_import_restores_condition_templates_before_the_hooks_that_render_them(monkeypatch):
+    """A hook bound to a key whose policy carries a ``condition_id`` restores from a
+    document that also carries the template — the replay order is what makes the
+    execution-key scan able to render it."""
+    from types import SimpleNamespace as _NS
+
+    from tai42_skeleton.access_control import policy as policy_module
+    from tai42_skeleton.access_control import store as store_module
+    from tai42_skeleton.hooks.managers.in_memory_hooks_manager import InMemoryHooksManager
+    from tai42_skeleton.hooks.settings import HooksSettings
+    from tests.access_control.conftest import FakeAccessControlPg, make_pg_ctx
+    from tests.access_control.conftest import FakeRedis as FakeAccessControlRedis
+    from tests.access_control.conftest import make_client_ctx as make_access_control_client_ctx
+
+    pg = FakeAccessControlPg()
+    # The key's condition lives in the template store, exactly as a ``condition_id``
+    # policy does on a real host.
+    pg.add_policy("svc", ["a"], condition_id="policies/svc.j2", policy_data={KEY_FINGERPRINT_CLAIM: "fp-svc"})
+    monkeypatch.setattr(store_module, "client_ctx", make_pg_ctx(pg))
+    monkeypatch.setattr(policy_module, "client_ctx", make_access_control_client_ctx(FakeAccessControlRedis()))
+    monkeypatch.setattr(execution_module, "access_control_settings", lambda: AccessControlSettings(enable=True))
+
+    target = InMemoryHooksManager(HooksSettings())
+    monkeypatch.setattr("tai42_skeleton.hooks.cache.get_hooks_manager", lambda: target)
+    manager = _FakeResourceManager()
+    _install(monkeypatch, storage=_NS(resource_manager=manager))
+
+    document = {
+        "version": 1,
+        "sections": {
+            "templates": {"policies/svc.j2": ".context.used < 10"},
+            "webhooks": {
+                "hooks": [
+                    {
+                        "name": "h1",
+                        "topic": "t1",
+                        "tool": "mytool",
+                        "execution_key": "svc",
+                        "execution_key_fingerprint": "fp-svc",
+                    }
+                ],
+                "topic_verifiers": {},
+                "trigger_links": [],
+                "tombstones": [],
+            },
+        },
+    }
+    data = _json(await import_backup(_post_req({"document": document, "sections": ["webhooks", "templates"]})))["data"]
     assert data["ok"] is True
     assert data["sections"]["webhooks"] == {"created": 1, "updated": 0, "skipped": 0, "errors": []}
     assert set((await target.list_hooks()).keys()) == {"h1"}
@@ -652,6 +734,45 @@ async def test_import_failing_importer_reports_error_and_not_ok(monkeypatch):
     assert data["sections"]["boomer"]["errors"] == ["importer exploded"]
 
 
+async def test_import_replays_sections_in_registration_order(monkeypatch):
+    # Registration order is a declared DEPENDENCY order, so the caller's list is a SET:
+    # how it was typed must not change the stored state or the report.
+    registry = _registry()
+    replayed: list[str] = []
+
+    def _record(name):
+        def _importer(_payload):
+            replayed.append(name)
+            return _empty_report()
+
+        return _importer
+
+    for name in ("first", "second", "third"):
+        registry.register_section(name, dict, _record(name))
+    _install(monkeypatch, registry=registry)
+
+    document = {"version": 1, "sections": {"first": {}, "second": {}, "third": {}}}
+    data = _json(await import_backup(_post_req({"document": document, "sections": ["third", "first", "second"]})))[
+        "data"
+    ]
+    assert data["ok"] is True
+    assert replayed == ["first", "second", "third"]
+
+
+async def test_import_still_reports_an_unregistered_section_named_out_of_order(monkeypatch):
+    # Reordering must not lose a name this host does not register: it still gets its own
+    # report entry rather than being dropped by the ordering pass.
+    registry = _registry()
+    registry.register_section("known", dict, lambda _payload: _empty_report())
+    _install(monkeypatch, registry=registry)
+
+    document = {"version": 1, "sections": {"ghost": {}, "known": {}}}
+    data = _json(await import_backup(_post_req({"document": document, "sections": ["ghost", "known"]})))["data"]
+    assert data["ok"] is False
+    assert "unknown section" in data["sections"]["ghost"]["errors"][0]
+    assert data["sections"]["known"]["errors"] == []
+
+
 # -- a plugin-registered section flows through BOTH doors ---------------------
 
 
@@ -770,23 +891,101 @@ async def test_import_sub_mcp_malformed_entry_is_skipped_not_fatal(monkeypatch):
     assert await sub_mcp_store._IN_MEMORY_STORE.get_route("good") is not None
 
 
-async def test_import_webhooks_existing_name_updates(monkeypatch):
+async def test_import_webhooks_existing_name_updates(monkeypatch, execution_gate_off):
     from tai42_skeleton.hooks.managers.in_memory_hooks_manager import InMemoryHooksManager
     from tai42_skeleton.hooks.settings import HooksSettings
 
     manager = InMemoryHooksManager(HooksSettings())
-    await manager.register(HookParams(name="h1", topic="t1", tool="mytool"))
+    await manager.register(
+        HookParams(name="h1", topic="t1", tool="mytool", execution_key="k-fire", execution_key_fingerprint="fp-fire")
+    )
     monkeypatch.setattr("tai42_skeleton.hooks.cache.get_hooks_manager", lambda: manager)
     _install(monkeypatch)
 
     document = {
         "version": 1,
-        "sections": {"webhooks": [HookParams(name="h1", topic="t2", tool="mytool").model_dump(mode="json")]},
+        "sections": {
+            "webhooks": [
+                HookParams(
+                    name="h1", topic="t2", tool="mytool", execution_key="k-fire", execution_key_fingerprint="fp-fire"
+                ).model_dump(mode="json")
+            ]
+        },
     }
     data = _json(await import_backup(_post_req({"document": document, "sections": ["webhooks"]})))["data"]
     assert data["ok"] is True
     # ``h1`` already existed, so the re-register is an update.
     assert data["sections"]["webhooks"] == {"created": 0, "updated": 1, "skipped": 0, "errors": []}
+
+
+async def test_import_webhooks_keyless_record_makes_the_import_report_failure(monkeypatch, execution_gate_off):
+    # A keyless hook is refused PER RECORD; any per-record error forces ok=false, and
+    # the record beside it still imports.
+    from tai42_skeleton.hooks.managers.in_memory_hooks_manager import InMemoryHooksManager
+    from tai42_skeleton.hooks.settings import HooksSettings
+
+    manager = InMemoryHooksManager(HooksSettings())
+    monkeypatch.setattr("tai42_skeleton.hooks.cache.get_hooks_manager", lambda: manager)
+    _install(monkeypatch)
+
+    document = {
+        "version": 1,
+        "sections": {
+            "webhooks": [
+                {"name": "keyless", "topic": "t1", "tool": "mytool"},
+                HookParams(
+                    name="bound", topic="t1", tool="mytool", execution_key="k-fire", execution_key_fingerprint="fp-fire"
+                ).model_dump(mode="json"),
+            ]
+        },
+    }
+    data = _json(await import_backup(_post_req({"document": document, "sections": ["webhooks"]})))["data"]
+    assert data["ok"] is False
+    section = data["sections"]["webhooks"]
+    assert section["created"] == 1
+    assert section["skipped"] == 1
+    assert any("keyless" in err and "execution_key" in err for err in section["errors"])
+    assert set(await manager.list_hooks()) == {"bound"}
+
+
+async def test_import_webhooks_uncompilable_jq_record_is_per_record_not_a_torn_import(monkeypatch, execution_gate_off):
+    # A non-compiling inline jq is refused PER RECORD (reported, ok=false) and the
+    # records on EITHER side still import — an abort would leave earlier hooks written.
+    from tai42_skeleton.hooks.managers.in_memory_hooks_manager import InMemoryHooksManager
+    from tai42_skeleton.hooks.settings import HooksSettings
+
+    manager = InMemoryHooksManager(HooksSettings())
+    monkeypatch.setattr("tai42_skeleton.hooks.cache.get_hooks_manager", lambda: manager)
+    _install(monkeypatch)
+
+    document = {
+        "version": 1,
+        "sections": {
+            "webhooks": [
+                HookParams(
+                    name="first", topic="t1", tool="mytool", execution_key="k-fire", execution_key_fingerprint="fp-fire"
+                ).model_dump(mode="json"),
+                HookParams(
+                    name="broken",
+                    topic="t1",
+                    tool="mytool",
+                    execution_key="k-fire",
+                    execution_key_fingerprint="fp-fire",
+                    condition=".foo | (",
+                ).model_dump(mode="json"),
+                HookParams(
+                    name="last", topic="t1", tool="mytool", execution_key="k-fire", execution_key_fingerprint="fp-fire"
+                ).model_dump(mode="json"),
+            ]
+        },
+    }
+    data = _json(await import_backup(_post_req({"document": document, "sections": ["webhooks"]})))["data"]
+    assert data["ok"] is False
+    section = data["sections"]["webhooks"]
+    assert section["created"] == 2
+    assert section["skipped"] == 1
+    assert any("broken" in err and "not valid jq" in err for err in section["errors"])
+    assert set(await manager.list_hooks()) == {"first", "last"}
 
 
 async def test_import_templates_existing_path_updates(monkeypatch):

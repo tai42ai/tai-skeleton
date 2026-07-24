@@ -47,11 +47,8 @@ def bound_app():
     from tai42_contract.app import tai42_app
 
     app = _FakeApp()
-    tai42_app.bind(app)
-    try:
+    with tai42_app.bound(app):
         yield app
-    finally:
-        tai42_app.bind(None)
 
 
 def _client(monkeypatch: pytest.MonkeyPatch) -> TestClient:

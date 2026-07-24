@@ -21,9 +21,11 @@ from tai42_skeleton.access_control.backend import (
     AuthorizationError,
     effective_scopes,
 )
+from tai42_skeleton.access_control.path_canon import canonicalize_path
 from tai42_skeleton.access_control.roles import EDITOR_JQ
 from tai42_skeleton.access_control.settings import AccessControlSettings
 from tai42_skeleton.access_control.user import TaiUser
+from tai42_skeleton.access_control.verifier import is_always_public_prefix
 
 from .conftest import FakeAccessControlPg, FakeRedis, make_client_ctx, make_pg_ctx
 
@@ -111,8 +113,9 @@ async def test_invalid_credentials_raise():
         await backend.authenticate(_conn({"Authorization": "Bearer nope"}))
 
 
-async def test_bearer_token_is_split_from_scheme(monkeypatch, bound_app):
+async def test_bearer_token_is_split_from_scheme(monkeypatch, bound_app, store_pg):
     settings = AccessControlSettings()
+    store_pg.add_policy("u1", scopes=["res-a"])
     monkeypatch.setattr(policy_module, "client_ctx", make_client_ctx(FakeRedis()))
     backend = _backend(_FakeVerifier({"good": "u1"}), settings)
     _creds, user = await backend.authenticate(_conn({"Authorization": "Bearer good"}))
@@ -120,8 +123,9 @@ async def test_bearer_token_is_split_from_scheme(monkeypatch, bound_app):
     assert user.token.client_id == "u1"
 
 
-async def test_authorization_without_space_is_used_whole(monkeypatch, bound_app):
+async def test_authorization_without_space_is_used_whole(monkeypatch, bound_app, store_pg):
     settings = AccessControlSettings()
+    store_pg.add_policy("u2", scopes=["res-a"])
     monkeypatch.setattr(policy_module, "client_ctx", make_client_ctx(FakeRedis()))
     backend = _backend(_FakeVerifier({"rawtoken": "u2"}), settings)
     _creds, user = await backend.authenticate(_conn({"Authorization": "rawtoken"}))
@@ -139,8 +143,9 @@ async def test_basic_scheme_is_never_a_bearer_candidate():
     assert "unauthenticated" in creds.scopes
 
 
-async def test_bearer_token_with_extra_space_is_stripped(monkeypatch, bound_app):
+async def test_bearer_token_with_extra_space_is_stripped(monkeypatch, bound_app, store_pg):
     settings = AccessControlSettings()
+    store_pg.add_policy("u5", scopes=["res-a"])
     monkeypatch.setattr(policy_module, "client_ctx", make_client_ctx(FakeRedis()))
     backend = _backend(_FakeVerifier({"tok": "u5"}), settings)
     # A double space after the scheme leaves a leading space on the token; the
@@ -150,8 +155,9 @@ async def test_bearer_token_with_extra_space_is_stripped(monkeypatch, bound_app)
     assert user.token.client_id == "u5"
 
 
-async def test_x_api_key_header_is_used(monkeypatch, bound_app):
+async def test_x_api_key_header_is_used(monkeypatch, bound_app, store_pg):
     settings = AccessControlSettings()
+    store_pg.add_policy("u3", scopes=["res-a"])
     monkeypatch.setattr(policy_module, "client_ctx", make_client_ctx(FakeRedis()))
     backend = _backend(_FakeVerifier({"key123": "u3"}), settings)
     _creds, user = await backend.authenticate(_conn({"X-Api-Key": "key123"}))
@@ -159,8 +165,10 @@ async def test_x_api_key_header_is_used(monkeypatch, bound_app):
     assert user.token.client_id == "u3"
 
 
-async def test_authorization_header_wins_over_x_api_key(monkeypatch, bound_app):
+async def test_authorization_header_wins_over_x_api_key(monkeypatch, bound_app, store_pg):
     settings = AccessControlSettings()
+    store_pg.add_policy("auth-user", scopes=["res-a"])
+    store_pg.add_policy("api-user", scopes=["res-a"])
     monkeypatch.setattr(policy_module, "client_ctx", make_client_ctx(FakeRedis()))
     # Both credentials are independently valid but map to different users.
     backend = _backend(_FakeVerifier({"auth-tok": "auth-user", "api-tok": "api-user"}), settings)
@@ -171,8 +179,9 @@ async def test_authorization_header_wins_over_x_api_key(monkeypatch, bound_app):
     assert user.token.client_id == "auth-user"
 
 
-async def test_verifier_error_falls_through_to_next_candidate(monkeypatch, bound_app):
+async def test_verifier_error_falls_through_to_next_candidate(monkeypatch, bound_app, store_pg):
     settings = AccessControlSettings()
+    store_pg.add_policy("u4", scopes=["res-a"])
     monkeypatch.setattr(policy_module, "client_ctx", make_client_ctx(FakeRedis()))
     verifier = _FakeVerifier({"good-key": "u4"}, raise_for={"boom-bearer"})
     backend = _backend(verifier, settings)
@@ -193,6 +202,16 @@ async def test_authenticate_attaches_policy_scopes_when_condition_passes(monkeyp
     assert user.token.scopes == ["res-a", "res-b"]
     # The condition was rendered through the bound template manager.
     assert bound_app.storage.resource_manager.calls
+
+
+async def test_credential_for_a_principal_with_no_policy_is_denied(monkeypatch, bound_app):
+    # A revoke deletes the policy row before the identity record, so a fault in between
+    # leaves a credential that still verifies against a principal with no policy.
+    settings = AccessControlSettings()
+    monkeypatch.setattr(policy_module, "client_ctx", make_client_ctx(FakeRedis()))
+    backend = _backend(_FakeVerifier({"ghost": "revoked-user"}), settings)
+    with pytest.raises(AuthorizationError):
+        await backend.authenticate(_conn({"Authorization": "Bearer ghost"}))
 
 
 async def test_authenticate_fails_closed_when_live_context_unavailable(monkeypatch, caplog):
@@ -414,6 +433,32 @@ async def test_public_path_short_circuits_without_verifying(monkeypatch):
     assert isinstance(user, UnauthenticatedUser)
     assert "unauthenticated" in creds.scopes
     assert spy.called == 0
+
+
+@pytest.mark.parametrize("path", ["/api//login/methods", "/api/login/./methods", "/api/login/"])
+async def test_step0_decides_the_login_surface_on_the_canonical_form(path):
+    """Step 0 and the resource guard ask ONE predicate over ONE canonical form, so a
+    non-canonical login path cannot be public to the guard yet credential-verified here."""
+    settings = AccessControlSettings()
+    spy = _SpyVerifier()
+    backend = _backend(spy, settings)
+
+    # Non-vacuous: the guard's own resolution really does call these paths public.
+    assert is_always_public_prefix(canonicalize_path(path), settings) is True
+
+    creds, user = await backend.authenticate(_conn({"Authorization": "Bearer garbage"}, path=path))
+    assert isinstance(user, UnauthenticatedUser)
+    assert "unauthenticated" in creds.scopes
+    assert spy.called == 0
+
+
+@pytest.mark.parametrize("path", ["/api/login/../auth/api-keys", "/apiary/login", "/api/login\\x"])
+async def test_step0_never_admits_a_path_that_only_looks_like_the_login_surface(path):
+    """A traversal out of the login prefix, a neighbour the segment-aware match must not
+    swallow, and a path with no canonical form: none may skip credential verification."""
+    settings = AccessControlSettings()
+    backend = _backend(_SpyVerifier(), settings)
+    assert backend._is_always_public_path(path) is False
 
 
 async def test_same_credential_on_protected_path_still_verifies(monkeypatch, bound_app, store_pg):

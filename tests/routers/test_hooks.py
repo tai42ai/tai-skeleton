@@ -5,16 +5,37 @@ with a 400. Parsing and the manager are faked at their seams."""
 from __future__ import annotations
 
 import json
+import logging
 from types import SimpleNamespace
 from typing import cast
 
 import pytest
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
+from tai42_contract.access_control import KEY_FINGERPRINT_CLAIM
 from tai42_contract.hooks import HookParams
 
+from tai42_skeleton.access_control import policy as policy_module
+from tai42_skeleton.access_control import store as store_module
+from tai42_skeleton.access_control.settings import AccessControlSettings
+from tai42_skeleton.authz import execution as execution_module
+from tai42_skeleton.authz.execution_identity import get_execution_identity
+from tai42_skeleton.hooks.trigger_links import ResolvedTrigger
+from tai42_skeleton.operations import _authority as authority
 from tai42_skeleton.operations import hooks as hooks_ops
 from tai42_skeleton.routers import hooks
+from tests.access_control.conftest import FakeAccessControlPg, make_pg_ctx
+from tests.access_control.conftest import FakeRedis as AcFakeRedis
+from tests.access_control.conftest import make_client_ctx as make_ac_client_ctx
+
+
+@pytest.fixture(autouse=True)
+def access_control_off(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Access control OFF for every route oracle here: the bind gate short-circuits and
+    a fire builds its identity from the bound key alone, so each test reads the route's
+    own envelope, validation and dispatch behavior."""
+    monkeypatch.setattr(authority, "access_control_settings", lambda: AccessControlSettings(enable=False))
+    monkeypatch.setattr(execution_module, "access_control_settings", lambda: AccessControlSettings(enable=False))
 
 
 class _FakeRequest:
@@ -23,13 +44,24 @@ class _FakeRequest:
     the route caching ``_body`` on it."""
 
     def __init__(
-        self, topic: str, *, query: str = "", method: str = "POST", body: bytes = b"", headers: dict | None = None
+        self,
+        topic: str,
+        *,
+        query: str = "",
+        method: str = "POST",
+        body: bytes = b"",
+        headers: dict | None = None,
+        authenticated: bool | None = False,
     ) -> None:
         self.path_params = {"topic": topic}
         self.url = SimpleNamespace(query=query)
         self.method = method
         self.headers = headers or {}
         self._chunks = [body] if body else []
+        # ``None`` means no ``user`` attribute at all — the shape a request has on an
+        # access-control-DISABLED deployment, where no auth middleware ran.
+        if authenticated is not None:
+            self.user = SimpleNamespace(is_authenticated=authenticated)
 
     async def stream(self):
         for chunk in self._chunks:
@@ -156,8 +188,12 @@ class _DelReq:
 
 def _hooks_fixture() -> dict[str, HookParams]:
     return {
-        "a": HookParams(name="a", topic="orders", tool="notify"),
-        "b": HookParams(name="b", topic="alerts", tool="page"),
+        "a": HookParams(
+            name="a", topic="orders", tool="notify", execution_key="k-fire", execution_key_fingerprint="fp-fire"
+        ),
+        "b": HookParams(
+            name="b", topic="alerts", tool="page", execution_key="k-fire", execution_key_fingerprint="fp-fire"
+        ),
     }
 
 
@@ -184,7 +220,7 @@ async def test_list_hooks_filters_by_topic(monkeypatch: pytest.MonkeyPatch) -> N
 async def test_register_hook_validates_and_registers(monkeypatch: pytest.MonkeyPatch) -> None:
     manager = _MgmtManager()
     monkeypatch.setattr(hooks_ops, "get_hooks_manager", lambda: manager)
-    payload = {"name": "c", "topic": "orders", "tool": "notify"}
+    payload = {"name": "c", "topic": "orders", "tool": "notify", "execution_key": "k-fire"}
     response = await hooks.register_hook(cast(Request, _JsonReq(payload)))
     assert response.status_code == 200
     assert _body(response)["data"] == {"registered": True, "name": "c"}
@@ -225,7 +261,7 @@ async def test_register_hook_maps_manager_jq_error_to_400(monkeypatch: pytest.Mo
 
     manager = _RaisingManager()
     monkeypatch.setattr(hooks_ops, "get_hooks_manager", lambda: manager)
-    payload = {"name": "c", "topic": "orders", "tool": "notify", "condition": "{{bad"}
+    payload = {"name": "c", "topic": "orders", "tool": "notify", "execution_key": "k-fire", "condition": "{{bad"}
     response = await hooks.register_hook(cast(Request, _JsonReq(payload)))
     assert response.status_code == 400
     assert "not valid jq" in _body(response)["error"]
@@ -549,13 +585,23 @@ def _trig_req(token: str = "tok", **kw) -> _FakeRequest:
     return req
 
 
-def _wire_resolver(monkeypatch, manager, *, topic="orders", tool_kwargs=None, resolve_exc=None):
+async def _parse_empty(request, include_query=True) -> dict:
+    return {}
+
+
+def _wire_resolver(monkeypatch, manager, *, topic="orders", tool_kwargs=None, require_api_key=False, resolve_exc=None):
     from tai42_skeleton.hooks.trigger_links import TriggerLinkError
 
     async def _resolve(token):
         if resolve_exc is not None:
             raise resolve_exc
-        return topic, tool_kwargs
+        return ResolvedTrigger(
+            topic=topic,
+            execution_key="k-fire",
+            execution_key_fingerprint="fp-fire",
+            require_api_key=require_api_key,
+            tool_kwargs=tool_kwargs,
+        )
 
     monkeypatch.setattr(hooks, "resolve_trigger_token", _resolve)
     monkeypatch.setattr(hooks, "get_hooks_manager", lambda: manager)
@@ -656,6 +702,227 @@ async def test_trigger_oversize_query_and_body_413(monkeypatch: pytest.MonkeyPat
     assert resp_b.status_code == 413
 
 
+# -- the api-key trigger door -------------------------------------------------
+
+
+async def test_api_key_link_403s_an_unauthenticated_token_holder(monkeypatch: pytest.MonkeyPatch, caplog) -> None:
+    # A link minted ``require_api_key`` demands an authenticated principal beside the
+    # token: a bare token holder is refused with an actionable 403 and NOTHING fires.
+    manager = _ResolverManager()
+    _wire_resolver(monkeypatch, manager, require_api_key=True)
+    monkeypatch.setattr(hooks, "parse_any_payload", lambda request, include_query=True: {})
+
+    with caplog.at_level(logging.WARNING):
+        resp = await hooks.trigger_link(cast(Request, _trig_req("tok", method="GET", authenticated=False)))
+
+    assert resp.status_code == 403
+    assert _body(resp)["error"] == hooks._API_KEY_REQUIRED
+    # The uniform-404 doctrine is intact for everyone else: this branch is reachable
+    # only by a token holder, and it dispatched nothing.
+    assert resp.background is None
+    assert manager.events == []
+    # The control firing leaves its own server-side record, naming the cause — the
+    # resolver's preceding line reports only that the token resolved.
+    assert any(
+        "cause=api-key-required" in record.getMessage() and "orders" in record.getMessage()
+        for record in caplog.records
+        if record.levelno == logging.WARNING
+    )
+
+
+async def test_api_key_link_fires_for_an_authenticated_caller(monkeypatch: pytest.MonkeyPatch) -> None:
+    manager = _ResolverManager()
+    _wire_resolver(monkeypatch, manager, topic="orders", require_api_key=True)
+
+    async def fake_parse(request, include_query=True):
+        return {"x": 1}
+
+    monkeypatch.setattr(hooks, "parse_any_payload", fake_parse)
+    resp = await hooks.trigger_link(cast(Request, _trig_req("tok", method="GET", authenticated=True)))
+
+    assert resp.status_code == 200
+    assert resp.background is not None
+    await resp.background()
+    assert manager.events == [("orders", {"x": 1}, None)]
+
+
+async def test_token_only_link_needs_no_credential(monkeypatch: pytest.MonkeyPatch) -> None:
+    # The default door is token-only — the QR-on-a-wall case — so an unauthenticated
+    # holder still fires it. The requirement is per-record, not per-route.
+    manager = _ResolverManager()
+    _wire_resolver(monkeypatch, manager, topic="orders", require_api_key=False)
+
+    async def fake_parse(request, include_query=True):
+        return {}
+
+    monkeypatch.setattr(hooks, "parse_any_payload", fake_parse)
+    resp = await hooks.trigger_link(cast(Request, _trig_req("tok", method="GET", authenticated=False)))
+
+    assert resp.status_code == 200
+    assert resp.background is not None
+    await resp.background()
+    assert manager.events == [("orders", {}, None)]
+
+
+def test_the_route_gate_derives_the_door_level_from_the_method() -> None:
+    # The door only asks whether a principal is authenticated; the required LEVEL comes
+    # from the ordinary route gate, derived from the method. Pinned against the real
+    # gate, so losing the registry entry or the ``hooks`` tag fails here.
+    from tai42_skeleton.access_control.role_gate import (
+        DenialCause,
+        grant_map_admits,
+        reset_route_index,
+        resolve_route_meta,
+    )
+
+    reset_route_index()
+    read_only = {"hooks": "read"}
+    get_meta = resolve_route_meta("/trigger/some-token", "GET")
+    post_meta = resolve_route_meta("/trigger/some-token", "POST")
+    assert get_meta is not None
+    assert post_meta is not None
+    assert "hooks" in get_meta.tags
+    assert grant_map_admits(get_meta, "GET", read_only) == (True, None)
+    assert grant_map_admits(post_meta, "POST", read_only) == (False, DenialCause.LEVEL_MISS)
+
+
+async def test_an_unowned_role_less_key_is_not_level_governed_on_this_door() -> None:
+    # The level pass only reaches the grant map when the GOVERNING policy carries a role
+    # pointer; an unowned scoped key holds none, so it is admitted at both methods.
+    from tai42_contract.access_control.models import AccessPolicy
+
+    from tai42_skeleton.access_control.role_grants import role_level_decision
+
+    scoped_only = AccessPolicy(scopes=["storage"])
+    for method in ("GET", "POST"):
+        assert await role_level_decision(scoped_only, None, "/trigger/some-token", method, 0) == (True, None)
+
+
+async def test_an_owned_role_less_key_is_governed_by_its_OWNERS_role_on_this_door(monkeypatch) -> None:
+    # An OWNED key inherits its owner's role grants, so it is still level-governed even
+    # with no pointer of its own. Only an unowned AND pointer-free key escapes the pass.
+    from tai42_contract.access_control import OWNER_USER_ID_CLAIM
+    from tai42_contract.access_control.models import AccessPolicy
+
+    from tai42_skeleton.access_control import role_grants as role_grants_module
+    from tai42_skeleton.access_control.role_gate import DenialCause, reset_route_index
+    from tai42_skeleton.access_control.role_grants import role_level_decision
+    from tai42_skeleton.access_control.roles import ROLE_POINTER_KEY
+
+    async def _grants(role_name: str, version: int) -> dict[str, str]:
+        return {"hooks": "read"}
+
+    monkeypatch.setattr(role_grants_module, "resolve_role_grants", _grants)
+    reset_route_index()
+
+    owned = AccessPolicy(scopes=["storage"], policy_data={OWNER_USER_ID_CLAIM: "viewer-user"})
+    owner = AccessPolicy(scopes=["storage"], policy_data={ROLE_POINTER_KEY: "viewer"})
+
+    assert await role_level_decision(owned, owner, "/trigger/some-token", "GET", 0) == (True, None)
+    assert await role_level_decision(owned, owner, "/trigger/some-token", "POST", 0) == (
+        False,
+        DenialCause.LEVEL_MISS,
+    )
+
+
+async def test_api_key_link_fires_on_a_gate_off_deployment(monkeypatch: pytest.MonkeyPatch) -> None:
+    # With access control disabled the request carries no ``user`` attribute at all; a
+    # ``require_api_key`` link still fires rather than 403ing or raising.
+    manager = _ResolverManager()
+    _wire_resolver(monkeypatch, manager, topic="orders", require_api_key=True)
+    monkeypatch.setattr(hooks, "access_control_settings", lambda: AccessControlSettings(enable=False))
+    monkeypatch.setattr(hooks, "parse_any_payload", _parse_empty)
+
+    resp = await hooks.trigger_link(cast(Request, _trig_req("tok", method="GET", authenticated=None)))
+
+    assert resp.status_code == 200
+    assert resp.background is not None
+    await resp.background()
+    assert manager.events == [("orders", {}, None)]
+
+
+# -- the LINK-level execution binding (access control ON) ---------------------
+#
+# The door binds the link's ``execution_key`` around the whole fan-out, which makes the
+# key the link's live revocation handle. Access control is OFF elsewhere in this module,
+# where the bind short-circuits; these drive it as a gate.
+
+
+class _BindingManager:
+    """Records ``(topic, execution key bound at that moment)`` per fan-out."""
+
+    def __init__(self) -> None:
+        self.events: list[tuple[str, str | None]] = []
+
+    async def on_event(self, topic: str, payload: dict, *, tool_kwargs_override: dict | None = None) -> None:
+        identity = get_execution_identity()
+        self.events.append((topic, identity.user_id if identity is not None else None))
+
+
+def _wire_access_control(monkeypatch: pytest.MonkeyPatch, pg: FakeAccessControlPg) -> None:
+    """Access control ON for the link-level bind over ``pg``, overriding this module's
+    autouse off-switch for the binder alone."""
+    monkeypatch.setattr(store_module, "client_ctx", make_pg_ctx(pg))
+    monkeypatch.setattr(policy_module, "client_ctx", make_ac_client_ctx(AcFakeRedis()))
+    monkeypatch.setattr(execution_module, "access_control_settings", lambda: AccessControlSettings(enable=True))
+
+
+async def test_a_live_link_key_is_bound_around_the_whole_fan_out(monkeypatch: pytest.MonkeyPatch) -> None:
+    pg = FakeAccessControlPg()
+    pg.add_policy("k-fire", scopes=["hooks"], policy_data={KEY_FINGERPRINT_CLAIM: "fp-fire"})
+    _wire_access_control(monkeypatch, pg)
+    manager = _BindingManager()
+    _wire_resolver(monkeypatch, manager, topic="orders")
+    monkeypatch.setattr(hooks, "parse_any_payload", _parse_empty)
+
+    resp = await hooks.trigger_link(cast(Request, _trig_req("tok", method="GET")))
+    assert resp.status_code == 200
+    assert resp.background is not None
+    await resp.background()
+
+    # The fan-out ran AS the link's key, and the binding is released with the task.
+    assert manager.events == [("orders", "k-fire")]
+    assert get_execution_identity() is None
+
+
+@pytest.mark.parametrize(
+    ("policy_fields", "reason"),
+    [
+        (None, "has no policy"),
+        ({"scopes": ["hooks"], "policy_data": {"disabled": True}}, "is disabled"),
+    ],
+    ids=["deleted", "disabled"],
+)
+async def test_a_killed_link_key_refuses_the_dispatch_before_any_hook_runs(
+    monkeypatch: pytest.MonkeyPatch, caplog, policy_fields, reason
+) -> None:
+    # Killing the key is how a minted link is killed (no cascade, record untouched), so
+    # the dispatch must refuse before a single hook of the topic fans out.
+    pg = FakeAccessControlPg()
+    if policy_fields is not None:
+        pg.add_policy("k-fire", **policy_fields)
+    _wire_access_control(monkeypatch, pg)
+    manager = _BindingManager()
+    _wire_resolver(monkeypatch, manager, topic="orders")
+    monkeypatch.setattr(hooks, "parse_any_payload", _parse_empty)
+
+    resp = await hooks.trigger_link(cast(Request, _trig_req("tok", method="GET")))
+    assert resp.status_code == 200
+
+    assert resp.background is not None
+    with caplog.at_level(logging.ERROR):
+        await resp.background()
+
+    # Nothing fanned out, and the refusal is logged with link/topic/key rather than
+    # escaping as an unhandled background-task exception.
+    assert manager.events == []
+    assert get_execution_identity() is None
+    assert any(
+        "orders" in message and "k-fire" in message and reason in message
+        for message in (record.getMessage() for record in caplog.records if record.levelno == logging.ERROR)
+    )
+
+
 async def test_trigger_disallowed_method_405_no_dispatch(monkeypatch: pytest.MonkeyPatch) -> None:
     # The door accepts exactly GET|POST; a PUT is a 405 at the route and never
     # reaches the handler, so nothing dispatches.
@@ -675,54 +942,54 @@ async def test_trigger_disallowed_method_405_no_dispatch(monkeypatch: pytest.Mon
 # -- Trigger-link management routes (AUTHED) ---------------------------------
 
 
-@pytest.fixture
-def gate_off_ambient(monkeypatch: pytest.MonkeyPatch):
-    monkeypatch.setattr(hooks_ops, "access_control_settings", lambda: SimpleNamespace(enable=False))
-
-
-async def test_create_trigger_link_route_envelope(monkeypatch: pytest.MonkeyPatch, gate_off_ambient) -> None:
+async def test_create_trigger_link_route_envelope(monkeypatch: pytest.MonkeyPatch) -> None:
     async def _create(**kwargs):
         return {"name": "n", "trigger_path": "/trigger/tok", "token": "tok", "topic": "t", "expires_at": None}
 
     monkeypatch.setattr(hooks_ops.trigger_links, "create_trigger_link", _create)
-    resp = await hooks.create_trigger_link(cast(Request, _JsonReq({"topic": "t", "ttl_seconds": None})))
+    resp = await hooks.create_trigger_link(
+        cast(Request, _JsonReq({"topic": "t", "execution_key": "k-fire", "ttl_seconds": None}))
+    )
     assert resp.status_code == 200
     assert _body(resp)["data"]["trigger_path"] == "/trigger/tok"
 
 
-async def test_create_trigger_link_route_ttl_absent_400(monkeypatch: pytest.MonkeyPatch, gate_off_ambient) -> None:
+async def test_create_trigger_link_route_ttl_absent_400(monkeypatch: pytest.MonkeyPatch) -> None:
     # The ttl_seconds KEY absent from the body → 400 (the request model requires it).
-    resp = await hooks.create_trigger_link(cast(Request, _JsonReq({"topic": "t"})))
+    # Every other required field is supplied, so the ttl field alone produces the 400.
+    resp = await hooks.create_trigger_link(cast(Request, _JsonReq({"topic": "t", "execution_key": "k-fire"})))
     assert resp.status_code == 400
 
 
 @pytest.mark.parametrize("bad_ttl", ["3600", 3600.0, 3600.5, True])
-async def test_create_trigger_link_route_wrong_type_ttl_400(
-    monkeypatch: pytest.MonkeyPatch, gate_off_ambient, bad_ttl
-) -> None:
-    resp = await hooks.create_trigger_link(cast(Request, _JsonReq({"topic": "t", "ttl_seconds": bad_ttl})))
+async def test_create_trigger_link_route_wrong_type_ttl_400(monkeypatch: pytest.MonkeyPatch, bad_ttl) -> None:
+    resp = await hooks.create_trigger_link(
+        cast(Request, _JsonReq({"topic": "t", "execution_key": "k-fire", "ttl_seconds": bad_ttl}))
+    )
     assert resp.status_code == 400
 
 
-async def test_create_trigger_link_route_status_mapping(monkeypatch: pytest.MonkeyPatch, gate_off_ambient) -> None:
+async def test_create_trigger_link_route_status_mapping(monkeypatch: pytest.MonkeyPatch) -> None:
     from tai42_skeleton.hooks.trigger_links import TriggerLinkError
 
     async def _raise(**kwargs):
         raise TriggerLinkError(409, "trigger link name already exists")
 
     monkeypatch.setattr(hooks_ops.trigger_links, "create_trigger_link", _raise)
-    resp = await hooks.create_trigger_link(cast(Request, _JsonReq({"topic": "t", "name": "dup", "ttl_seconds": None})))
+    resp = await hooks.create_trigger_link(
+        cast(Request, _JsonReq({"topic": "t", "execution_key": "k-fire", "name": "dup", "ttl_seconds": None}))
+    )
     assert resp.status_code == 409
 
 
-async def test_trigger_link_route_roundtrip_and_token_not_listed(
-    monkeypatch: pytest.MonkeyPatch, gate_off_ambient
-) -> None:
+async def test_trigger_link_route_roundtrip_and_token_not_listed(monkeypatch: pytest.MonkeyPatch) -> None:
     # A stateful fake store behind the routes: create → list → delete, and the
     # create reply's token never appears in the list output.
     store: dict[str, dict] = {}
 
-    async def _create(*, topic, name, ttl_seconds, tool_kwargs, created_by):
+    async def _create(
+        *, topic, name, ttl_seconds, tool_kwargs, execution_key, execution_key_fingerprint, require_api_key, created_by
+    ):
         link_name = name or "trg-link-deadbeef"
         store[link_name] = {"name": link_name, "topic": topic, "token_hash_prefix": "abc123abc123", "expires_at": None}
         return {
@@ -744,7 +1011,9 @@ async def test_trigger_link_route_roundtrip_and_token_not_listed(
     monkeypatch.setattr(hooks_ops.trigger_links, "revoke_trigger_link", _revoke)
 
     created = _body(
-        await hooks.create_trigger_link(cast(Request, _JsonReq({"topic": "t", "name": "n", "ttl_seconds": None})))
+        await hooks.create_trigger_link(
+            cast(Request, _JsonReq({"topic": "t", "execution_key": "k-fire", "name": "n", "ttl_seconds": None}))
+        )
     )["data"]
     listed = _body(await hooks.list_trigger_links(cast(Request, _GetReq())))["data"]
     assert {item["name"] for item in listed["items"]} == {"n"}

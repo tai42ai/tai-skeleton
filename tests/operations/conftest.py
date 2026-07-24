@@ -1,9 +1,11 @@
 """Isolate the process-global registries around each operations test.
 
 Adapter/spec tests record routes and operations into the process-wide
-``route_registry`` / ``operation_registry``; snapshot and restore both so a
-fixture route can never leak into the product OpenAPI spec (the byte-identical
-pin) or into another test.
+``route_registry`` / ``operation_registry``; isolate both so a fixture route can
+never leak into the product OpenAPI spec (the byte-identical pin) or into another
+test. Routes are cleaned by TARGETED DELETION of the rows each test added (a
+whole-snapshot restore would drop a route another suite recorded once at import);
+operations are rebuilt from their leaf snapshot before every test, as below.
 
 The registry has a PAIRED module-global — ``operations._leaf_snapshot``, the
 one-time capture ``reregister_operations`` primes on its first call and replays
@@ -23,6 +25,9 @@ An operation-declaration module can register a lifecycle handler at import
 needs the process app singleton bound — exactly as the runtime binds it before
 importing operation/router modules. Mirror that order here so op modules import
 at collection, as ``tests/routers/conftest`` does for the routers.
+
+The handle is process-global, so the fixture below binds the singleton itself SCOPED
+to the test and restores whatever it found.
 """
 
 from __future__ import annotations
@@ -40,19 +45,24 @@ tai42_app.bind(instance.build_app())
 
 @pytest.fixture(autouse=True)
 def _isolate_registries():
-    # Rebuild the operation registry from its leaf snapshot before every test,
-    # exactly as ``start()`` does at boot, so each test opens on the primed,
-    # consistent surface (registry records == snapshot records) regardless of what
-    # an earlier operations test left behind. The first call re-imports the leaves
-    # and captures the snapshot; every later call replays it (no ``sys.modules``
-    # churn), and the ``clear()`` keeps that replay off the duplicate-name guard.
-    operation_registry.clear()
-    reregister_operations()
+    # The app singleton is bound for the whole test; scoped, so another suite's binding
+    # is restored on teardown rather than erased.
+    with tai42_app.bound(instance.build_app()):
+        # Rebuild the operation registry from its leaf snapshot before every test, as
+        # ``start()`` does at boot, so each test opens on the primed surface. ``clear()``
+        # keeps the replay off the duplicate-name guard.
+        operation_registry.clear()
+        reregister_operations()
 
-    routes_snapshot = dict(route_registry._routes)
-    ops_snapshot = dict(operation_registry._operations)
-    try:
-        yield
-    finally:
-        route_registry._routes = routes_snapshot
-        operation_registry._operations = ops_snapshot
+        # Routes restore by TARGETED DELETION of the rows this test added, never a
+        # whole-snapshot restore: a router records its routes once per process, so
+        # reinstating a snapshot would drop another suite's routes with nothing to
+        # re-record them.
+        routes_before = set(route_registry._routes)
+        ops_snapshot = dict(operation_registry._operations)
+        try:
+            yield
+        finally:
+            for key in set(route_registry._routes) - routes_before:
+                del route_registry._routes[key]
+            operation_registry._operations = ops_snapshot

@@ -33,6 +33,16 @@ from tai42_skeleton.access_control.user import clamp_write_audience
 from tai42_skeleton.channels.notifications_sink import record_notification
 
 
+class SenderIdentityNotAllowedError(Exception):
+    """A caller supplied ``sender_identity`` on the ``notify_user`` door.
+
+    ``sender_identity`` belongs to the conversation bridge alone; a caller-supplied value
+    is rejected, never honored — it would let a caller pick which of an operator's sending
+    identities a message leaves from. A domain exception, not the operations-layer
+    ``BadRequestError``, so this module needs no upward dependency; the door maps it.
+    """
+
+
 def _resolve_channel(channel: str) -> Channel:
     """Resolve a named channel loudly — an unknown name raises ``ValueError``
     (mirroring the ``ask_user`` helper's channel guard), never a soft ignore."""
@@ -45,17 +55,23 @@ def _resolve_channel(channel: str) -> Channel:
 
 
 async def notify_user(
-    message: str, *, channel: str | None = None, recipient: str | None = None, audience: str | None = None
-) -> None:
+    message: str,
+    *,
+    channel: str | None = None,
+    recipient: str | None = None,
+    audience: str | None = None,
+) -> list[str]:
     """Notify a human of ``message``, fire-and-forget.
 
-    With a named ``channel`` the message is sent on that medium; a plain return
-    means the medium ACCEPTED it — not that a human saw it. One send attempt, no
-    retry, no reply.
+    With a named ``channel`` the message is sent on that medium and the list of
+    per-message ids the medium assigned the send is returned — the ids an out-of-band
+    delivery receipt is later correlated back against; a return means the medium
+    ACCEPTED it, not that a human saw it. One send attempt, no retry, no reply.
 
     With ``channel=None`` the message is recorded to the internal notifications
-    sink (Redis), which the Studio inbox reads back; the interactions Redis must
-    be reachable or the write raises loudly (never a silent no-op).
+    sink (Redis), which the Studio inbox reads back (returning an empty id list — an
+    internal record has no medium-assigned id); the interactions Redis must be
+    reachable or the write raises loudly (never a silent no-op).
 
     ``recipient`` is an OPTIONAL per-call address (chat id, phone number, ...).
     On a named channel it is carried to the channel, which validates it against
@@ -68,6 +84,9 @@ async def notify_user(
     per-identity feed) REGARDLESS of whether a channel also delivers the message —
     so an addressed notification lands in the identity's feed even on the channel
     path. A blank value is rejected.
+
+    The notification carries no ``sender_identity`` — that field is the conversation
+    bridge's — so the channel sends from its own configured identity.
 
     Raises ``ValueError`` for a blank message, an unknown channel name, or a
     blank ``recipient``/``audience``; ``CrossIdentityAudienceError`` when a
@@ -93,7 +112,7 @@ async def notify_user(
         if recipient is not None and (not isinstance(recipient, str) or not recipient.strip()):
             raise ValueError("recipient must be a non-empty address")
         await record_notification(message, recipient=recipient, audience=audience)
-        return
+        return []
     channel_obj = _resolve_channel(channel)
     # An addressed notification lands in the identity's in-app feed even on the
     # channel path, matching ``ask_user`` (which always persists). After the clamp a
@@ -102,4 +121,9 @@ async def notify_user(
     # with no audience stores nothing.
     if audience is not None:
         await record_notification(message, recipient=recipient, audience=audience)
-    await channel_obj.notify(ChannelNotification(message=message, recipient=recipient))
+    outbound_ids = await channel_obj.notify(ChannelNotification(message=message, recipient=recipient))
+    # ``None`` means accepted but no correlatable per-message id — an empty id set, not an
+    # error and not a dropped id.
+    if outbound_ids is None:
+        return []
+    return outbound_ids

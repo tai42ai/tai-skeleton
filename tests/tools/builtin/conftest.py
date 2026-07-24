@@ -15,6 +15,7 @@ previous binding afterwards.
 from __future__ import annotations
 
 from collections.abc import Iterator
+from contextlib import ExitStack
 
 import pytest
 from tai42_contract.app import tai42_app
@@ -28,13 +29,10 @@ tai42_app.bind(instance.build_app())
 def bind_app() -> Iterator[object]:
     """Yield a binder that installs a fake ``tai42_app`` impl and restores the
     previous one on teardown."""
-    previous = object.__getattribute__(tai42_app, "_impl")
+    with ExitStack() as stack:
 
-    def _bind(fake: object) -> object:
-        tai42_app.bind(fake)
-        return fake
+        def _bind(fake: object) -> object:
+            stack.enter_context(tai42_app.bound(fake))
+            return fake
 
-    try:
         yield _bind
-    finally:
-        tai42_app.bind(previous)

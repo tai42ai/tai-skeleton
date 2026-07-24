@@ -27,6 +27,7 @@ from starlette.requests import Request
 from starlette.responses import Response
 from starlette.routing import Route
 from starlette.testclient import TestClient
+from tai42_contract.access_control import KEY_FINGERPRINT_CLAIM
 from tai42_identity_redis import redis_api_key_provider as provider_module
 from tai42_identity_redis.redis_api_key_provider import RedisApiKeyProvider
 
@@ -183,9 +184,12 @@ async def test_create_returns_raw_key_once(store: _Fakes) -> None:
     await api_keys.add_scope_url(_req(body={"scope_id": "scope-a", "url": "/a"}))
     resp = await api_keys.create_api_key(_req(body={"user_id": "u1", "description": "desc", "scopes": ["scope-a"]}))
     assert resp.status_code == 200
-    raw = _body(resp)["data"]
-    assert isinstance(raw, str)
-    assert raw.startswith("sk-")
+    data = _body(resp)["data"]
+    # The raw key is surfaced ONCE, alongside the fresh per-mint fingerprint a caller
+    # binds a hook against.
+    assert isinstance(data["api_key"], str)
+    assert data["api_key"].startswith("sk-")
+    assert data["key_fingerprint"]
 
 
 async def test_create_forwards_policy_data_and_condition_into_stored_policy(store: _Fakes) -> None:
@@ -206,9 +210,10 @@ async def test_create_forwards_policy_data_and_condition_into_stored_policy(stor
         )
     )
     assert resp.status_code == 200
+    fingerprint = _body(resp)["data"]["key_fingerprint"]
     assert store.pg.policy_body("u1") == {
         "scopes": ["scope-a"],
-        "policy_data": {"limit": 7},
+        "policy_data": {"limit": 7, KEY_FINGERPRINT_CLAIM: fingerprint},
         "condition": ".context.used < .policy.limit",
         "condition_id": "quota",
         "condition_kwargs": {"tier": "pro"},
@@ -227,7 +232,7 @@ async def test_create_unknown_scope_is_400(store: _Fakes) -> None:
 async def _mint_key(store: _Fakes) -> str:
     await api_keys.add_scope_url(_req(body={"scope_id": "scope-a", "url": "/a"}))
     resp = await api_keys.create_api_key(_req(body={"user_id": "u1", "description": "d", "scopes": ["scope-a"]}))
-    return _body(resp)["data"]
+    return _body(resp)["data"]["api_key"]
 
 
 async def test_create_claim_link_admin_round_trip(store: _Fakes) -> None:
@@ -251,15 +256,15 @@ async def test_create_claim_link_invalid_key_is_400(store: _Fakes) -> None:
 async def test_create_claim_link_non_owner_is_403(store: _Fakes, monkeypatch: pytest.MonkeyPatch) -> None:
     from tai42_contract.access_control.models import AccessPolicy
 
-    from tai42_skeleton.operations.api_keys import _Caller
+    from tai42_skeleton.operations._authority import Caller
 
     raw = await _mint_key(store)
 
-    async def _mallory() -> _Caller:
+    async def _mallory() -> Caller:
         # A non-admin caller who neither owns nor IS the resolved key.
-        return _Caller(caller_id="mallory", policy=AccessPolicy(scopes=["read"]), is_admin=False, owner_claim=None)
+        return Caller(caller_id="mallory", policy=AccessPolicy(scopes=["read"]), is_admin=False, owner_claim=None)
 
-    monkeypatch.setattr(operations_api_keys, "_resolve_caller", _mallory)
+    monkeypatch.setattr(operations_api_keys, "resolve_caller", _mallory)
     resp = await api_keys.create_claim_link(_req(body={"api_key": raw}))
     assert resp.status_code == 403
 
@@ -331,7 +336,7 @@ async def test_edit_description_only_preserves_policy_and_condition(store: _Fake
     # A description-only edit must PRESERVE the key's policy_data + condition gate
     # rather than silently erasing them (a privilege escalation).
     await api_keys.add_scope_url(_req(body={"scope_id": "scope-a", "url": "/a"}))
-    await api_keys.create_api_key(
+    create_resp = await api_keys.create_api_key(
         _req(
             body={
                 "user_id": "u1",
@@ -344,12 +349,14 @@ async def test_edit_description_only_preserves_policy_and_condition(store: _Fake
             }
         )
     )
+    fingerprint = _body(create_resp)["data"]["key_fingerprint"]
 
     resp = await api_keys.edit_api_key(_req(path_params={"user_id": "u1"}, body={"description": "desc2"}))
     assert resp.status_code == 200
+    # The description-only edit preserves policy_data (including the immutable fingerprint).
     assert store.pg.policy_body("u1") == {
         "scopes": ["scope-a"],
-        "policy_data": {"limit": 7},
+        "policy_data": {"limit": 7, KEY_FINGERPRINT_CLAIM: fingerprint},
         "condition": ".context.used < .policy.limit",
         "condition_id": "quota",
         "condition_kwargs": {"tier": "pro"},
@@ -371,11 +378,13 @@ async def test_edit_scopes_only_preserves_policy_and_condition(store: _Fakes) ->
         )
     )
 
+    minted_fp = store.pg.policy_body("u1")["policy_data"][KEY_FINGERPRINT_CLAIM]
+
     resp = await api_keys.edit_api_key(_req(path_params={"user_id": "u1"}, body={"scopes": ["scope-b"]}))
     assert resp.status_code == 200
     policy = store.pg.policy_body("u1")
     assert policy["scopes"] == ["scope-b"]
-    assert policy["policy_data"] == {"limit": 7}
+    assert policy["policy_data"] == {"limit": 7, KEY_FINGERPRINT_CLAIM: minted_fp}
     assert policy["condition"] == "c"
 
 
@@ -394,12 +403,16 @@ async def test_edit_explicit_null_clears_policy_and_condition(store: _Fakes) -> 
         )
     )
 
+    minted_fp = store.pg.policy_body("u1")["policy_data"][KEY_FINGERPRINT_CLAIM]
+
     resp = await api_keys.edit_api_key(
         _req(path_params={"user_id": "u1"}, body={"policy_data": None, "condition": None})
     )
     assert resp.status_code == 200
     policy = store.pg.policy_body("u1")
-    assert policy["policy_data"] == {}
+    # An explicit clear drops the caller's policy_data but never the server-owned
+    # fingerprint: an edit is not a remint, so a bound hook keeps resolving.
+    assert policy["policy_data"] == {KEY_FINGERPRINT_CLAIM: minted_fp}
     assert policy["condition"] is None
 
 
@@ -416,11 +429,13 @@ async def test_edit_condition_only_leaves_policy_data_untouched(store: _Fakes) -
         )
     )
 
+    minted_fp = store.pg.policy_body("u1")["policy_data"][KEY_FINGERPRINT_CLAIM]
+
     resp = await api_keys.edit_api_key(_req(path_params={"user_id": "u1"}, body={"condition": "x"}))
     assert resp.status_code == 200
     policy = store.pg.policy_body("u1")
     assert policy["condition"] == "x"
-    assert policy["policy_data"] == {"limit": 7}
+    assert policy["policy_data"] == {"limit": 7, KEY_FINGERPRINT_CLAIM: minted_fp}
 
 
 async def test_edit_unknown_user_is_404(store: _Fakes) -> None:
@@ -476,7 +491,7 @@ async def test_tokens_payload_carries_no_key_material(store: _Fakes) -> None:
     await api_keys.add_scope_url(_req(body={"scope_id": "scope-a", "url": "/a"}))
     raw = _body(
         await api_keys.create_api_key(_req(body={"user_id": "u1", "description": "desc", "scopes": ["scope-a"]}))
-    )["data"]
+    )["data"]["api_key"]
 
     resp = await api_keys.list_tokens_payload(_req())
     payload = _body(resp)["data"]
@@ -493,7 +508,7 @@ async def test_no_stored_value_contains_the_raw_key(store: _Fakes) -> None:
     await api_keys.add_scope_url(_req(body={"scope_id": "scope-a", "url": "/a"}))
     raw = _body(
         await api_keys.create_api_key(_req(body={"user_id": "u1", "description": "desc", "scopes": ["scope-a"]}))
-    )["data"]
+    )["data"]["api_key"]
     # Neither the PG policy store nor the Redis identity/context store holds the raw key.
     blob = json.dumps(store.pg.policies) + repr(store.redis._hashes) + repr(store.redis._strings)
     assert raw not in blob
@@ -506,7 +521,7 @@ async def test_created_key_authenticates_and_carries_scopes(store: _Fakes) -> No
     await api_keys.add_scope_url(_req(body={"scope_id": "scope-a", "url": "/a"}))
     raw = _body(
         await api_keys.create_api_key(_req(body={"user_id": "u1", "description": "desc", "scopes": ["scope-a"]}))
-    )["data"]
+    )["data"]["api_key"]
 
     # Present the raw key to the live provider — identity resolves (Redis record).
     identity = await RedisApiKeyProvider(S).validate_token(raw)
@@ -522,7 +537,7 @@ async def test_revocation_stops_authentication_next_request(store: _Fakes) -> No
     await api_keys.add_scope_url(_req(body={"scope_id": "scope-a", "url": "/a"}))
     raw = _body(
         await api_keys.create_api_key(_req(body={"user_id": "u1", "description": "desc", "scopes": ["scope-a"]}))
-    )["data"]
+    )["data"]["api_key"]
     provider = RedisApiKeyProvider(S)
     assert await provider.validate_token(raw) is not None
 
@@ -562,12 +577,12 @@ def _admin_caller(monkeypatch: pytest.MonkeyPatch) -> None:
     and seeding a caller policy per test."""
     from tai42_contract.access_control.models import AccessPolicy
 
-    from tai42_skeleton.operations.api_keys import _Caller
+    from tai42_skeleton.operations._authority import Caller
 
-    async def _admin() -> _Caller:
-        return _Caller(caller_id="test-admin", policy=AccessPolicy(scopes=["*"]), is_admin=True, owner_claim=None)
+    async def _admin() -> Caller:
+        return Caller(caller_id="test-admin", policy=AccessPolicy(scopes=["*"]), is_admin=True, owner_claim=None)
 
-    monkeypatch.setattr(operations_api_keys, "_resolve_caller", _admin)
+    monkeypatch.setattr(operations_api_keys, "resolve_caller", _admin)
 
 
 @pytest.fixture(autouse=True)
@@ -589,15 +604,12 @@ def pg_store(monkeypatch: pytest.MonkeyPatch) -> _MemStore:
 @pytest.fixture
 def bound_app():
     """Bind a fake ``tai42_app`` exposing the template manager the validate route
-    renders through, then restore the unbound state."""
+    renders through, then restore whatever was bound before it."""
     from tai42_contract.app import tai42_app
 
     app = _FakeApp()
-    tai42_app.bind(app)
-    try:
+    with tai42_app.bound(app):
         yield app
-    finally:
-        tai42_app.bind(None)
 
 
 async def _seed_key(store: _Fakes, *, condition: str) -> None:

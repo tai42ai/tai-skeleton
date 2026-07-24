@@ -15,6 +15,7 @@ from tai42_skeleton.access_control.startup import (
     probe_identity_provider,
     seed_roles,
 )
+from tai42_skeleton.access_control.verifier import reset_registered_reserved_paths
 from tai42_skeleton.app.server import TaiMCP
 from tai42_skeleton.connectors.meta_log_redactor import install_meta_log_redactor
 from tai42_skeleton.connectors.providers.registry import list_providers
@@ -232,14 +233,23 @@ def build_app() -> TaiMCP:
             # The SPA-shell public fallback surface is audited: the derived reserved set
             # is printed, an unacknowledged public-by-declaration non-/api GET route fails
             # the boot closed, and the control-plane terminal-deny invariant is confirmed.
+            # Also on reload: a reload can add an authed non-/api GET route while the
+            # HTTP-edge verifier outlives it, so a stale reserved set would serve that
+            # route the anonymous shell. The reset must run AFTER the reimport.
             app.lifecycle.on_startup(check_spa_shell_public)
+            app.lifecycle.on_reload(check_spa_shell_public)
+            app.lifecycle.on_reload(reset_registered_reserved_paths)
             # Every gated route must resolve to an authorization action-class
             # (read/write/fenced/secret) — an unclassifiable route fails the boot closed,
             # so allow-by-omission can never reach the enforcement path.
             app.lifecycle.on_startup(check_route_actions)
             # Every registered fenced/secret route must resolve back to itself through the
-            # gate's resolver, so the admin-only fence can never silently fail open.
+            # gate's resolver, so the admin-only fence can never silently fail open. Also on
+            # reload, which can mount a new fenced route: the audit rebuilds the route index
+            # against the re-imported surface, so a reload-added fence that resolves
+            # elsewhere fails the reload loudly instead of failing open until a restart.
             app.lifecycle.on_startup(check_fenced_routes_resolvable)
+            app.lifecycle.on_reload(check_fenced_routes_resolvable)
             # A registered accounts provider left out of the resolution chain would mint
             # sessions that never authenticate — refuse to boot instead.
             app.lifecycle.on_startup(check_accounts_providers_configured)

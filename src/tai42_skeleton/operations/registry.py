@@ -14,7 +14,8 @@ synthesis and the fences' ``{"method", "path"}`` context need both.
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
@@ -58,10 +59,16 @@ class OperationRegistry:
 
     Registering the SAME name twice raises loudly — mirroring the tool binding's
     duplicate-name guard — so two operations cannot silently claim one name.
+
+    The registry also states whether it is SETTLED, i.e. whether its silence about a
+    name is an answer. A boot/reload tears it down and replays it while the serving
+    loop keeps dispatching, so a reader that must distinguish "not an operation" from
+    "not replayed yet" consults :attr:`settled` rather than guessing from the contents.
     """
 
     def __init__(self) -> None:
         self._operations: dict[str, OperationMetadata] = {}
+        self._rebuild_depth = 0
 
     def register(self, metadata: OperationMetadata) -> None:
         existing = self._operations.get(metadata.name)
@@ -91,6 +98,35 @@ class OperationRegistry:
     def clear(self) -> None:
         """Drop every registration — the reload path rebuilds from module import."""
         self._operations.clear()
+
+    @contextmanager
+    def rebuilding(self) -> Iterator[None]:
+        """Mark the surface UNSETTLED for the duration of a teardown + replay.
+
+        The boot/reload body wraps the whole rebuild in this — the ``clear()``, the
+        snapshot replay, and the router re-attachment that puts each record's route
+        template back — because a record is only usable once all three have run. It
+        nests (a reload reached from inside another rebuild keeps the mark held until
+        the outermost one finishes) and releases in a ``finally``, so a rebuild that
+        raises cannot leave the surface permanently marked torn.
+        """
+        self._rebuild_depth += 1
+        try:
+            yield
+        finally:
+            self._rebuild_depth -= 1
+
+    @property
+    def settled(self) -> bool:
+        """Whether this registry's contents are an ANSWER: no rebuild is in flight AND
+        it is non-empty.
+
+        Emptiness alone is decisive: a started app always holds this package's leaf
+        operations, so an empty registry is only ever the cleared half of a rebuild (or
+        an app that never started). Both halves must hold — a rebuild that has already
+        replayed some records is populated but not yet an answer about the rest.
+        """
+        return self._rebuild_depth == 0 and bool(self._operations)
 
 
 # The one process-wide operation registry. The ``@operation`` decorator records

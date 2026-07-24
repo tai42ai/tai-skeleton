@@ -185,6 +185,8 @@ def _error_response(status: int) -> dict[str, Any]:
 
 def _operation(meta: RouteMetadata, method: str, components: dict[str, Any]) -> dict[str, Any]:
     responses: dict[str, Any] = {str(meta.success_status): _success_response(meta, method, components)}
+    for status in meta.additional_success_statuses:
+        responses[str(status)] = _success_response(meta, method, components)
     for status in meta.error_statuses:
         responses[str(status)] = _error_response(status)
 

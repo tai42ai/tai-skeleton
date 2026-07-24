@@ -16,10 +16,12 @@ independent of the scheduling backend. An unknown caller-named tool on create is
 :class:`NotFoundError` (404). ``create_schedule`` and ``delete_schedule`` mutate live
 scheduling state, so they are ``destructive`` (create) / a DELETE (delete).
 
-The schedule's authorization is checked at schedule CREATION (setting the schedule
-up); its later recurring firing has no live caller and runs anonymous/system, exactly
-as every scheduled job does today — the HTTP middleware / tool-edge authz are
-untouched by this extraction.
+The schedule's authorization is decided at schedule CREATION: the caller-named tool is
+run through the full tool-edge decision against the live submitter (a fenced/secret
+target is admin-only, a capability target passes), so a non-admin cannot wire a fenced
+operation into a recurring job. The later recurring firing itself has no live caller and
+runs anonymous/system, exactly as every scheduled job does — the creation door is the
+one edge that inner tool reaches.
 """
 
 from __future__ import annotations
@@ -30,6 +32,7 @@ from pydantic import BaseModel, Field
 from tai42_contract.app import tai42_app
 
 from tai42_skeleton.operations import BadRequestError, NotFoundError, NotSupportedError, operation
+from tai42_skeleton.operations._submitted_tool_authz import authorize_submitted_tool
 from tai42_skeleton.tools.binding import is_unknown_tool_error
 
 # The tools an installed scheduling backend registers; their presence is the marker
@@ -87,6 +90,7 @@ async def server_datetime() -> Any:
     tags=["schedules"],
     destructive=True,
     reload_gated=True,
+    meta_executor=True,
     errors=[BadRequestError, NotFoundError, NotSupportedError],
     request_model=ScheduleCreate,
 )
@@ -94,12 +98,17 @@ async def create_schedule(tool_name: str, tool_kwargs: dict[str, Any], schedule_
     """Schedule a caller-named tool to run on a cadence — a run-ANY-tool door.
 
     The caller supplies ``tool_name``, so reaching this is arbitrary-tool-execution
-    privilege (the recurring firing runs the named tool with real side effects)."""
+    privilege (the recurring firing runs the named tool with real side effects). As a
+    "run any tool by name" door it is a tier-1 meta-executor, never projected to the MCP
+    surface — matching ``run_tool`` and ``submit_run``."""
     if not await _scheduling_backend_present():
         raise NotSupportedError(_NO_BACKEND_MESSAGE)
     # Schedule keys win on collision so the backend's scheduling parameters cannot be
     # shadowed by the tool's own arguments.
     arguments: dict[str, Any] = {**tool_kwargs, **schedule_kwargs}
+    # The recurring firing has no live caller, so this creation is the ONLY edge the inner
+    # tool reaches — decide it here, over the exact arguments the dispatch below fires.
+    await authorize_submitted_tool(tool_name, arguments)
     try:
         return await tai42_app.tools.run_tool(tool_name, arguments)
     except RuntimeError as exc:

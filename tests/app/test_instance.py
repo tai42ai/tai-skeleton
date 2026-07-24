@@ -52,6 +52,16 @@ def test_access_control_probe_wired_as_startup_when_enabled():
     assert probe_identity_provider in startup_handlers
 
 
+def test_fenced_route_audit_wired_as_startup_and_reload_when_enabled():
+    # A reload can mount a new fenced route, so the fence-resolvability audit must run
+    # on reload as well as at boot — otherwise a reload-added fenced route fails open
+    # until restart. Both registrations are pinned.
+    from tai42_skeleton.access_control.startup import check_fenced_routes_resolvable
+
+    assert check_fenced_routes_resolvable in instance.app._startup_handlers.values()
+    assert check_fenced_routes_resolvable in instance.app._reload_handlers.values()
+
+
 # --- catalog-refresh gate ---------------------------------------------------
 
 

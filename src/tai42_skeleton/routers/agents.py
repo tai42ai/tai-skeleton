@@ -55,6 +55,7 @@ from tai42_contract.agent import Agent
 from tai42_contract.app import tai42_app
 from tai42_contract.presets.errors import PresetNotFoundError
 
+from tai42_skeleton.agent.thread_reservation import ReservedThreadNamespaceError, run_kwargs_from_tool_input
 from tai42_skeleton.app import instance
 from tai42_skeleton.app.http import http_surface
 from tai42_skeleton.app.reload_gate import reload_gate
@@ -263,9 +264,11 @@ async def run_agent(request: Request) -> Response:
     # same run kwarg) — surfaced as a loud 400, never a silent drop.
     try:
         validated = agent.ToolInput(**body)
-        run_kwargs = agent.from_tool_input(validated)
+        run_kwargs = run_kwargs_from_tool_input(agent, validated)
     except ValidationError as exc:
         return _error(f"invalid agent input: {exc}", 400)
+    except ReservedThreadNamespaceError as exc:
+        return _error(str(exc), 400)
     except ValueError as exc:
         return _error(f"invalid agent input: {exc}", 400)
     return StreamingResponse(
@@ -349,9 +352,11 @@ async def run_authored_agent(request: Request) -> Response:
     # and the request fills only the remaining fields.
     try:
         validated = agent.ToolInput(**{**body, **baked})
-        run_kwargs = agent.from_tool_input(validated)
+        run_kwargs = run_kwargs_from_tool_input(agent, validated)
     except ValidationError as exc:
         return _error(f"invalid agent input: {_validation_detail(exc)}", 400)
+    except ReservedThreadNamespaceError as exc:
+        return _error(str(exc), 400)
     except ValueError as exc:
         # ``from_tool_input`` rejects a conflicting input (e.g. a request field that
         # maps to the same run kwarg as a baked field) — a loud 400, never a silent

@@ -9,6 +9,7 @@ from tai42_contract.access_control import OWNER_USER_ID_CLAIM
 from tai42_contract.access_control.identity import ApiKeyIdentityProvider, IdentityProvider
 from tai42_kit.clients import client_ctx
 from tai42_kit.clients.impl.redis import RedisClient
+from tai42_kit.settings import register_settings_reset
 
 from tai42_skeleton.access_control.path_canon import MalformedPathError, canonicalize_path, under_prefix
 from tai42_skeleton.access_control.settings import AccessControlSettings
@@ -19,6 +20,16 @@ logger = logging.getLogger(__name__)
 
 UUID_PATTERN = re.compile(r"/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")
 DIGIT_PATTERN = re.compile(r"/\d+")
+
+
+def is_always_public_prefix(path: str, settings: AccessControlSettings) -> bool:
+    """Whether the CANONICAL ``path`` is the pre-auth login surface that always
+    resolves public (equal to an always-public prefix or a route beneath it).
+
+    The ONE definition of that family for every edge, so none can drift onto a different
+    login surface. A plain function rather than a verifier member, so an edge holding no
+    verifier asks this question instead of hand-rolling a second predicate."""
+    return any(under_prefix(path, prefix) for prefix in settings.always_public_path_prefixes)
 
 
 def registered_reserved_get_paths() -> frozenset[str]:
@@ -40,6 +51,35 @@ def registered_reserved_get_paths() -> frozenset[str]:
             continue
         paths.add(canonical)
     return frozenset(paths)
+
+
+_registered_reserved_paths: frozenset[str] | None = None
+
+
+def registered_reserved_get_paths_cached() -> frozenset[str]:
+    """The module-level memo of :func:`registered_reserved_get_paths`, so the SPA-shell
+    fallback decides against the reserved set without re-walking the registry per request.
+
+    MODULE scope, not per verifier: the HTTP-edge verifier is baked into the ASGI stack at
+    ``build_app`` and OUTLIVES an in-place reload, so a per-instance memo would keep
+    answering the pre-reload surface and serve a reload-added authed route as the anonymous
+    SPA shell. Dropped by :func:`reset_registered_reserved_paths`."""
+    global _registered_reserved_paths
+    if _registered_reserved_paths is None:
+        _registered_reserved_paths = registered_reserved_get_paths()
+    return _registered_reserved_paths
+
+
+@register_settings_reset
+def reset_registered_reserved_paths() -> None:
+    """Drop the module-level SPA-shell reserved-set memo so it rebuilds against the current
+    registry.
+
+    A settings reset fires at the START of a reload, before the router modules are
+    re-imported, so it cannot describe the new surface on its own; this is ALSO registered
+    as a post-reimport reload handler, and both drops are needed."""
+    global _registered_reserved_paths
+    _registered_reserved_paths = None
 
 
 class AccessControlVerifier(TokenVerifier):
@@ -74,14 +114,6 @@ class AccessControlVerifier(TokenVerifier):
         self._get_dynamic_patterns = alru_cache(maxsize=1, ttl=settings.cache_ttl_seconds)(
             self._raw_fetch_dynamic_patterns_versioned
         )
-
-        # The DERIVED SPA-shell reserved set, computed once on first use and reused per
-        # request (never read from the registry per request). The route registry is
-        # import-populated and immutable at runtime — routes are recorded only as router
-        # modules import at startup — so unlike the dynamic route table (redis, version-
-        # keyed) this needs no version key: a given process's registered routes never
-        # change. A fresh verifier re-derives it, so a test registering a route sees it.
-        self._registered_route_paths_cache: frozenset[str] | None = None
 
     def _resolve_providers(self) -> list[IdentityProvider]:
         # Bind the provider list on first use and memoize (deferred resolution — see
@@ -152,7 +184,7 @@ class AccessControlVerifier(TokenVerifier):
         # is reachable on a fresh deployment with no route rows. The always-public and
         # reserved prefix sets are validated disjoint at settings construction, so such a
         # path is never also reserved and the reserved-drop below can never contradict this.
-        if self._is_always_public_prefix(path):
+        if is_always_public_prefix(path, self.settings):
             return [self.settings.public_resource_id]
 
         # Read the current policy version once (a single cheap GET) and thread it
@@ -213,10 +245,11 @@ class AccessControlVerifier(TokenVerifier):
         # opens a mutation (GET only) nor the API/control-plane surface. ``path`` is the
         # single canonical form computed at the top of this method.
         #
-        # The registered-route check below is CONCRETE-only: ``_registered_route_paths()``
-        # holds the canonical paths of concrete non-/api GET routes, so a concrete request
-        # matching a TEMPLATED route's pattern (e.g. ``/reports/5`` for ``/reports/{id}``)
-        # is not seen here and — absent a route row — would be served the shell. The boot
+        # The registered-route check below is CONCRETE-only:
+        # ``registered_reserved_get_paths_cached()`` holds the canonical paths of concrete
+        # non-/api GET routes, so a concrete request matching a TEMPLATED route's pattern
+        # (e.g. ``/reports/5`` for ``/reports/{id}``) is not seen here and — absent a route
+        # row — would be served the shell. The boot
         # audit (``check_spa_shell_public``) closes that gap by construction: it refuses to
         # start when any templated ``authed=True`` non-/api GET route exists that is neither
         # /api-prefixed (control-plane-excluded above) nor consciously acknowledged, so no
@@ -235,7 +268,7 @@ class AccessControlVerifier(TokenVerifier):
             # The DERIVED reserved check (both sides canonical): any real registered
             # non-/api GET route (health/ready/metrics/…) resolves via its own path,
             # never via the shell fallback — no static list.
-            and path not in self._registered_route_paths()
+            and path not in registered_reserved_get_paths_cached()
             # Operational paths the registry does not surface as concrete GET routes.
             and path not in self.settings.reserved_operational_supplement
             # Belt-and-suspenders: keeps ``/api/auth`` (and any reserved prefix) gated.
@@ -245,22 +278,10 @@ class AccessControlVerifier(TokenVerifier):
 
         return list(found_ids)
 
-    def _registered_route_paths(self) -> frozenset[str]:
-        """The DERIVED reserved set (cached once per verifier). See
-        :func:`registered_reserved_get_paths`."""
-        if self._registered_route_paths_cache is None:
-            self._registered_route_paths_cache = registered_reserved_get_paths()
-        return self._registered_route_paths_cache
-
     def _is_reserved_prefix(self, path: str) -> bool:
         """Whether ``path`` is the access-control management surface that must never
         resolve public (equal to a reserved prefix or a route beneath it)."""
         return any(under_prefix(path, prefix) for prefix in self.settings.reserved_public_pin_prefixes)
-
-    def _is_always_public_prefix(self, path: str) -> bool:
-        """Whether ``path`` is the pre-auth login surface that always resolves public
-        (equal to an always-public prefix or a route beneath it)."""
-        return any(under_prefix(path, prefix) for prefix in self.settings.always_public_path_prefixes)
 
     async def _current_policy_version(self) -> int:
         # A backend error here fails closed by RAISING (it surfaces out of the

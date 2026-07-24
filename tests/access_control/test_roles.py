@@ -235,6 +235,26 @@ async def test_hooks_listing_is_grantable_to_editor_and_viewer(mem: _MemStore):
         assert allowed is True, f"GET /api/hooks should be a grantable read for {role}"
 
 
+async def test_topic_verifier_binding_doors_are_admin_only(mem: _MemStore):
+    from tai42_skeleton.access_control import role_grants as role_grants_module
+    from tai42_skeleton.access_control.role_gate import DenialCause, reset_route_index, resolve_route_meta
+
+    # A verifier binding is the only authentication a topic's public webhook ingress has,
+    # and the namespace carries no owner. Bind REPLACES an existing lock, so both doors
+    # decide the same state and both are fenced.
+    role_grants_module.reset_role_grants_cache()
+    reset_route_index()
+    await seed_default_roles()
+    for method in ("PUT", "DELETE"):
+        meta = resolve_route_meta("/api/hooks/topics/orders/verifier", method)
+        assert meta is not None, f"{method} /api/hooks/topics/orders/verifier did not resolve"
+        assert meta.action == "fenced"
+        for role in ("editor", "viewer"):
+            allowed, cause = await _level_allows(role, "/api/hooks/topics/orders/verifier", method)
+            assert allowed is False, f"{method} on a topic verifier must be admin-only for {role}"
+            assert cause is DenialCause.HARD_FENCE
+
+
 async def test_config_env_read_and_write_both_admin_only(mem: _MemStore):
     from tai42_skeleton.access_control import role_grants as role_grants_module
     from tai42_skeleton.access_control.role_gate import DenialCause, reset_route_index
@@ -254,10 +274,8 @@ async def test_config_env_read_and_write_both_admin_only(mem: _MemStore):
 
 # -- the un-fenced capability-supply-chain / arbitrary-execution / hooks doors ------
 
-# These write doors were editor/viewer-reachable before M20: the async tool-execution submit,
-# the MCP-config rewrite, the sub-MCP mount/unmount, a run-any-tool schedule, the fleet MCP
-# re-bind, the manifest-section persist, and the four hooks routes. Each is action=write, so a
-# seeded editor (write on every grantable tag) reaches them.
+# Editor-reachable write doors: each is action=write, so a seeded editor (write on every
+# grantable tag) reaches them.
 _GRANTABLE_WRITE_DOORS = [
     ("/api/tool-runs", "POST"),
     ("/api/mcp-config", "POST"),
@@ -268,8 +286,6 @@ _GRANTABLE_WRITE_DOORS = [
     ("/api/tools/shout/extensions", "POST"),
     ("/api/hooks", "POST"),
     ("/api/hooks/orders-hook", "DELETE"),
-    ("/api/hooks/topics/orders/verifier", "PUT"),
-    ("/api/hooks/topics/orders/verifier", "DELETE"),
 ]
 
 
@@ -310,6 +326,29 @@ async def test_supply_chain_read_routes_stay_grantable(mem: _MemStore):
     ):
         allowed, _cause = await _level_allows("editor", path, method)
         assert allowed is True, f"{method} {path} should be grantable via its read route"
+
+
+async def test_head_is_gated_exactly_as_the_get_it_mirrors(mem: _MemStore):
+    from tai42_skeleton.access_control import role_grants as role_grants_module
+    from tai42_skeleton.access_control.role_gate import DenialCause, reset_route_index, resolve_route_meta
+
+    # Starlette serves HEAD on every GET route through the SAME handler with the same side
+    # effects, so a HEAD resolving to no route would skip the per-tag pass and the fence.
+    role_grants_module.reset_role_grants_cache()
+    reset_route_index()
+    await seed_default_roles()
+    # One path of each class the pass distinguishes.
+    head_mirrored = ("/trigger/some-token", "/api/config/env", "/api/hooks")
+    for path in head_mirrored:
+        assert resolve_route_meta(path, "HEAD") is resolve_route_meta(path, "GET")
+    for role in ("editor", "viewer"):
+        for path in head_mirrored:
+            assert await _level_allows(role, path, "HEAD") == await _level_allows(role, path, "GET")
+    # Non-vacuous on the fence: the secret bulk read stays admin-only over HEAD.
+    for role in ("editor", "viewer"):
+        allowed, cause = await _level_allows(role, "/api/config/env", "HEAD")
+        assert allowed is False
+        assert cause is DenialCause.HARD_FENCE
 
 
 async def test_supply_chain_tags_remain_grantable_feature_groups(mem: _MemStore):

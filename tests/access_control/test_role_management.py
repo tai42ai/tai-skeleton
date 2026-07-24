@@ -13,7 +13,7 @@ import tai42_skeleton.operations.roles as roles_ops
 import tai42_skeleton.versioning as versioning_module
 from tai42_skeleton.access_control import management
 from tai42_skeleton.access_control import role_grants as role_grants_module
-from tai42_skeleton.access_control.role_gate import DenialCause, reset_route_index
+from tai42_skeleton.access_control.role_gate import DenialCause, reset_route_index, resolve_route_meta
 from tai42_skeleton.access_control.role_grants import resolve_role_grants, role_level_decision
 from tai42_skeleton.access_control.roles import (
     ROLE_POINTER_KEY,
@@ -50,25 +50,25 @@ def redis_mgmt(monkeypatch) -> FakeRedis:
 
 
 def _admin_caller(monkeypatch) -> None:
-    from tai42_skeleton.operations.api_keys import _Caller
+    from tai42_skeleton.operations._authority import Caller
 
-    caller = _Caller(caller_id="root", policy=AccessPolicy(scopes=["*"]), is_admin=True, owner_claim=None)
+    caller = Caller(caller_id="root", policy=AccessPolicy(scopes=["*"]), is_admin=True, owner_claim=None)
 
     async def _resolve():
         return caller
 
-    monkeypatch.setattr(roles_ops, "_resolve_caller", _resolve)
+    monkeypatch.setattr(roles_ops, "resolve_caller", _resolve)
 
 
 def _nonadmin_caller(monkeypatch) -> None:
-    from tai42_skeleton.operations.api_keys import _Caller
+    from tai42_skeleton.operations._authority import Caller
 
-    caller = _Caller(caller_id="ed", policy=AccessPolicy(scopes=["*"]), is_admin=False, owner_claim=None)
+    caller = Caller(caller_id="ed", policy=AccessPolicy(scopes=["*"]), is_admin=False, owner_claim=None)
 
     async def _resolve():
         return caller
 
-    monkeypatch.setattr(roles_ops, "_resolve_caller", _resolve)
+    monkeypatch.setattr(roles_ops, "resolve_caller", _resolve)
 
 
 def _grantable_tag() -> str:
@@ -302,6 +302,20 @@ async def test_role_level_decision_allows_a_method_less_non_http_scope(mem, pg, 
     assert cause is None
 
 
+async def test_role_level_decision_does_not_act_on_a_path_with_no_registered_route(mem, pg, redis_mgmt):
+    # Caller-REQUESTED paths (SPA shell, probes) carry no registered route, and the scope
+    # layer plus jq base govern there. Not an allow-by-omission: a registered route always
+    # resolves back to itself (the boot audit refuses to start otherwise), and only a
+    # SYNTHESIZED path can miss the route it should have hit — which is why the tool edge
+    # pins the operation's own route instead of resolving one here.
+    await seed_default_roles()
+    editor = AccessPolicy(scopes=["*"], condition="editorbase", policy_data={ROLE_POINTER_KEY: "editor"})
+    assert resolve_route_meta("/studio/settings", "POST") is None
+    allowed, cause = await role_level_decision(editor, None, "/studio/settings", "POST", 1)
+    assert allowed is True
+    assert cause is None
+
+
 # -- keys inherit the owner's role grant map ---------------------------------
 
 
@@ -341,15 +355,26 @@ async def test_owned_key_inherits_owner_role(mem, pg, redis_mgmt, monkeypatch):
     assert cause is DenialCause.HARD_FENCE
 
 
-async def test_owned_key_of_admin_owner_reaches_fenced(mem, pg, redis_mgmt, monkeypatch):
+async def test_owned_key_of_admin_owner_is_hard_fenced(mem, pg, redis_mgmt, monkeypatch):
     await seed_default_roles()
-    # An admin owner (allow_all, no pointer) → the owned key inherits admin and reaches
-    # the fenced route (keys do exactly what their owner's role can do).
+    # The fence keys on the CALLER's own admin verdict, and an owner-claim-bearing policy is
+    # never the admin principal: an admin cannot delegate fence access via an owned key.
     owner = AccessPolicy(scopes=["*"], policy_data={})
     key = AccessPolicy(scopes=["*"], policy_data={OWNER_USER_ID_CLAIM: "owner1"})
     allowed, cause = await role_level_decision(key, owner, "/api/marketplace/install", "POST", 1)
-    assert allowed is True
-    assert cause is None
+    assert allowed is False
+    assert cause is DenialCause.HARD_FENCE
+
+
+async def test_admin_owned_scoped_key_cannot_reach_backup_import(mem, pg, redis_mgmt):
+    await seed_default_roles()
+    # The common delegated-key shape (admin-owned, scoped) is hard-fenced at
+    # ``/api/backup/import``, so the restore writers are reached only by an admin.
+    owner = AccessPolicy(scopes=["*"], policy_data={})
+    key = AccessPolicy(scopes=["backup"], policy_data={OWNER_USER_ID_CLAIM: "owner1"})
+    allowed, cause = await role_level_decision(key, owner, "/api/backup/import", "POST", 1)
+    assert allowed is False
+    assert cause is DenialCause.HARD_FENCE
 
 
 # -- defaults reproduce today's reach (structural) ---------------------------
@@ -648,14 +673,14 @@ async def test_rollback_and_delete_audit_before_after(mem, pg, redis_mgmt, monke
 
 async def test_list_roles_op_requires_admin(mem, pg, redis_mgmt, monkeypatch):
     import tai42_skeleton.operations.api_keys as api_keys_ops
-    from tai42_skeleton.operations.api_keys import _Caller
+    from tai42_skeleton.operations._authority import Caller
 
-    caller = _Caller(caller_id="ed", policy=AccessPolicy(scopes=["*"]), is_admin=False, owner_claim=None)
+    caller = Caller(caller_id="ed", policy=AccessPolicy(scopes=["*"]), is_admin=False, owner_claim=None)
 
     async def _resolve():
         return caller
 
-    monkeypatch.setattr(api_keys_ops, "_resolve_caller", _resolve)
+    monkeypatch.setattr(api_keys_ops, "resolve_caller", _resolve)
     with pytest.raises(ForbiddenError):
         await api_keys_ops.list_roles()
 

@@ -31,7 +31,14 @@ def test_redis_manager_satisfies_contract_protocol():
 
 async def test_in_memory_register_list_unregister():
     manager = InMemoryHooksManager(_settings())
-    hook = HookParams(name="h1", topic="orders", tool="ship", condition='.status == "paid"')
+    hook = HookParams(
+        name="h1",
+        topic="orders",
+        tool="ship",
+        execution_key="k-fire",
+        execution_key_fingerprint="fp-fire",
+        condition='.status == "paid"',
+    )
 
     assert await manager.register(hook) is True
 
@@ -47,7 +54,14 @@ async def test_in_memory_register_list_unregister():
 
 async def test_register_rejects_invalid_jq():
     manager = InMemoryHooksManager(_settings())
-    bad = HookParams(name="bad", topic="t", tool="noop", condition="this is ( not jq")
+    bad = HookParams(
+        name="bad",
+        topic="t",
+        tool="noop",
+        execution_key="k-fire",
+        execution_key_fingerprint="fp-fire",
+        condition="this is ( not jq",
+    )
 
     with pytest.raises(ValueError, match="not valid jq"):
         await manager.register(bad)

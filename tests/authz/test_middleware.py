@@ -4,7 +4,7 @@ the install assertions on the main server and every sub-MCP app."""
 from __future__ import annotations
 
 import asyncio
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, cast
 
 import pytest
@@ -35,11 +35,12 @@ class _FakeToolRegistry:
 @dataclass
 class _Body:
     base_tool: str
+    fixed_kwargs: dict[str, Any] = field(default_factory=dict)
 
 
 class _FakePresetManager:
     """Models ``PresetManager`` for the resolver: a registered preset maps to its
-    ``base_tool`` (which the plan allows to be a projected operation)."""
+    ``base_tool`` (a projected operation here) and to the kwargs it bakes."""
 
     def __init__(self, specs: dict[str, str]) -> None:
         self._specs = {n: _Body(base_tool=b) for n, b in specs.items()}
@@ -132,6 +133,18 @@ def test_non_operation_tool_passes_through(monkeypatch):
     reached, result = asyncio.run(_call(mw, "some_toolbox_tool"))
     assert reached is True
     assert result == "reached"
+
+
+def test_an_unclassifiable_dispatch_is_refused_instead_of_passed_through(monkeypatch):
+    # Fail-closed at the MCP edge too: with the registry cleared an absent name says
+    # nothing, so passing it through would dispatch a possibly-fenced operation undecided.
+    import tai42_skeleton.authz.resolver as resolver_mod
+
+    monkeypatch.setattr(resolver_mod, "operation_registry", OperationRegistry())
+
+    mw = AuthzMiddleware(_FakeApp())
+    with pytest.raises(ToolError, match="retry shortly"):
+        asyncio.run(_call(mw, "wipe"))
 
 
 def test_preset_over_projected_op_resolves_and_runs_authz_on_base(monkeypatch):

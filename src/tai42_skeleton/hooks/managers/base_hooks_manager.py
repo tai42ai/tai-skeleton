@@ -9,8 +9,10 @@ from tai42_contract.monitoring import MonitoringLevel, SpanKind
 from tai42_kit.utils.data import run_jq_first
 from tai42_kit.utils.data.jq_util import get_compiled_jq
 
+from tai42_skeleton.authz.execution import bind_execution_identity
 from tai42_skeleton.hooks.settings import HooksSettings
 from tai42_skeleton.monitoring import get_monitoring
+from tai42_skeleton.operations.errors import PermissionDenied
 
 logger = logging.getLogger(__name__)
 
@@ -67,6 +69,11 @@ class BaseHooksManager(ABC):
 
     @staticmethod
     async def _run_hook(hook: HookParams, payload: dict[str, Any], tool_kwargs_override: dict[str, Any] | None = None):
+        """Fire one hook's tool AS the hook's bound execution key.
+
+        The bind must stay HERE, inside the per-hook coroutine: a contextvar set inside a
+        task is invisible to its siblings, which is what gives each fanned-out hook its
+        own key rather than a sibling's or the server's unbounded authority."""
         writer = get_monitoring().writer
         with writer.start_span(name="hook_run_tool", kind=SpanKind.CHAIN):
             writer.update_current_span(
@@ -76,6 +83,10 @@ class BaseHooksManager(ABC):
                     "tool_kwargs_override": tool_kwargs_override,
                 }
             )
+            if not hook.execution_key:
+                # No bound key means no authority to fire under; the server's own is not a
+                # substitute. Refuse before any work.
+                raise PermissionDenied(f"hook {hook.name!r} binds no execution key; refusing to fire")
 
             rendered_expr = await tai42_app.storage.resource_manager.render_by_id_or_content(
                 content=hook.expr,
@@ -83,12 +94,13 @@ class BaseHooksManager(ABC):
                 kwargs=hook.expr_kwargs,
             )
             event_input = (await run_jq_first(rendered_expr, payload)) if rendered_expr else {}
-            # Shallow top-level merge, strongest last: scan-influenced expr input is
-            # the weakest, the hook's static ``tool_kwargs`` is the operator default,
-            # and the per-link override (when the caller passes one) wins on a
-            # colliding key.
-            tool_input = {**event_input, **(hook.tool_kwargs or {}), **(tool_kwargs_override or {})}
-            await tai42_app.tools.run_tool(hook.tool, tool_input)
+            # Shallow top-level merge, strongest last: expr input, then the per-link
+            # override, then the hook author's static ``tool_kwargs``. The author's pinned
+            # keys must stay unoverridable — they are the hook's only lock against a link
+            # minted by someone with no relation to the topic.
+            tool_input = {**event_input, **(tool_kwargs_override or {}), **(hook.tool_kwargs or {})}
+            async with bind_execution_identity(hook.execution_key, bound_fingerprint=hook.execution_key_fingerprint):
+                await tai42_app.tools.run_tool(hook.tool, tool_input)
 
     async def _run_hook_with_limit(
         self, hook: HookParams, payload: dict[str, Any], tool_kwargs_override: dict[str, Any] | None = None
@@ -133,11 +145,13 @@ class BaseHooksManager(ABC):
     ):
         """Fan the event out to every hook on ``topic``.
 
-        ``tool_kwargs_override`` (kw-only) is merged LAST into EVERY fired hook's
-        tool input, winning on a colliding key over both the rendered ``expr``
-        input and the hook's static ``tool_kwargs`` — the trigger-link resolver
-        passes the link's own params here; ``universal_webhook`` passes nothing, so
-        its dispatch is byte-identical."""
+        ``tool_kwargs_override`` (kw-only) is merged into every fired hook's tool input
+        ABOVE the rendered ``expr`` input but BELOW the hook's static ``tool_kwargs``, so
+        it supplies only the keys the hook's author left unpinned.
+
+        Each hook runs in its own task and binds its own execution identity there, so a
+        hook is never fired under a sibling's key; a denied fire is that hook's error
+        outcome and leaves the rest of the fan-out untouched."""
         writer = get_monitoring().writer
         with (
             writer.start_span(name="hook_on_event", kind=SpanKind.CHAIN),

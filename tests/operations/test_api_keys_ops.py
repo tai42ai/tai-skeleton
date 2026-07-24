@@ -2,9 +2,11 @@
 
 The route oracles (``tests/routers/test_api_keys*``) drive these ops end to end
 through the adapter; this pins the operation-level edge branches directly — the
-gate-off / gate-on caller resolution, the non-admin ownership rejections, and the
+``_check_scope_subset`` branches, the ops' own ownership rejections, and the
 ``ValueError -> BadRequestError`` mappings — so each declared error class is
-exercised at the operation itself, independent of the route surface.
+exercised at the operation itself, independent of the route surface. The acting-principal
+resolution and the shared ownership predicate those ops call are pinned in
+``test_authority``.
 """
 
 from __future__ import annotations
@@ -16,38 +18,18 @@ from tai42_contract.access_control.models import AccessPolicy
 
 from tai42_skeleton.access_control import management
 from tai42_skeleton.access_control.settings import AccessControlSettings
+from tai42_skeleton.operations import _authority as authority
 from tai42_skeleton.operations import api_keys as ops
 from tai42_skeleton.operations.errors import BadRequestError, ForbiddenError, NotFoundError
 
 
-def _caller(*, caller_id="c", scopes=None, is_admin=False, owner_claim=None) -> ops._Caller:
-    return ops._Caller(
+def _caller(*, caller_id="c", scopes=None, is_admin=False, owner_claim=None) -> authority.Caller:
+    return authority.Caller(
         caller_id=caller_id,
         policy=AccessPolicy(scopes=scopes or []),
         is_admin=is_admin,
         owner_claim=owner_claim,
     )
-
-
-# -- caller resolution -------------------------------------------------------
-
-
-async def test_resolve_caller_gate_off_is_admin(monkeypatch):
-    # With access control OFF there is no principal to attenuate against — the caller is
-    # treated as admin with no bound id.
-    monkeypatch.setattr(ops, "access_control_settings", lambda: AccessControlSettings(enable=False))
-    caller = await ops._resolve_caller()
-    assert caller.is_admin is True
-    assert caller.caller_id is None
-    assert "*" in caller.policy.scopes
-
-
-async def test_resolve_caller_gate_on_no_caller_raises(monkeypatch):
-    # With the gate ON but the caller contextvar UNSET (an invariant breach), refuse
-    # loudly rather than silently escalating to admin.
-    monkeypatch.setattr(ops, "access_control_settings", lambda: AccessControlSettings(enable=True))
-    with pytest.raises(RuntimeError, match="caller user id is unset"):
-        await ops._resolve_caller()
 
 
 def test_check_scope_subset_wildcard_caller_grants_anything():
@@ -58,17 +40,8 @@ def test_check_scope_subset_wildcard_caller_grants_anything():
 # -- ownership rejections ----------------------------------------------------
 
 
-async def test_require_owned_by_caller_unknown_key_is_not_found(monkeypatch):
-    async def _no_body(_user_id):
-        return None
-
-    monkeypatch.setattr(management, "get_policy_body", _no_body)
-    with pytest.raises(NotFoundError, match="user not found"):
-        await ops._require_owned_by_caller(_caller(caller_id="alice"), "ghost")
-
-
 async def test_edit_api_key_non_admin_unknown_key_is_not_found(monkeypatch):
-    monkeypatch.setattr(ops, "_resolve_caller", lambda: _make(_caller(caller_id="alice")))
+    monkeypatch.setattr(ops, "resolve_caller", lambda: _make(_caller(caller_id="alice")))
 
     async def _no_body(_user_id):
         return None
@@ -79,7 +52,7 @@ async def test_edit_api_key_non_admin_unknown_key_is_not_found(monkeypatch):
 
 
 async def test_edit_api_key_non_admin_not_owned_is_forbidden(monkeypatch):
-    monkeypatch.setattr(ops, "_resolve_caller", lambda: _make(_caller(caller_id="alice")))
+    monkeypatch.setattr(ops, "resolve_caller", lambda: _make(_caller(caller_id="alice")))
 
     async def _bob_body(_user_id):
         return {"policy_data": {OWNER_USER_ID_CLAIM: "bob"}}
@@ -90,7 +63,7 @@ async def test_edit_api_key_non_admin_not_owned_is_forbidden(monkeypatch):
 
 
 async def test_edit_api_key_non_admin_scope_superset_is_bad_request(monkeypatch):
-    monkeypatch.setattr(ops, "_resolve_caller", lambda: _make(_caller(caller_id="alice", scopes=["read"])))
+    monkeypatch.setattr(ops, "resolve_caller", lambda: _make(_caller(caller_id="alice", scopes=["read"])))
 
     async def _own_body(_user_id):
         return {"policy_data": {OWNER_USER_ID_CLAIM: "alice"}}
@@ -124,7 +97,7 @@ async def test_delete_scope_value_error_maps_to_bad_request(monkeypatch):
 
 
 async def test_revoke_api_key_value_error_maps_to_bad_request(monkeypatch):
-    monkeypatch.setattr(ops, "_resolve_caller", lambda: _make(_caller(is_admin=True)))
+    monkeypatch.setattr(ops, "resolve_caller", lambda: _make(_caller(is_admin=True)))
 
     async def _boom(_user_id):
         raise ValueError("revoke failed")
@@ -137,7 +110,7 @@ async def test_revoke_api_key_value_error_maps_to_bad_request(monkeypatch):
 async def test_rollback_policy_restore_value_error_maps_to_bad_request(monkeypatch):
     from types import SimpleNamespace
 
-    monkeypatch.setattr(ops, "_resolve_caller", lambda: _make(_caller(is_admin=True)))
+    monkeypatch.setattr(ops, "resolve_caller", lambda: _make(_caller(is_admin=True)))
     monkeypatch.setattr("tai42_skeleton.versioning.versioned_store_configured", lambda: True)
 
     class _Store:
@@ -157,7 +130,7 @@ async def test_rollback_policy_restore_value_error_maps_to_bad_request(monkeypat
 # -- helper ------------------------------------------------------------------
 
 
-async def _make(caller: ops._Caller) -> ops._Caller:
+async def _make(caller: authority.Caller) -> authority.Caller:
     return caller
 
 

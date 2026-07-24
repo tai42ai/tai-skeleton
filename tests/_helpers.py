@@ -13,7 +13,7 @@ class DeliverOnlyChannel:
     ``NotImplementedError``, exactly as the contract prescribes for a channel
     without a notify capability. Subclasses implement ``deliver``."""
 
-    async def notify(self, notification: ChannelNotification) -> None:
+    async def notify(self, notification: ChannelNotification) -> list[str]:
         raise NotImplementedError
 
 

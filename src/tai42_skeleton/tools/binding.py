@@ -11,6 +11,7 @@ import inspect
 import logging
 import sys
 import types
+from collections import OrderedDict
 from collections.abc import Callable, Sequence
 from functools import lru_cache
 from typing import TYPE_CHECKING, Any, cast
@@ -37,6 +38,7 @@ if TYPE_CHECKING:
     from fastmcp import FastMCP
 
     from tai42_skeleton.app.server import TaiMCP
+    from tai42_skeleton.authz.identity import CallerIdentity
     from tai42_skeleton.extensions import ExtensionRegistry
     from tai42_skeleton.manifest import Manifest
     from tai42_skeleton.tools.registry import ToolRegistry
@@ -187,6 +189,27 @@ def _baked_partial(tool_obj: TransformedTool) -> Callable[..., Any]:
     )
 
 
+# A preset's makefun-compiled partial per resolved tool object, so a repeated live resolve
+# yields the SAME callable and fastmcp's identity-keyed ``without_injected_parameters`` LRU
+# still hits. Keyed on ``id`` (a fastmcp ``Tool`` is unhashable): safe only because the cached
+# partial strongly references its source tool, pinning that id for the entry's life.
+_BAKED_PARTIAL_CACHE_MAX = 2048
+_baked_partial_cache: "OrderedDict[int, Callable[..., Any]]" = OrderedDict()
+
+
+def _cached_baked_partial(tool_obj: TransformedTool) -> Callable[..., Any]:
+    key = id(tool_obj)
+    cached = _baked_partial_cache.get(key)
+    if cached is not None:
+        _baked_partial_cache.move_to_end(key)
+        return cached
+    partial = _baked_partial(tool_obj)
+    _baked_partial_cache[key] = partial
+    if len(_baked_partial_cache) > _BAKED_PARTIAL_CACHE_MAX:
+        _baked_partial_cache.popitem(last=False)
+    return partial
+
+
 def _tool_result_value(result: Any) -> Any:
     """Reduce a ``ToolResult`` (a transformed tool's ``run`` output) to the same
     raw, JSON-able value the callable run path returns.
@@ -233,6 +256,25 @@ def _serialize_result(result: Any) -> Any:
     elif isinstance(result, File):
         result = result.to_resource_content()
     return to_jsonable_python(result)
+
+
+def _named_call_arguments(
+    signature: inspect.Signature, args: tuple[Any, ...], kwargs: dict[str, Any]
+) -> dict[str, Any]:
+    """A client-tool call's arguments keyed by PARAMETER NAME — the shape the
+    execution-identity decision reads them in.
+
+    Positionals are bound through ``signature``, a ``**kwargs`` catch-all is flattened
+    back in, ``*args`` is dropped, and the :data:`_UNSET` sentinel is stripped — so the
+    decision sees exactly the set-fields-only argument set ``run_tool`` authorizes."""
+    bound = signature.bind_partial(*args, **kwargs)
+    arguments = dict(bound.arguments)
+    for name, param in signature.parameters.items():
+        if param.kind is inspect.Parameter.VAR_KEYWORD:
+            arguments.update(arguments.pop(name, {}))
+        elif param.kind is inspect.Parameter.VAR_POSITIONAL:
+            arguments.pop(name, None)
+    return {name: value for name, value in arguments.items() if value is not _UNSET}
 
 
 @lru_cache(maxsize=2048)
@@ -305,6 +347,47 @@ class ToolBinding:
             raise RuntimeError("TaiMCP is not started — call start()/app_context first.")
         return manifest
 
+    # -- execution-identity seam ----------------------------------------------
+
+    @staticmethod
+    def _bound_execution_identity() -> "CallerIdentity | None":
+        """The execution identity bound to the current fire, or ``None`` outside one.
+
+        Imported inside the function: ``authz`` reaches back into this module."""
+        from tai42_skeleton.authz.execution_identity import get_execution_identity
+
+        return get_execution_identity()
+
+    async def _authorize_execution_dispatch(
+        self, identity: "CallerIdentity", tool_name: str, call_arguments: dict[str, Any]
+    ) -> None:
+        """Authorize one tool dispatch against the bound execution ``identity``; a denial
+        raises ``PermissionDenied`` out of the dispatch.
+
+        Call ONLY with a non-``None`` identity. The registries handed to the decision are
+        the live ones, so a reload is reflected immediately; an unsettled surface is
+        retried once behind the reload gate, since a background fire has no client to
+        retry it and would otherwise be lost."""
+        from tai42_skeleton.app.reload_gate import reload_gate
+        from tai42_skeleton.authz.execution import authorize_execution_tool_call
+        from tai42_skeleton.authz.resolver import OperationSurfaceUnsettledError
+
+        async def _authorize() -> None:
+            await authorize_execution_tool_call(
+                identity,
+                tool_name,
+                call_arguments,
+                tool_registry=self._tool_registry,
+                preset_manager=self._app.preset_manager,
+            )
+
+        try:
+            await _authorize()
+        except OperationSurfaceUnsettledError:
+            async with reload_gate.lock:
+                pass
+            await _authorize()
+
     # -- lookup / invocation ---------------------------------------------------
 
     async def get_tools(self) -> dict[str, Tool]:
@@ -360,13 +443,22 @@ class ToolBinding:
         liveness refresh). ``asyncio.to_thread`` copies the current contextvars
         into the thread, so ``without_injected_parameters``' ctx/``Depends``
         resolution still sees the active context. Async tools and the default
-        (``offload_sync=False``) path run inline on the event loop."""
+        (``offload_sync=False``) path run inline on the event loop.
+
+        A dispatch under a bound execution identity is authorized against it first, on the
+        arguments actually about to be fired (:meth:`_authorize_execution_dispatch`)."""
         # An agent run tool's re-dispatch (e.g. a chain TRANSFORMER re-invoking it by
         # name) materializes the _UNSET sentinel for optionals the caller never
         # supplied; strip it here so the set-fields-only contract holds and the tool's
         # own defaults apply instead of a sentinel failing validation. No external
         # caller can produce _UNSET, so this is a no-op for ordinary arguments.
         arguments = {name: value for name, value in arguments.items() if value is not _UNSET}
+        # Execution-identity seam: decided at INVOCATION, before the tool is resolved, on
+        # the exact arguments this call fires. With no identity bound it is a contextvar
+        # read and the path below is untouched.
+        execution_identity = self._bound_execution_identity()
+        if execution_identity is not None:
+            await self._authorize_execution_dispatch(execution_identity, key, arguments)
         mcp_tool = await self._resolve_run_target(key)
         if isinstance(mcp_tool, TransformedTool):
             # A prebuilt transformed tool (e.g. a preset) has no plain callable to
@@ -445,7 +537,7 @@ class ToolBinding:
             # docstring once a dict ``args_schema`` is given, and the ``**arguments``
             # body carries none). A normal tool gets neither: langchain infers the
             # schema from the presented signature and reads the description from the
-            # runnable's docstring, exactly as before.
+            # runnable's docstring.
             explicit_schema = self._client_args_schema(t)
             extra_kwargs: dict[str, Any] = (
                 {"args_schema": explicit_schema, "description": t.description} if explicit_schema is not None else {}
@@ -519,13 +611,34 @@ class ToolBinding:
         native ``*args``/``**kwargs`` signature): the LLM-facing schema rides on the
         explicit ``args_schema``, and forwarding only the caller-supplied kwargs
         keeps ``from_tool_input``'s set-fields-only contract intact — never
-        materializing (and failing to serialize) the sentinel defaults."""
+        materializing (and failing to serialize) the sentinel defaults.
+
+        The closure gates on the execution identity exactly as ``run_tool`` does, under
+        the tool's FULL registered name (the client-facing truncation is only a label).
+        With no identity bound the call forwards straight through to the snapshot's
+        callable.
+
+        Under a fire the body is re-resolved from the name LIVE, so the registration
+        decided about is the one that runs — a client-tool snapshot outlives an agent
+        turn, and a preset re-based or deleted mid-turn would otherwise run its stale
+        baked body; a vanished registration fails loudly as an unknown tool."""
         base_callable = self._branch_base_callable(tool_obj)
         resolved = without_injected_parameters(base_callable)
+        resolved_sig = inspect.signature(resolved)
 
         async def runnable(*args, **kwargs):
+            target, target_sig = resolved, resolved_sig
+            execution_identity = self._bound_execution_identity()
+            if execution_identity is not None:
+                target = without_injected_parameters(
+                    self._branch_base_callable(await self._resolve_run_target(tool_obj.name))
+                )
+                target_sig = inspect.signature(target)
+                await self._authorize_execution_dispatch(
+                    execution_identity, tool_obj.name, _named_call_arguments(target_sig, args, kwargs)
+                )
             with bridge_context(self._app.fastmcp):
-                result = resolved(*args, **kwargs)
+                result = target(*args, **kwargs)
                 if inspect.isawaitable(result):
                     return await result
                 return result
@@ -540,7 +653,6 @@ class ToolBinding:
             # langchain forwards only the supplied kwargs to the concrete body.
             return runnable
 
-        resolved_sig = inspect.signature(resolved)
         runnable.__signature__ = resolved_sig  # type: ignore[attr-defined]
         # langchain infers the args schema via pydantic, which reads BOTH the
         # signature AND ``get_type_hints`` (i.e. ``__annotations__``). Carry the
@@ -932,7 +1044,7 @@ class ToolBinding:
         if isinstance(tool_obj, FunctionTool):
             return tool_obj.fn
         if isinstance(tool_obj, TransformedTool):
-            return _baked_partial(tool_obj)
+            return _cached_baked_partial(tool_obj)
         raise TypeError(
             f"cannot branch-bind {type(tool_obj).__name__} {tool_obj.name!r}: "
             "expected a FunctionTool or TransformedTool"

@@ -55,6 +55,7 @@ from tai42_kit.clients.impl.redis import RedisClient
 
 from tai42_skeleton.access_control.user import request_identity
 from tai42_skeleton.operations import BadRequestError, ForbiddenError, NotFoundError, UnavailableError, operation
+from tai42_skeleton.operations._submitted_tool_authz import authorize_submitted_tool
 from tai42_skeleton.routers.tool_runs_settings import ToolRunsSettings, tool_runs_settings
 
 logger = logging.getLogger(__name__)
@@ -159,8 +160,10 @@ class ToolRunStore:
         the record AND the run id is also pushed onto the per-identity index
         ``recent:{user_id}:{tool_name}`` (its own bound/TTL, mirroring the shared
         index), so a restricted caller's list reads a complete window that other
-        identities' volume can never truncate. A caller with no bound identity (gate
-        off) leaves ``user_id`` absent and writes only the shared index.
+        identities' volume can never truncate. A caller with no bound identity — an
+        anonymous or gate-off REQUEST — leaves ``user_id`` absent and writes only the
+        shared index; a fire always binds its execution key, gate off included, and is
+        attributed to it.
 
         None of the writes branches on a prior result, so they are all issued in ONE
         pipeline (a single round trip) rather than sequentially."""
@@ -249,6 +252,11 @@ class ToolRunStore:
 
 
 def _spawn_supervisor(run_id: str, tool_name: str, arguments: dict[str, Any]) -> None:
+    """Detach the task that runs ``tool_name`` and persists its outcome.
+
+    The task must be spawned HERE so it copies the submitting context: that carries a
+    bound execution identity into the run, which is what authorizes the dispatch
+    :func:`_supervise` makes long after the submitting fire released its binding."""
     task = asyncio.create_task(_supervise(run_id, tool_name, arguments))
     _SUPERVISORS.add(task)
     task.add_done_callback(lambda t: _on_supervisor_done(t, run_id, tool_name))
@@ -450,7 +458,11 @@ def _list_view(run_id: str, record: dict[str, str]) -> dict[str, Any]:
 )
 async def submit_run(tool_name: str, arguments: dict[str, object]) -> dict:
     """Submit a tool for background execution — returns ``202 {run_id}`` at once
-    and runs the tool through the same seam the sync door uses."""
+    and runs the tool through the same seam the sync door uses.
+
+    The submitted tool is authorized against the caller with the full tool-edge decision
+    before anything is recorded, so a fenced/secret target is admin-only here exactly as
+    at the sync door and the MCP edge."""
     settings = tool_runs_settings()
     store = ToolRunStore(settings.key_prefix)
 
@@ -461,6 +473,10 @@ async def submit_run(tool_name: str, arguments: dict[str, object]) -> dict:
     tools = await tai42_app.tools.get_tools()
     if tool_name not in tools:
         raise NotFoundError(f"unknown tool: {tool_name}")
+
+    # The run detaches from this request, so this is the ONLY edge the inner tool reaches:
+    # decide it here, before a slot is reserved.
+    await authorize_submitted_tool(tool_name, arguments)
 
     # Per-worker concurrency cap: check + increment are synchronous (no await
     # between them) so two concurrent submits cannot both pass the check before

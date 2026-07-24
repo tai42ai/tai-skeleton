@@ -17,6 +17,7 @@ from pydantic import BaseModel
 from pydantic_core import PydanticUndefined, core_schema
 from tai42_contract.agent import Agent
 
+from tai42_skeleton.agent.thread_reservation import run_kwargs_from_tool_input
 from tai42_skeleton.exceptions.exceptions import TaiValidationError
 
 if TYPE_CHECKING:
@@ -166,9 +167,10 @@ class AgentBinding:
         caller-supplied argument keys — the optional parameters the caller omitted
         arrive as the :data:`_UNSET` sentinel and are stripped, so
         ``model_fields_set`` after ``model_validate`` reflects only what was passed
-        — then maps to ``run`` kwargs via the agent's ``from_tool_input`` (which
-        forwards set fields only) and returns ``run``'s final value (drained per the
-        terminal rule inside the agent's own ``run``). A non-JSON ``ToolInput``
+        — then maps to ``run`` kwargs through the shared reservation seam (the
+        agent's ``from_tool_input``, which forwards set fields only, plus the
+        ``bridge:`` thread refusal) and returns ``run``'s final value (drained per
+        the terminal rule inside the agent's own ``run``). A non-JSON ``ToolInput``
         field fails loudly here at ``model_json_schema()`` time.
 
         The body presents a concrete per-field signature (:func:`_run_tool_signature`)
@@ -188,7 +190,7 @@ class AgentBinding:
         async def run_impl(**arguments: Any) -> Any:
             supplied = {key: value for key, value in arguments.items() if value is not _UNSET}
             validated = tool_input.model_validate(supplied)
-            run_kwargs = agent.from_tool_input(validated)
+            run_kwargs = run_kwargs_from_tool_input(agent, validated)
             return await self.get_agent(name).run(**run_kwargs)
 
         # makefun's ``func_impl`` is typed ``Callable[[Any], Any]`` but it accepts

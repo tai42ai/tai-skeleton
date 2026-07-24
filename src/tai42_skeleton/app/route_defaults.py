@@ -32,7 +32,7 @@ from __future__ import annotations
 # spelled — every other consumer imports this constant.
 STUDIO_SPA_ROUTER = "tai42_skeleton.routers.plugins"
 
-# The 27 route-registering API router modules, mounted by default under
+# The 29 route-registering API router modules, mounted by default under
 # ``"all"``/``"api"``. Ordered alphabetically; among these each owns a distinct
 # ``/api/*`` (or ``/metrics``, ``/health``) prefix, so their relative order is
 # not load-bearing — only the SPA catch-all's last position is.
@@ -42,8 +42,10 @@ DEFAULT_API_ROUTERS: tuple[str, ...] = (
     "tai42_skeleton.routers.backend",
     "tai42_skeleton.routers.backup",
     "tai42_skeleton.routers.channels",
+    "tai42_skeleton.routers.checkpoints",
     "tai42_skeleton.routers.config",
     "tai42_skeleton.routers.connectors",
+    "tai42_skeleton.routers.conversations",
     "tai42_skeleton.routers.extensions",
     "tai42_skeleton.routers.health",
     "tai42_skeleton.routers.hooks",

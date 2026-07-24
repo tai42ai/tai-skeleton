@@ -12,7 +12,7 @@ from tai42_skeleton.app.instance import app
 from tai42_skeleton.app.reload_gate import reload_gate
 from tai42_skeleton.app.route_registry import load_api_routes
 from tai42_skeleton.authz.middleware import AuthzMiddleware
-from tai42_skeleton.authz.resolver import resolve_base_operation
+from tai42_skeleton.authz.resolver import resolve_dispatch
 from tai42_skeleton.cli.openapi import build_openapi_spec
 from tai42_skeleton.manifest import Manifest
 from tai42_skeleton.operations.registry import operation_registry
@@ -144,13 +144,14 @@ def test_skeleton_operation_projects_at_boot():
             # The tool-edge authorization governs the projected tool: the middleware
             # is installed and resolves the tool name back to its operation.
             assert any(isinstance(m, AuthzMiddleware) for m in app._fast_mcp.middleware)
-            op = resolve_base_operation(
+            resolved = resolve_dispatch(
                 "list_system_kinds",
+                {},
                 tool_registry=getattr(app, "_tool_registry", None),
                 preset_manager=getattr(app, "preset_manager", None),
             )
-            assert op is not None
-            assert op.name == "list_system_kinds"
+            assert resolved is not None
+            assert resolved.operation.name == "list_system_kinds"
 
     asyncio.run(run())
 

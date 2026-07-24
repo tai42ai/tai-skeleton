@@ -32,14 +32,12 @@ from tai42_skeleton.operations.registry import (
     operation_registry,
 )
 
-# The infrastructure modules of this package — the decorator, the registry, the
-# error types, the route adapter, and the projection. They declare NO operations
-# and must NEVER be reloaded: reloading ``registry`` or ``decorator`` would mint a
-# NEW ``operation_registry`` object and orphan the singleton the lifecycle, the
-# projection, and the tool-edge authorization all hold. Every OTHER module in this
-# package is an operation-declaration LEAF whose ``@operation`` decorators register
-# into that singleton at import.
-_INFRA_MODULES = frozenset({"__init__", "adapter", "decorator", "errors", "projection", "registry", "_broadcast"})
+# The modules of this package declaring no ``@operation``; every other one is a leaf. NEVER
+# reloaded: a reload would mint a new ``operation_registry`` and orphan the singleton, or
+# re-mint a helper's exported types under the still-cached leaves that closed over them.
+_INFRA_MODULES = frozenset(
+    {"__init__", "adapter", "decorator", "errors", "projection", "registry", "_authority", "_broadcast"}
+)
 
 
 def operation_leaf_modules() -> list[str]:

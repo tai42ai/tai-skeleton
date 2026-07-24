@@ -16,7 +16,9 @@ from tai42_contract.hooks.models import HookParams
 # (the routers module below registers its route through the handle at import);
 # entering ``app.app_context`` below re-binds the same singleton, which the
 # routers/hooks chain resolves against at request time.
+from tai42_skeleton.access_control.settings import AccessControlSettings
 from tai42_skeleton.app.instance import app
+from tai42_skeleton.authz import execution as execution_module
 from tai42_skeleton.hooks.cache import get_hooks_manager
 from tai42_skeleton.manifest import Manifest
 from tai42_skeleton.routers.hooks import universal_webhook
@@ -31,6 +33,14 @@ def _in_memory_hooks(monkeypatch: pytest.MonkeyPatch):
     get_hooks_manager.cache_clear()
     yield
     get_hooks_manager.cache_clear()
+
+
+@pytest.fixture(autouse=True)
+def _access_control_off(monkeypatch: pytest.MonkeyPatch):
+    """A deployment with access control disabled: the fire still binds its hook's
+    execution identity, built from the key alone with no policy store to read, and the
+    dispatch seam allows — exactly the gate-off posture of every other door here."""
+    monkeypatch.setattr(execution_module, "access_control_settings", lambda: AccessControlSettings(enable=False))
 
 
 def _request(topic: str, body: dict) -> Request:
@@ -68,6 +78,8 @@ def test_webhook_fires_registered_hook_tool(monkeypatch: pytest.MonkeyPatch):
                     name="on-order",
                     topic="orders",
                     tool="run_order_flow",
+                    execution_key="k-fire",
+                    execution_key_fingerprint="fp-fire",
                     expr=".payload",
                     tool_kwargs={"source": "webhook"},
                 )

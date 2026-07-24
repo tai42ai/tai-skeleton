@@ -103,6 +103,18 @@ async def test_notify_user_defaults_forwarded_and_maps_valueerror(monkeypatch: p
     assert helper.calls == [(("hello",), {"channel": None, "recipient": None, "audience": None})]
 
 
+async def test_notify_user_rejects_caller_sender_identity_as_400(monkeypatch: pytest.MonkeyPatch) -> None:
+    # sender_identity is internal to the conversation bridge: a caller-supplied value is
+    # a 400 BEFORE any send, so the channels helper is never reached.
+    helper = _RecordingHelper()
+    monkeypatch.setattr(notifications_ops, "_notify_user", helper)
+
+    with pytest.raises(BadRequestError, match="sender_identity is set internally"):
+        await notifications_ops.notify_user("hi", channel="telegram", sender_identity="+15550001")
+
+    assert helper.calls == []
+
+
 async def test_notify_user_channel_omitted_records_to_sink(monkeypatch: pytest.MonkeyPatch) -> None:
     helper = _RecordingHelper()
     monkeypatch.setattr(notifications_ops, "_notify_user", helper)
@@ -171,8 +183,9 @@ class _RecordingChannel:
     async def deliver(self, delivery: object) -> None:
         raise AssertionError("notify_user must never call deliver")
 
-    async def notify(self, notification: ChannelNotification) -> None:
+    async def notify(self, notification: ChannelNotification) -> list[str]:
         self.notifications.append(notification)
+        return []
 
 
 async def test_restricted_notify_channel_path_rejects_other_identity_as_403(sink_redis) -> None:

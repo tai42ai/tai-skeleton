@@ -18,6 +18,8 @@ from __future__ import annotations
 import re
 from enum import Enum
 
+from tai42_kit.settings import register_settings_reset
+
 from tai42_skeleton.access_control.path_canon import MalformedPathError, canonicalize_path
 from tai42_skeleton.app.route_registry import (
     RouteMetadata,
@@ -72,20 +74,11 @@ def grant_map_admits(meta: RouteMetadata, method: str, grants: RoleGrants) -> tu
     return False, DenialCause.LEVEL_MISS
 
 
-def effective_tag_levels(grants: RoleGrants, tags: list[str]) -> dict[str, str]:
-    """The role's effective level on each feature ``tag`` (an absent tag → ``none``) —
-    the shared answer the Studio nav, the effective-access view, and the gate read, so
-    they can never drift. Fenced/secret routes are never grantable, so a tag that
-    carries only fenced/secret routes still reads ``none`` here (the caller filters the
-    grantable tag set)."""
-    return {tag: grants.get(tag, "none") for tag in tags}
-
-
 # -- concrete (path, method) → registered route resolution -------------------
 
-# The route registry is import-populated and immutable at runtime (routes record only as
-# router modules import at startup), so the concrete/templated index is built once and
-# reused. A test that registers a new route calls :func:`reset_route_index` to rebuild.
+# The route registry is import-populated, so the concrete/templated index is built lazily
+# and reused. :func:`reset_route_index` must drop it whenever the registry can have GAINED
+# routes, so the index never outlives the surface it describes.
 _concrete_index: dict[tuple[str, str], RouteMetadata] | None = None
 _templated_matchers: list[tuple[re.Pattern[str], frozenset[str], RouteMetadata]] | None = None
 
@@ -102,6 +95,19 @@ def _template_to_regex(template: str) -> re.Pattern[str]:
     return re.compile(f"^{pattern}$")
 
 
+def _served_methods(meta: RouteMetadata) -> frozenset[str]:
+    """The methods the ASGI router actually serves ``meta`` on.
+
+    Starlette adds ``HEAD`` to every ``GET`` route while the registry stores only the
+    DECLARED set. The index must key on the SERVED set: a method missing from it resolves
+    to no route, skipping the level pass and the admin-only fence.
+    """
+    declared = frozenset(meta.methods)
+    if "GET" not in declared:
+        return declared
+    return declared | {"HEAD"}
+
+
 def _build_index() -> None:
     global _concrete_index, _templated_matchers
     concrete: dict[tuple[str, str], RouteMetadata] = {}
@@ -111,7 +117,7 @@ def _build_index() -> None:
     # served router surface (so the index matches what is served); in a CLI/test process it
     # triggers the offline whole-package import.
     for meta in load_all_routes():
-        methods = frozenset(meta.methods)
+        methods = _served_methods(meta)
         # Key/compile on the CANONICALIZED registered path so the index and the
         # canonicalized lookup in ``resolve_route_meta`` decide on the identical form —
         # a registered route can never fail to resolve through a shape mismatch.
@@ -125,9 +131,17 @@ def _build_index() -> None:
     _templated_matchers = templated
 
 
+@register_settings_reset
 def reset_route_index() -> None:
     """Drop the cached concrete/templated route index so it rebuilds against the current
-    registry — for tests that register routes after the index was first built."""
+    registry.
+
+    MUST be called AFTER a reload has re-imported the router modules and every router has
+    re-attached its routes — ``start()`` does. A stale index answers ``None`` for every
+    newly mounted route, which denies every caller at the tool edge and skips the route's
+    fence at the request gate. The ``@register_settings_reset`` drop fires at the START of
+    a reload, before the reimport, so it cannot close that window on its own.
+    """
     global _concrete_index, _templated_matchers
     _concrete_index = None
     _templated_matchers = None
@@ -140,7 +154,9 @@ def resolve_route_meta(path: str, method: str | None) -> RouteMetadata | None:
     ``None`` is NOT an allow: a path with no registered route is not a grantable gated
     route (it is the public SPA shell, an operational probe, or an unmapped path), and
     those are governed by the scope layer + the jq base — the per-tag pass simply does
-    not act on them. A registered route always resolves here so its fence/level applies.
+    not act on them. Every registered ``fenced``/``secret`` route resolves here — the boot
+    audit refuses to start otherwise — so the admin-only fence is never skipped through a
+    failed resolution; a grantable route carries no such audit.
     A concrete path matching a templated route's pattern resolves to that route's
     metadata (feature tags + action-class). The path is canonicalized first so the match
     decides on the same form the verifier uses; a malformed path resolves to ``None``

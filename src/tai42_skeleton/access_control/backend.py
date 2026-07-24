@@ -9,12 +9,13 @@ from tai42_contract.access_control.models import JqAuthContext
 # manager via this interface.
 from tai42_contract.app import tai42_app
 
-from tai42_skeleton.access_control.policy import PolicyEnforcer
+from tai42_skeleton.access_control.path_canon import MalformedPathError, canonicalize_path
+from tai42_skeleton.access_control.policy import PolicyEnforcer, policy_is_empty
 from tai42_skeleton.access_control.role_gate import DenialCause
 from tai42_skeleton.access_control.role_grants import role_level_decision
 from tai42_skeleton.access_control.settings import AccessControlSettings
 from tai42_skeleton.access_control.user import TaiUser, is_admin_policy
-from tai42_skeleton.access_control.verifier import AccessControlVerifier
+from tai42_skeleton.access_control.verifier import AccessControlVerifier, is_always_public_prefix
 
 logger = logging.getLogger(__name__)
 
@@ -112,13 +113,22 @@ class AccessControlAuthBackend(AuthenticationBackend):
         raise AuthenticationError("Invalid API key")
 
     def _is_always_public_path(self, path: str) -> bool:
-        """Whether ``path`` is the pre-auth login surface (an always-public prefix or a
-        route beneath it) — the same match shape the verifier uses."""
-        if len(path) > 1 and path.endswith("/"):
-            path = path.rstrip("/")
-        return any(
-            path == prefix or path.startswith(f"{prefix}/") for prefix in self.settings.always_public_path_prefixes
-        )
+        """Whether ``path`` is the pre-auth login surface, asked of the ONE definition of
+        that family over the SAME canonical form the resource guard resolves on.
+
+        A malformed path has no canonical form, so it is NOT this surface: it falls
+        through to the credential path and is denied downstream, never admitted
+        unauthenticated on a shape the guard itself refuses to reason about."""
+        try:
+            canonical = canonicalize_path(path)
+        except MalformedPathError:
+            logger.warning(
+                "access_control: request path %r is malformed (NUL/control/backslash or residual "
+                "percent-escape) — not admitting it as the pre-auth login surface",
+                path,
+            )
+            return False
+        return is_always_public_prefix(canonical, self.settings)
 
     async def authenticate(self, conn):
         # 0. Public login surface: ignore any presented credential outright. Identity is
@@ -144,6 +154,14 @@ class AccessControlAuthBackend(AuthenticationBackend):
         try:
             policy, dynamic_context = await self.enforcer.get_auth_data(user_id)
 
+            # A credential that verifies against a principal the policy store no longer
+            # knows (the residue mid-revoke). Denied here so "authenticated" can never
+            # mean "has no policy" — a door gated on nothing but an authenticated
+            # principal would otherwise admit a revoked key.
+            if policy_is_empty(policy):
+                logger.warning("access_control: denied principal %s — no policy", user_id)
+                raise AuthorizationError("Access Denied")
+
             # Disabled principal (direct): a disabled account user's own session/key is
             # denied here — defense in depth beside the owned-key owner-disable check.
             if policy.policy_data.get("disabled") is True:
@@ -161,10 +179,7 @@ class AccessControlAuthBackend(AuthenticationBackend):
                 if owner_policy.policy_data.get("disabled") is True:
                     logger.warning("access_control: denied owned key %s — owner %s is disabled", user_id, owner)
                     raise AuthorizationError("Access Denied")
-                owner_empty = (
-                    not owner_policy.scopes and owner_policy.condition is None and owner_policy.condition_id is None
-                )
-                if owner_empty:
+                if policy_is_empty(owner_policy):
                     logger.warning("access_control: denied owned key %s — owner %s has no policy", user_id, owner)
                     raise AuthorizationError("Access Denied")
                 resolved_scopes = effective_scopes(policy.scopes, owner_policy.scopes)

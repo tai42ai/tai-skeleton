@@ -90,9 +90,17 @@ def test_reload_drops_the_hooks_manager_singleton(monkeypatch):
 async def test_hook_count_reflects_live_in_memory_hooks():
     manager = InMemoryHooksManager(HooksSettings())
     assert manager.hook_count == 0
-    await manager.register(HookParams(name="a", topic="orders", tool="ship"))
-    await manager.register(HookParams(name="b", topic="orders", tool="notify"))
-    await manager.register(HookParams(name="c", topic="refunds", tool="refund"))
+    await manager.register(
+        HookParams(name="a", topic="orders", tool="ship", execution_key="k-fire", execution_key_fingerprint="fp-fire")
+    )
+    await manager.register(
+        HookParams(name="b", topic="orders", tool="notify", execution_key="k-fire", execution_key_fingerprint="fp-fire")
+    )
+    await manager.register(
+        HookParams(
+            name="c", topic="refunds", tool="refund", execution_key="k-fire", execution_key_fingerprint="fp-fire"
+        )
+    )
     # Counts across every topic bucket.
     assert manager.hook_count == 3
     await manager.unregister("b")
@@ -107,7 +115,11 @@ async def test_reset_warns_naming_count_and_drops_in_memory_hooks(monkeypatch, c
     try:
         manager = get_hooks_manager()
         assert isinstance(manager, InMemoryHooksManager)
-        await manager.register(HookParams(name="h1", topic="orders", tool="ship"))
+        await manager.register(
+            HookParams(
+                name="h1", topic="orders", tool="ship", execution_key="k-fire", execution_key_fingerprint="fp-fire"
+            )
+        )
         assert manager.hook_count == 1
 
         with caplog.at_level(logging.WARNING, logger="tai42_skeleton.hooks.cache"):

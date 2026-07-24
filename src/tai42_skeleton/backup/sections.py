@@ -43,6 +43,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from pydantic import ValidationError
 from tai42_contract.app import tai42_app
 
 logger = logging.getLogger(__name__)
@@ -168,7 +169,7 @@ async def _import_access_control(payload: dict[str, Any]) -> _SectionReport:
             continue
         description = token.get("description", "")
         try:
-            api_key, _committed_body = await management.add_user_api_key(
+            api_key, _committed_body, _fingerprint = await management.add_user_api_key(
                 user_id,
                 description,
                 token.get("scopes") or [],
@@ -245,18 +246,23 @@ async def _export_webhooks() -> dict[str, Any]:
     from tai42_skeleton.hooks.cache import get_hooks_manager
     from tai42_skeleton.hooks.trigger_links import export_trigger_links
 
-    hooks = await get_hooks_manager().list_hooks()
-    # The section payload is an ENVELOPE: the hook registrations plus the trigger-link
-    # records + name index + tombstones (hashes and metadata only — never a raw
-    # token). An in-memory deployment holds no trigger links, so its envelope carries
-    # truthfully-empty ``trigger_links``/``tombstones`` and the hook export is
-    # unchanged.
-    return {"hooks": [params.model_dump(mode="json") for params in hooks.values()], **(await export_trigger_links())}
+    manager = get_hooks_manager()
+    hooks = await manager.list_hooks()
+    # Envelope: hooks + per-topic verifier bindings + trigger-link records/index/tombstones
+    # (hashes and metadata only — never a raw token; a binding's secret is an env var NAME).
+    # The bindings must travel with the hooks or a verified topic restores as a public door.
+    return {
+        "hooks": [params.model_dump(mode="json") for params in hooks.values()],
+        "topic_verifiers": await manager.all_topic_verifiers(),
+        **(await export_trigger_links()),
+    }
 
 
 async def _import_webhooks(payload: list[dict[str, Any]] | dict[str, Any]) -> _SectionReport:
     from tai42_contract.hooks import HookParams
 
+    from tai42_skeleton.authz.execution import ExecutionKeyAuthorityError, ExecutionKeyScan
+    from tai42_skeleton.authz.token_free import TokenFreeConditionError
     from tai42_skeleton.hooks.cache import get_hooks_manager
     from tai42_skeleton.hooks.trigger_links import (
         TriggerLinkError,
@@ -267,12 +273,50 @@ async def _import_webhooks(payload: list[dict[str, Any]] | dict[str, Any]) -> _S
 
     manager = get_hooks_manager()
     report = _empty_report()
+    # One scan for the whole restore: each distinct execution key is read and rendered once.
+    scan = ExecutionKeyScan()
 
-    async def _restore_hooks(hooks: list[dict[str, Any]]) -> None:
+    async def _restore_hooks(hooks: list[dict[str, Any]], unlocked_topics: frozenset[str] = frozenset()) -> None:
         existing = await manager.list_hooks()
         for item in hooks:
-            params = HookParams.model_validate(item)
-            await manager.register(params)
+            name = item.get("name") if isinstance(item, dict) else None
+            try:
+                params = HookParams.model_validate(item)
+            except ValidationError as exc:
+                # Per-hook rejection (which forces the import to report failure), never a
+                # hook written without a bounded identity nor an aborted restore of the rest.
+                report["errors"].append(f"hook {name!r}: {exc}")
+                report["skipped"] += 1
+                continue
+            if params.topic in unlocked_topics:
+                # Lock absent: writing the hook would hand an unverified public door this
+                # hook's bound execution key.
+                report["errors"].append(
+                    f"hook {name!r}: topic {params.topic!r} is not restored — its verifier binding failed, "
+                    "which would leave this hook live on an unverified public door"
+                )
+                report["skipped"] += 1
+                continue
+            try:
+                # Every stored hook must name a usable, token-free-evaluable execution key,
+                # so the import asserts it exactly as the register door does. The pass-role
+                # half is not asserted: this route is admin-only fenced.
+                await scan.assert_usable(params.execution_key, bound_fingerprint=params.execution_key_fingerprint)
+            except (ExecutionKeyAuthorityError, TokenFreeConditionError) as exc:
+                # Only these two types are per-record faults; other types from the
+                # policy-store read propagate as the section's own failure.
+                report["errors"].append(f"hook {name!r}: {exc}")
+                report["skipped"] += 1
+                continue
+            try:
+                await manager.register(params)
+            except ValueError as exc:
+                # register() compiles the inline condition/expr jq: a non-compiling
+                # expression is a per-hook rejection. Store/transport failures raise other
+                # types and propagate as the section's own failure.
+                report["errors"].append(f"hook {name!r}: {exc}")
+                report["skipped"] += 1
+                continue
             if params.name in existing:
                 report["updated"] += 1
             else:
@@ -295,7 +339,12 @@ async def _import_webhooks(payload: list[dict[str, Any]] | dict[str, Any]) -> _S
             raise ValueError(f"webhooks envelope is missing the required {key!r} key")
         if not isinstance(payload[key], list):
             raise ValueError(f"webhooks envelope {key!r} must be a list")
+    if "topic_verifiers" not in payload:
+        raise ValueError("webhooks envelope is missing the required 'topic_verifiers' key")
+    if not isinstance(payload["topic_verifiers"], dict):
+        raise ValueError("webhooks envelope 'topic_verifiers' must be a mapping of topic to binding")
     hooks = payload["hooks"]
+    topic_verifiers = payload["topic_verifiers"]
     trigger_links = payload["trigger_links"]
     tombstones = payload["tombstones"]
 
@@ -309,7 +358,33 @@ async def _import_webhooks(payload: list[dict[str, Any]] | dict[str, Any]) -> _S
     # through displacement.
     _reject_duplicate_hash_binding(trigger_links, await bound_hashes_by_name())
 
-    await _restore_hooks(hooks)
+    # Ingress locks go back BEFORE the records they gate: no window in which a restored
+    # hook is reachable through a door the backup had verified. The bound verifier NAME is
+    # not resolved here — the door resolves it live per delivery and denies what it cannot
+    # resolve. Topics whose lock failed are carried forward and every record ON them is
+    # refused below, so no record is ever written onto a door whose lock did not restore.
+    unlocked_topics: set[str] = set()
+    existing_verifiers = await manager.all_topic_verifiers()
+    for topic, binding in topic_verifiers.items():
+        if not isinstance(topic, str) or not topic:
+            report["errors"].append(f"topic verifier with missing or empty topic: {topic!r}")
+            report["skipped"] += 1
+            continue
+        try:
+            # Validates the binding shape on write: a hand-edited entry is a per-topic
+            # rejection, never a stored binding the ingress door would choke on.
+            await manager.set_topic_verifier(topic, binding)
+        except ValidationError as exc:
+            report["errors"].append(f"topic verifier {topic!r}: {exc}")
+            report["skipped"] += 1
+            unlocked_topics.add(topic)
+            continue
+        if topic in existing_verifiers:
+            report["updated"] += 1
+        else:
+            report["created"] += 1
+
+    await _restore_hooks(hooks, frozenset(unlocked_topics))
 
     # Tombstones first, then records — a tombstoned hash then refuses its own record
     # in-script (the tombstone wins over any imported record).
@@ -325,8 +400,18 @@ async def _import_webhooks(payload: list[dict[str, Any]] | dict[str, Any]) -> _S
         try:
             if not isinstance(item, dict):
                 raise TriggerLinkError(400, "trigger link entry must be a JSON object")
+            record = item["record"]
+            topic = record.get("topic") if isinstance(record, dict) else None
+            if topic in unlocked_topics:
+                # Lock absent: restoring the link would put it back into service on a door
+                # the backup had verified.
+                raise TriggerLinkError(
+                    400,
+                    f"topic {topic!r} is not restored — its verifier binding failed, which would take this "
+                    "link back into service on an unverified public door",
+                )
             outcome = await restore_trigger_link(
-                name=item["name"], token_hash=item["token_hash"], record=item["record"]
+                name=item["name"], token_hash=item["token_hash"], record=record, scan=scan
             )
         except (TriggerLinkError, KeyError) as exc:
             message = exc.message if isinstance(exc, TriggerLinkError) else f"missing key {exc}"
@@ -373,6 +458,21 @@ def _reject_duplicate_hash_binding(trigger_links: Any, live_by_name: dict[str, s
             raise ValueError(
                 f"import binds token hash {token_hash!r} to {name!r} but it is already live under {live_name!r}"
             )
+
+
+# -- conversations -----------------------------------------------------------
+
+
+async def _export_conversations() -> dict[str, Any]:
+    from tai42_skeleton.conversations.backup import export_conversation_routes
+
+    return await export_conversation_routes()
+
+
+async def _import_conversations(payload: dict[str, Any]) -> _SectionReport:
+    from tai42_skeleton.conversations.backup import import_conversation_routes
+
+    return await import_conversation_routes(payload)
 
 
 # -- templates ---------------------------------------------------------------
@@ -475,16 +575,28 @@ def register_core_sections(registry: Any) -> None:
     Called once when the app object is constructed (the registry is built per
     ``TaiMCP``), so an in-place reload — which re-imports modules but keeps the
     same app object — never re-registers and never trips the duplicate guard.
+
+    Registration order IS an import's replay order: a section deciding its records against
+    live state another section restores must be registered AFTER that section.
     """
     registry.register_section("manifest", _export_manifest, _import_manifest)
     registry.register_section("env", _export_env, _import_env, secret=True)
     registry.register_section("access_control", _export_access_control, _import_access_control, secret=True)
     registry.register_section("sub_mcp", _export_sub_mcp, _import_sub_mcp)
+    # Before ``webhooks``/``conversations``: their token-free scan renders policy
+    # conditions carried by ``condition_id``, which are templates this section restores.
+    registry.register_section("templates", _export_templates, _import_templates)
+    # AFTER ``access_control`` and ``templates``: every record is decided against the LIVE
+    # policy store (its bound execution key must exist and be token-free-evaluable), which
+    # those two sections restore.
     # secret=True: the bulk export aggregates the whole surface's records — the hook
     # ``tool_kwargs`` and the trigger-link envelope's full token hashes — which is
     # broader than the grantable per-record list read.
     registry.register_section("webhooks", _export_webhooks, _import_webhooks, secret=True)
-    registry.register_section("templates", _export_templates, _import_templates)
+    # AFTER ``access_control`` and ``templates``, for the same reason as ``webhooks``.
+    # secret=False: the export equals the grantable route-list read (``callback_secret``
+    # is excluded and re-minted on import).
+    registry.register_section("conversations", _export_conversations, _import_conversations)
     # Registered unconditionally: an unbound scheduling backend surfaces as a
     # per-section error through the router, never a hidden gap in the section list.
     registry.register_section("schedules", _export_schedules, _import_schedules, secret=True)

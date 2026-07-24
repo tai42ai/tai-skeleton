@@ -91,8 +91,10 @@ _EXPECTED_RELOAD_GATED: set[tuple[str, str]] = {
     ("POST", "/api/agents/authored/{name}/runs"),
     ("POST", "/api/agents/{name}/runs"),
     ("POST", "/api/backup/import"),
+    ("POST", "/api/checkpoints/sweep"),
     ("POST", "/api/config/env"),
     ("POST", "/api/config/reload"),
+    ("POST", "/api/conversations/{route_name}/messages"),
     ("POST", "/api/manifest/replace"),
     ("POST", "/api/marketplace/install"),
     ("POST", "/api/marketplace/uninstall"),
@@ -144,6 +146,8 @@ _EXPECTED_READS_BODY: set[tuple[str, str]] = {
     ("POST", "/api/connectors/connections/{connection_id}/reconnect"),
     ("PATCH", "/api/connectors/connections/{connection_id}/sub-services"),
     ("POST", "/api/connectors/oauth/complete"),
+    ("POST", "/api/conversations/{route_name}"),
+    ("POST", "/api/conversations/{route_name}/messages"),
     ("POST", "/api/delete-template"),
     ("POST", "/api/hooks"),
     ("POST", "/api/hooks/trigger-links"),
@@ -255,6 +259,135 @@ def test_scope_url_delete_doors_document_the_400(
     assert set(meta.error_statuses) == {400, 401, 404}
     responses = spec["paths"][path][method.lower()]["responses"]
     assert "400" in responses, f"{method} {path} is missing the 400 response"
+
+
+def test_hook_registration_documents_the_required_execution_key(spec: dict) -> None:
+    # ``execution_key`` is REQUIRED on the register body, with the non-empty constraint
+    # the model enforces.
+    schema = spec["components"]["schemas"]["HookRegister"]
+    assert "execution_key" in schema["required"]
+    assert schema["properties"]["execution_key"]["type"] == "string"
+    assert schema["properties"]["execution_key"]["minLength"] == 1
+
+
+def test_hook_registration_omits_the_server_derived_fingerprint(spec: dict) -> None:
+    # ``execution_key_fingerprint`` is server-derived at bind, never a client field, so
+    # the published request contract must not list it.
+    reg = spec["paths"]["/api/hooks"]["post"]["requestBody"]["content"]["application/json"]["schema"]
+    assert reg["$ref"].endswith("/HookRegister")
+    schema = spec["components"]["schemas"]["HookRegister"]
+    assert "execution_key_fingerprint" not in schema.get("properties", {})
+    assert "execution_key_fingerprint" not in schema.get("required", [])
+    assert "execution_key" in schema["required"]
+
+
+@pytest.mark.parametrize("field", ["name", "topic", "tool", "execution_key"])
+def test_hook_registration_documents_every_identifier_as_non_empty(spec: dict, field: str) -> None:
+    # An empty name, topic or tool is a record no door can reach; the trigger-link mint
+    # refuses the empty topic too, so both writers of a topic agree.
+    schema = spec["components"]["schemas"]["HookRegister"]
+    assert field in schema["required"]
+    assert schema["properties"][field]["minLength"] == 1
+
+
+def test_trigger_link_mint_documents_the_execution_key_and_the_door_requirement(spec: dict) -> None:
+    # Same for a trigger link, plus the door's own authentication requirement, which
+    # defaults to token-only (the QR-on-a-wall case).
+    schema = spec["components"]["schemas"]["TriggerLinkCreate"]
+    assert "execution_key" in schema["required"]
+    assert schema["properties"]["execution_key"]["minLength"] == 1
+    assert "require_api_key" not in schema["required"]
+    assert schema["properties"]["require_api_key"]["default"] is False
+
+
+@pytest.mark.parametrize("path", ["/api/hooks", "/api/hooks/trigger-links"])
+def test_the_execution_key_bind_doors_document_their_refusals(
+    spec: dict, api_routes: list[RouteMetadata], path: str
+) -> None:
+    # The bind gate answers 403 (not owned, or absent — identical, so the door is no
+    # existence oracle) and 404 (unknown key, for an admin); both doors document both.
+    (meta,) = [m for m in api_routes if m.path == path and "POST" in m.methods]
+    assert {403, 404} <= set(meta.error_statuses)
+    responses = spec["paths"][path]["post"]["responses"]
+    for status in ("403", "404"):
+        assert status in responses, f"POST {path} is missing the {status} response"
+
+
+def test_conversation_message_door_documents_both_success_codes(spec: dict) -> None:
+    # 202 when the answer is delivered out of band, 200 when a bounded wait carries it
+    # inline; both documented as the ``{"data": ...}`` envelope.
+    responses = spec["paths"]["/api/conversations/{route_name}/messages"]["post"]["responses"]
+    assert "202" in responses
+    assert "200" in responses
+    for status in ("200", "202"):
+        assert responses[status]["content"]["application/json"]["schema"]["required"] == ["data"]
+
+
+def test_declared_additional_success_set_matches_ground_truth(api_routes: list[RouteMetadata]) -> None:
+    # Ground-truth set: only the conversation send door declares a second success code.
+    declared = {
+        (method, meta.path): meta.additional_success_statuses
+        for meta in api_routes
+        if meta.additional_success_statuses
+        for method in meta.methods
+    }
+    assert declared == {("POST", "/api/conversations/{route_name}/messages"): (200,)}
+
+
+def test_conversation_message_body_requires_speaker_and_text(spec: dict) -> None:
+    # Speaker and text are both required and non-empty, so an unroutable message is
+    # refused at the request edge rather than stored.
+    schema = spec["components"]["schemas"]["ConversationMessage"]
+    assert set(schema["required"]) == {"external_user_id", "text"}
+    for field in ("external_user_id", "text"):
+        assert schema["properties"][field]["minLength"] == 1
+
+
+def test_conversation_message_body_documents_the_optional_wait_seconds(spec: dict) -> None:
+    # ``wait_seconds`` is a body field on the write door, so a client reading the spec can
+    # discover the sync-wait option: optional (absent from ``required``) and non-negative.
+    schema = spec["components"]["schemas"]["ConversationMessage"]
+    assert "wait_seconds" not in schema["required"]
+    prop = schema["properties"]["wait_seconds"]
+    (int_variant,) = [v for v in prop["anyOf"] if v.get("type") == "integer"]
+    assert int_variant["minimum"] == 0
+    assert {"type": "null"} in prop["anyOf"]
+
+    body = spec["paths"]["/api/conversations/{route_name}/messages"]["post"]["requestBody"]
+    assert body["content"]["application/json"]["schema"]["$ref"].endswith("/ConversationMessage")
+
+
+def test_conversation_route_create_requires_the_agent_and_execution_key(spec: dict) -> None:
+    # Agent and execution key are both required and non-empty: a route naming no agent
+    # or no identity cannot be stored.
+    schema = spec["components"]["schemas"]["ConversationRouteCreate"]
+    assert {"route_name", "door", "agent_name", "execution_key"} <= set(schema["required"])
+    for field in ("agent_name", "execution_key"):
+        assert schema["properties"][field]["minLength"] == 1
+
+
+def test_conversation_route_create_omits_the_server_minted_fields(spec: dict) -> None:
+    # ``callback_secret`` and ``execution_key_fingerprint`` are both server-derived, so
+    # the create request contract lists neither.
+    schema = spec["components"]["schemas"]["ConversationRouteCreate"]
+    for field in ("callback_secret", "execution_key_fingerprint"):
+        assert field not in schema.get("properties", {})
+        assert field not in schema.get("required", [])
+    assert "execution_key" in schema["required"]
+
+
+@pytest.mark.parametrize(
+    "path",
+    ["/api/conversations/{route_name}/messages/{message_id}", "/api/conversations/messages/failed"],
+)
+def test_conversation_read_doors_document_the_caller_scope_refusal(
+    spec: dict, api_routes: list[RouteMetadata], path: str
+) -> None:
+    # Both read doors answer 403 to an authenticated-but-unauthorized reader rather
+    # than leaking a record, and document that status.
+    (meta,) = [m for m in api_routes if m.path == path and "GET" in m.methods]
+    assert 403 in meta.error_statuses
+    assert "403" in spec["paths"][path]["get"]["responses"]
 
 
 def test_runs_export_documents_both_csv_and_json_download(spec: dict) -> None:

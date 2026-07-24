@@ -418,16 +418,12 @@ class _FakeApp:
 
 @pytest.fixture
 def bound_app():
-    """Bind a fake app onto the global ``tai42_app`` handle for the test, then
-    restore the unbound state so other suites still see the loud pre-bind error."""
+    """Bind a fake app onto ``tai42_app`` for the test, restoring whatever was bound before."""
     from tai42_contract.app import tai42_app
 
     app = _FakeApp()
-    tai42_app.bind(app)
-    try:
+    with tai42_app.bound(app):
         yield app
-    finally:
-        tai42_app.bind(None)
 
 
 # -- Fake Postgres for the access-control policy store -----------------------

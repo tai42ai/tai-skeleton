@@ -26,7 +26,15 @@ async def test_condition_and_expr_evaluate_through_off_loop_helper(make_app, mon
     app = make_app()
     manager = InMemoryHooksManager(HooksSettings())
     await manager.register(
-        HookParams(name="c", topic="t", tool="noop", condition='.status == "paid"', expr="{id: .id}")
+        HookParams(
+            name="c",
+            topic="t",
+            tool="noop",
+            execution_key="k-fire",
+            execution_key_fingerprint="fp-fire",
+            condition='.status == "paid"',
+            expr="{id: .id}",
+        )
     )
 
     await manager.on_event("t", {"id": 3, "status": "paid"})
@@ -42,7 +50,14 @@ async def test_fire_time_jq_error_is_not_swallowed(make_app):
     manager = InMemoryHooksManager(HooksSettings())
     await manager.register(
         # Compiles at register time, raises at evaluation (string -> number).
-        HookParams(name="bad", topic="t", tool="noop", condition=".x | tonumber")
+        HookParams(
+            name="bad",
+            topic="t",
+            tool="noop",
+            execution_key="k-fire",
+            execution_key_fingerprint="fp-fire",
+            condition=".x | tonumber",
+        )
     )
 
     with pytest.raises(ValueError, match="cannot be parsed as a number"):

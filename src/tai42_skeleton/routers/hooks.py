@@ -7,26 +7,43 @@ authed management doors the Studio's hooks UI consumes.
   system, so the ingress is bounded (body + query cap -> 413), parses hostile
   content types safely (entity-expansion off), and answers with ``nosniff`` +
   ``no-store``. Rate limiting lives in the app-level ``RateLimitMiddleware``.
-  A topic with NO verifier binding is OPEN BY DESIGN (today's behavior); bind a
-  verifier to lock one. A bound topic verifies the RAW body BEFORE parsing;
-  failure -> 401 with a constant message (no oracle), nothing dispatched. A
+  A topic with NO verifier binding is OPEN BY DESIGN; bind a verifier to lock
+  one. A bound topic verifies the RAW body BEFORE parsing; failure -> 401 with a
+  constant message (no oracle), nothing dispatched. A
   body-signature (``post_only``) verifier rejects GET delivery — a GET door would
   sign an empty body while the real payload rides the URL unauthenticated. This
   ingress carries a discriminated status body (413/401/405/500/accepted) with
   custom headers and a background dispatch task, so it stays a native handler.
 - ``GET /api/hooks`` (AUTHED) — list registered hooks (``?topic=`` filters) plus
-  the per-topic verifier bindings under ``data.topic_verifiers``.
-- ``POST /api/hooks`` (AUTHED) — register a hook from a ``HookParams`` body.
+  the per-topic verifier bindings under ``data.topic_verifiers`` and, under
+  ``data.trigger_auth``, how a topic's webhook ingress door authenticates its caller
+  (derived from those live bindings, never stored) — keyed by every topic among the
+  listed hooks plus every topic currently carrying a binding.
+- ``POST /api/hooks`` (AUTHED) — register a hook from a ``HookRegister`` body.
 - ``DELETE /api/hooks/{name}`` (AUTHED) — unregister a hook by name; a missing
   name is a loud 404.
-- ``PUT /api/hooks/topics/{topic}/verifier`` (AUTHED) — set/replace a topic's
-  verifier binding; an unknown verifier name is rejected at bind time (400).
-- ``DELETE /api/hooks/topics/{topic}/verifier`` (AUTHED) — remove a binding;
-  a missing binding is a loud 404.
+- ``PUT /api/hooks/topics/{topic}/verifier`` (AUTHED, ``fenced``) — set/replace a
+  topic's verifier binding; an unknown verifier name is rejected at bind time (400).
+- ``DELETE /api/hooks/topics/{topic}/verifier`` (AUTHED, ``fenced``) — remove a
+  binding; a missing binding is a loud 404.
+
+  Both verifier doors are ADMIN-ONLY. A binding is the only authentication
+  ``/universal_webhook/{topic}`` has, and the topic namespace has no owner: any
+  ``hooks``-write holder could otherwise take the lock off a topic whose hooks fire
+  under keys it could never bind, or replace that lock with one whose secret it
+  chooses. Removing a lock and replacing one reach the same state, so they carry the
+  same fence — gating only the unbind would leave the rebind as its bypass.
 - ``GET|POST /trigger/{token}`` (PUBLIC) — the trigger-link door: resolve a minted
   token to a hook topic and dispatch the payload, exactly like the ingress door but
-  hiding its topic and merging the link's stored ``tool_kwargs`` last. Every miss is
-  the uniform 404 (no oracle).
+  hiding its topic and merging the link's stored ``tool_kwargs`` in BELOW each fired
+  hook's own static ``tool_kwargs``, so the link fills only the arguments that hook's
+  author left unpinned. Every miss is
+  the uniform 404 (no oracle). A link minted ``require_api_key`` demands an
+  authenticated principal beside the token — a token holder without one gets a 403,
+  and a credential the authentication backend does not admit (invalid, disabled, or
+  role-governed and refused at this door's method) never reaches this handler. The
+  dispatch is gated on the link's bound execution key; each fired hook's tool call is
+  authorized against the HOOK's key.
 - ``POST /api/hooks/trigger-links`` (AUTHED, ``write``) — mint a trigger link.
 - ``GET /api/hooks/trigger-links`` (AUTHED, ``read``) — list trigger links.
 - ``DELETE /api/hooks/trigger-links/{name}`` (AUTHED, ``write``) — revoke by name.
@@ -48,13 +65,20 @@ from pydantic import ValidationError
 from starlette.background import BackgroundTask
 from starlette.responses import JSONResponse, Response
 from tai42_contract.app import tai42_app
-from tai42_contract.hooks import HookParams
+from tai42_contract.hooks import HookRegister
 from tai42_contract.webhooks import WebhookVerificationError
 
+from tai42_skeleton.access_control.settings import access_control_settings
+from tai42_skeleton.authz.execution import bind_execution_identity
 from tai42_skeleton.hooks.cache import get_hooks_manager
 from tai42_skeleton.hooks.payload_parser import parse_any_payload
-from tai42_skeleton.hooks.trigger_links import TriggerLinkError, resolve_trigger_token
-from tai42_skeleton.operations import BadRequestError, operation_metadata_of, register_operation_route
+from tai42_skeleton.hooks.trigger_links import ResolvedTrigger, TriggerLinkError, resolve_trigger_token
+from tai42_skeleton.operations import (
+    BadRequestError,
+    PermissionDenied,
+    operation_metadata_of,
+    register_operation_route,
+)
 from tai42_skeleton.operations.hooks import TriggerLinkCreate
 from tai42_skeleton.operations.hooks import create_trigger_link as _create_trigger_link_op
 from tai42_skeleton.operations.hooks import delete_topic_verifier as _delete_topic_verifier_op
@@ -78,6 +102,10 @@ _INGRESS_HEADERS = {"X-Content-Type-Options": "nosniff", "Cache-Control": "no-st
 # no oracle detail (a distinguishing message would leak which check failed). The
 # server-side log records the reason; the raw body is NEVER logged verbatim.
 _VERIFY_FAILED = "webhook verification failed"
+
+# The refusal a token-holder gets on an api-key-authed trigger link they rang with no
+# authenticated principal — actionable, and reachable only by a token holder.
+_API_KEY_REQUIRED = "this trigger link requires an authenticated api key"
 
 
 class _PayloadTooLarge(Exception):
@@ -171,17 +199,26 @@ async def universal_webhook(request: Request) -> Response:
 )
 async def trigger_link(request: Request) -> Response:
     """Fire a hook topic from a minted, token-bearing PUBLIC URL (a QR scan is a GET;
-    POST comes free for curl symmetry). The token is the capability — whoever holds
-    the URL fires the topic's registered hooks.
+    POST comes free for curl symmetry — an anonymous token holder reaches both alike,
+    while a caller that PRESENTS a credential is additionally subject to the ordinary
+    route gate, which for a ROLE-governed principal derives ``read`` from GET and
+    ``write`` from POST — the governing policy is the OWNER's for an owned key, so a key
+    escapes that pass exactly when its governing policy is admin or carries no role
+    pointer).
+    The token is the capability — whoever holds the URL fires the topic's registered
+    hooks.
 
     Every miss is the SAME 404 ``"unknown or expired trigger link"`` (unknown /
     expired / revoked / verifier-bound / in-memory-mode are deliberately
-    indistinguishable — no oracle). The token is resolved BEFORE the payload is
-    parsed, so an unknown token 404s without ever reaching a parse-400. The accepted
-    response carries NO topic (a trigger link hides its topic from the URL holder);
-    the payload rides query/body under the ingress byte cap; and the link's stored
-    ``tool_kwargs`` merge LAST into each fired hook's input. Every route-emitted
-    response (accepted / 404 / 400 / 413) carries ``nosniff`` + ``no-store`` — a
+    indistinguishable — no oracle). A link minted ``require_api_key`` answers 403 to a
+    token holder presenting no authenticated principal. The token is resolved BEFORE
+    the payload is parsed, so an unknown token 404s without ever reaching a parse-400.
+    The accepted response carries NO topic (a trigger link hides its topic from the URL
+    holder); the payload rides query/body under the ingress byte cap; and the link's
+    stored ``tool_kwargs`` merge into each fired hook's input BELOW that hook's own
+    static ``tool_kwargs``, filling only the arguments its author left unpinned — a
+    link can never restate an argument the hook pinned. Every route-emitted
+    response (accepted / 404 / 403 / 400 / 413) carries ``nosniff`` + ``no-store`` — a
     capability-URL response must never be cached."""
     token = request.path_params["token"]
 
@@ -197,9 +234,17 @@ async def trigger_link(request: Request) -> Response:
     # Resolve first: an unknown/expired/revoked/verifier-bound/in-memory token is the
     # uniform 404 before any parse work.
     try:
-        topic, tool_kwargs = await resolve_trigger_token(token)
+        resolved = await resolve_trigger_token(token)
     except TriggerLinkError as exc:
         return _error(exc.message, exc.status)
+
+    # A principal ON TOP of the token. Only a token holder reaches this branch, so the 403
+    # is actionable for them and invisible to everyone else (uniform 404 above).
+    if resolved.require_api_key and not _authenticated_caller(request):
+        # Logged: the resolver's preceding line reports only that the token resolved,
+        # which reads as a successful fire without this.
+        logger.warning("hooks: trigger door refused topic=%r cause=api-key-required", resolved.topic)
+        return _error(_API_KEY_REQUIRED, 403)
 
     try:
         payload = await parse_any_payload(request, include_query=True)
@@ -207,9 +252,45 @@ async def trigger_link(request: Request) -> Response:
         # No topic echoed on the rejection — the link hides its topic.
         return _ingress_json({"status": "rejected", "error": str(e)}, status_code=400)
 
-    manager = get_hooks_manager()
-    task = BackgroundTask(manager.on_event, topic=topic, payload=payload, tool_kwargs_override=tool_kwargs)
+    task = BackgroundTask(_dispatch_trigger_link, resolved, payload)
     return _ingress_json({"status": "accepted"}, background=task)
+
+
+def _authenticated_caller(request: Request) -> bool:
+    """Whether the request carries a valid authenticated principal — and, with access
+    control DISABLED, unconditionally ``True``.
+
+    The door is registered ``authed=False`` (a static flag a per-record requirement cannot
+    flip), but the authentication backend still runs and has already denied every
+    credential it does not admit — so ``request.user`` is the decision here."""
+    if not access_control_settings().enable:
+        return True
+    return bool(request.user.is_authenticated)
+
+
+async def _dispatch_trigger_link(resolved: ResolvedTrigger, payload: dict) -> None:
+    """Dispatch a resolved link's topic under the LINK's own execution identity.
+
+    The bind wraps the whole fan-out, so nothing here runs with the server's unbounded
+    authority and a deleted/disabled/policy-less key refuses the dispatch before any hook
+    runs; each fired hook then re-binds its OWN key inside its own task.
+
+    That refusal is a routine revocation outcome landing after the ``accepted`` response,
+    so it is logged as an error outcome rather than raised. Everything else propagates."""
+    try:
+        async with bind_execution_identity(
+            resolved.execution_key, bound_fingerprint=resolved.execution_key_fingerprint
+        ):
+            await get_hooks_manager().on_event(
+                topic=resolved.topic, payload=payload, tool_kwargs_override=resolved.tool_kwargs
+            )
+    except PermissionDenied as exc:
+        logger.error(
+            "hooks: trigger dispatch refused topic=%r execution_key=%r cause=%s",
+            resolved.topic,
+            resolved.execution_key,
+            exc,
+        )
 
 
 async def _verify_ingress(request: Request, raw: bytes, binding: dict, topic: str) -> tuple[Response | None, bool]:
@@ -268,9 +349,13 @@ async def _extract_list_query(request: Request) -> dict:
 
 
 async def _extract_hook_params(request: Request) -> dict:
-    """Parse + validate the ``HookParams`` body into the operation's flat fields,
+    """Parse + validate the client-facing hook body into the operation's flat fields,
     rejecting a malformed body before the operation runs (the adapter's plain parse
-    would yield 422; this yields an explicit 400 surface)."""
+    would yield 422; this yields an explicit 400 surface).
+
+    Validated against ``HookRegister``, which carries no ``execution_key_fingerprint`` —
+    the operation derives that server-side; a client-set one would pin an authorization
+    anchor the server never verified."""
     try:
         body = await request.json()
     except ValueError as exc:
@@ -278,7 +363,7 @@ async def _extract_hook_params(request: Request) -> dict:
     if not isinstance(body, dict):
         raise BadRequestError("body must be a JSON object of hook params") from None
     try:
-        params = HookParams.model_validate(body)
+        params = HookRegister.model_validate(body)
     except ValidationError as exc:
         raise BadRequestError(f"invalid hook params: {exc}") from exc
     return params.model_dump()
@@ -361,7 +446,7 @@ set_topic_verifier = register_operation_route(
     path="/api/hooks/topics/{topic}/verifier",
     method="PUT",
     context_extractor=_extract_binding,
-    action="write",
+    action="fenced",
 )
 
 delete_topic_verifier = register_operation_route(
@@ -369,7 +454,7 @@ delete_topic_verifier = register_operation_route(
     operation_metadata_of(_delete_topic_verifier_op),
     path="/api/hooks/topics/{topic}/verifier",
     method="DELETE",
-    action="write",
+    action="fenced",
 )
 
 create_trigger_link = register_operation_route(

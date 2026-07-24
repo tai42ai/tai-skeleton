@@ -159,6 +159,26 @@ def _identity_probe_offline(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.fixture
+def preset_manager_restored():
+    """Snapshot and restore the process-global preset manager around a test.
+
+    ``app.preset_manager`` outlives every ``app_context`` a test opens, so a preset one
+    test registers stays registered for the rest of the session: a later suite
+    registering the same name raises ``PresetExistsError``, and a spec whose base tool
+    the earlier suite's registry teardown removed is advertised but unresolvable. Any
+    test that registers a preset takes this."""
+    from tai42_skeleton.app.instance import app
+
+    specs = dict(app.preset_manager._specs)
+    quarantine = dict(app.preset_manager._quarantine)
+    try:
+        yield app.preset_manager
+    finally:
+        app.preset_manager._specs = specs
+        app.preset_manager._quarantine = quarantine
+
+
+@pytest.fixture
 def root_logger_restored():
     """Snapshot the root logger and restore it afterwards. Code under test may run
     ``setup_logging`` / ``apply_logging_settings`` (both ``force=True``), which

@@ -20,7 +20,19 @@ def _manager(monkeypatch, fake) -> RedisHooksManager:
 
 async def test_register_writes_hook_and_topic_map(monkeypatch, fake_redis):
     manager = _manager(monkeypatch, fake_redis)
-    assert await manager.register(HookParams(name="h1", topic="orders", tool="ship", condition=".ok")) is True
+    assert (
+        await manager.register(
+            HookParams(
+                name="h1",
+                topic="orders",
+                tool="ship",
+                execution_key="k-fire",
+                execution_key_fingerprint="fp-fire",
+                condition=".ok",
+            )
+        )
+        is True
+    )
 
     by_topic = await manager.list_hooks_by_topic("orders")
     assert by_topic["h1"].tool == "ship"
@@ -32,13 +44,26 @@ async def test_register_rejects_invalid_jq(monkeypatch, fake_redis):
 
     manager = _manager(monkeypatch, fake_redis)
     with pytest.raises(ValueError, match="not valid jq"):
-        await manager.register(HookParams(name="bad", topic="t", tool="noop", condition="( not jq"))
+        await manager.register(
+            HookParams(
+                name="bad",
+                topic="t",
+                tool="noop",
+                execution_key="k-fire",
+                execution_key_fingerprint="fp-fire",
+                condition="( not jq",
+            )
+        )
 
 
 async def test_list_hooks_aggregates_across_topics(monkeypatch, fake_redis):
     manager = _manager(monkeypatch, fake_redis)
-    await manager.register(HookParams(name="a", topic="t1", tool="x"))
-    await manager.register(HookParams(name="b", topic="t2", tool="y"))
+    await manager.register(
+        HookParams(name="a", topic="t1", tool="x", execution_key="k-fire", execution_key_fingerprint="fp-fire")
+    )
+    await manager.register(
+        HookParams(name="b", topic="t2", tool="y", execution_key="k-fire", execution_key_fingerprint="fp-fire")
+    )
 
     listed = await manager.list_hooks()
     assert set(listed.keys()) == {"a", "b"}
@@ -53,7 +78,9 @@ async def test_list_hooks_empty_when_no_map(monkeypatch, fake_redis):
 
 async def test_unregister_removes_hook_and_returns_true(monkeypatch, fake_redis):
     manager = _manager(monkeypatch, fake_redis)
-    await manager.register(HookParams(name="h1", topic="orders", tool="ship"))
+    await manager.register(
+        HookParams(name="h1", topic="orders", tool="ship", execution_key="k-fire", execution_key_fingerprint="fp-fire")
+    )
 
     assert await manager.unregister("h1") is True
     assert await manager.list_hooks() == {}
@@ -71,8 +98,16 @@ async def test_reregister_under_new_topic_moves_hook(monkeypatch, fake_redis, ma
     # unregister still works afterwards.
     app = make_app()
     manager = _manager(monkeypatch, fake_redis)
-    await manager.register(HookParams(name="mv", topic="topic-a", tool="mv_tool"))
-    await manager.register(HookParams(name="mv", topic="topic-b", tool="mv_tool"))
+    await manager.register(
+        HookParams(
+            name="mv", topic="topic-a", tool="mv_tool", execution_key="k-fire", execution_key_fingerprint="fp-fire"
+        )
+    )
+    await manager.register(
+        HookParams(
+            name="mv", topic="topic-b", tool="mv_tool", execution_key="k-fire", execution_key_fingerprint="fp-fire"
+        )
+    )
 
     await manager.on_event("topic-a", {})
     assert app.tools.runs == []
@@ -107,11 +142,21 @@ async def test_register_funnels_through_single_eval_leaving_one_topic_entry(monk
 
     monkeypatch.setattr(fake_redis, "eval", counting_eval)
 
-    await manager.register(HookParams(name="mv", topic="topic-a", tool="t"))
+    await manager.register(
+        HookParams(name="mv", topic="topic-a", tool="t", execution_key="k-fire", execution_key_fingerprint="fp-fire")
+    )
 
     await asyncio.gather(
-        manager.register(HookParams(name="mv", topic="topic-b", tool="t")),
-        manager.register(HookParams(name="mv", topic="topic-c", tool="t")),
+        manager.register(
+            HookParams(
+                name="mv", topic="topic-b", tool="t", execution_key="k-fire", execution_key_fingerprint="fp-fire"
+            )
+        ),
+        manager.register(
+            HookParams(
+                name="mv", topic="topic-c", tool="t", execution_key="k-fire", execution_key_fingerprint="fp-fire"
+            )
+        ),
     )
 
     # Three registers, one eval each — the move is funnelled through a single eval.
@@ -131,8 +176,12 @@ async def test_list_hooks_skips_orphaned_map_entry(monkeypatch, fake_redis):
     # The name->topic map references a hook whose hash entry is gone (e.g. it
     # expired): list_hooks must skip the orphan rather than emit a null hook.
     manager = _manager(monkeypatch, fake_redis)
-    await manager.register(HookParams(name="live", topic="t", tool="x"))
-    await manager.register(HookParams(name="orphan", topic="t", tool="y"))
+    await manager.register(
+        HookParams(name="live", topic="t", tool="x", execution_key="k-fire", execution_key_fingerprint="fp-fire")
+    )
+    await manager.register(
+        HookParams(name="orphan", topic="t", tool="y", execution_key="k-fire", execution_key_fingerprint="fp-fire")
+    )
     # Drop only the hook hash field, leaving the map entry behind.
     del fake_redis._hashes["hooks:topic:t"]["orphan"]
 

@@ -83,12 +83,8 @@ class _FakeApp:
 @pytest.fixture
 def app():
     fake = _FakeApp()
-    previous = object.__getattribute__(tai42_app, "_impl")
-    tai42_app.bind(fake)
-    try:
+    with tai42_app.bound(fake):
         yield fake
-    finally:
-        tai42_app.bind(previous)
 
 
 async def test_prepare_backend_kwargs_injects_tool_name() -> None:

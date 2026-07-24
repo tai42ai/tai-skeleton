@@ -21,6 +21,7 @@ from fastmcp.tools.base import Tool
 from fastmcp.tools.function_tool import FunctionTool
 from pydantic.json_schema import PydanticJsonSchemaWarning
 
+from tai42_skeleton.agent.thread_reservation import ReservedThreadNamespaceError
 from tai42_skeleton.app.instance import app
 from tai42_skeleton.manifest import Manifest
 from tai42_skeleton.tools.binding import _derive_input_schema
@@ -348,5 +349,45 @@ def test_chain_over_agent_run_tool_omitting_an_optional_preserves_set_fields_onl
             # Only ``text`` was supplied, so the agent echoed only ``text`` (no sentinel
             # for the omitted ``times``/``note``), and ``shout`` returned it unchanged.
             assert chained == "text"
+
+    asyncio.run(run())
+
+
+# -- the reserved bridge: thread namespace ------------------------------------
+
+
+def _config_manifest() -> Manifest:
+    return Manifest.model_validate(
+        {"agents": [{"title": "agents", "module": "tests.agent._fixtures", "include": ["config_fields"]}]}
+    )
+
+
+def test_the_run_tool_refuses_a_reserved_bridge_thread():
+    # The HTTP run doors are not the only way to reach an agent: the auto-registered run
+    # tool is a second door onto the same seam, and the reservation holds there too.
+    async def run() -> None:
+        async with app.app_context(_config_manifest()):
+            with pytest.raises(ReservedThreadNamespaceError, match="thread_id"):
+                await app.tools.run_tool(
+                    "config_fields",
+                    {"text": "hi", "langgraph_config": {"configurable": {"thread_id": "bridge:support:+15550001111"}}},
+                )
+            with pytest.raises(ReservedThreadNamespaceError, match="checkpoint_id"):
+                await app.tools.run_tool(
+                    "config_fields",
+                    {"text": "hi", "langgraph_config": {"configurable": {"checkpoint_id": "bridge:support:x"}}},
+                )
+
+    asyncio.run(run())
+
+
+def test_the_run_tool_allows_an_unreserved_thread():
+    async def run() -> None:
+        async with app.app_context(_config_manifest()):
+            answer = await app.tools.run_tool(
+                "config_fields",
+                {"text": "hi", "langgraph_config": {"configurable": {"thread_id": "user-42"}}},
+            )
+            assert answer == "user-42"
 
     asyncio.run(run())

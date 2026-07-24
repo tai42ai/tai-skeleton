@@ -23,16 +23,17 @@ Three backends are orchestrated here, each owning a distinct slice of state:
 
 Backend errors are never swallowed — they propagate so a failed provisioning op is
 loud. The mint/revoke orchestration is fail-closed (identity record first on mint,
-key first on revoke); a failure after the identity step raises loudly rather than
-leaving a silent orphan.
+policy row first on revoke); a failure mid-way raises loudly rather than leaving a
+silent orphan, and every step is ordered so a plain retry finishes the job.
 """
 
 from __future__ import annotations
 
 from enum import Enum
 from typing import Any
+from uuid import uuid4
 
-from tai42_contract.access_control import OWNER_USER_ID_CLAIM
+from tai42_contract.access_control import KEY_FINGERPRINT_CLAIM, OWNER_USER_ID_CLAIM
 from tai42_contract.access_control.identity import ApiKeyIdentityProvider, IdentityProvider
 from tai42_contract.access_control.registry import get_identity_provider_factory
 from tai42_kit.clients import client_ctx
@@ -225,11 +226,17 @@ async def add_user_api_key(
     condition_id: str | None = None,
     condition_kwargs: dict[str, Any] | None = None,
     owner_user_id: str | None = None,
-) -> tuple[str, dict[str, Any]]:
-    """Provision a new key for ``user_id`` and return ``(raw_sk_key, committed_body)``
-    — the raw ``sk-…`` (surfaced to the caller exactly once) and the exact policy
-    body committed to Postgres (so the caller records it as durable version history
-    without re-reading the store).
+) -> tuple[str, dict[str, Any], str]:
+    """Provision a new key for ``user_id`` and return
+    ``(raw_sk_key, committed_body, key_fingerprint)`` — the raw ``sk-…`` (surfaced to
+    the caller exactly once), the exact policy body committed to Postgres (so the caller
+    records it as durable version history without re-reading the store), and the fresh
+    per-mint ``key_fingerprint`` (so the caller can surface it for a subsequent bind).
+
+    Every mint stamps a fresh ``key_fingerprint`` (``uuid4`` hex) into the committed
+    ``policy_data`` under :data:`KEY_FINGERPRINT_CLAIM` — the key's immutable, per-mint,
+    non-reusable identity a hook binding resolves against at fire, so a revoke+remint of
+    the same ``user_id`` leaves an old binding resolving to nothing.
 
     When ``owner_user_id`` is given the key is an OWNED key: the owner claim is
     DUAL-HOMED at this single mint — the provider persists it on the identity record
@@ -272,9 +279,14 @@ async def add_user_api_key(
     #    claim rides the record so it surfaces in AuthIdentity.claims on every request.
     raw_key = await provider.provision(user_id, description, owner_user_id=owner_user_id)
 
+    # Fresh per-mint fingerprint: the immutable identity a hook binding resolves against
+    # at fire, so a binding to a previous mint of this user_id fails closed.
+    key_fingerprint = uuid4().hex
+    policy_data = {**(policy_data or {}), KEY_FINGERPRINT_CLAIM: key_fingerprint}
+
     # Second owner home: the policy_data copy the management/listing surface reads.
     if owner_user_id is not None:
-        policy_data = {**(policy_data or {}), OWNER_USER_ID_CLAIM: owner_user_id}
+        policy_data = {**policy_data, OWNER_USER_ID_CLAIM: owner_user_id}
 
     try:
         # 2. Policy row. The live-context hash needs no seed — it is created by the
@@ -285,7 +297,7 @@ async def add_user_api_key(
             f"api key for user {user_id!r} was provisioned but its policy write failed; the key "
             f"authenticates but is denied everything — recover with revoke_api_key({user_id!r}) then re-mint"
         ) from exc
-    return raw_key, body
+    return raw_key, body, key_fingerprint
 
 
 async def edit_user_payload(
@@ -345,32 +357,56 @@ async def edit_user_payload(
     return policy
 
 
+async def _has_identity_record(provider: ApiKeyIdentityProvider, user_id: str) -> bool:
+    """Whether the provider still holds an identity record for ``user_id``.
+
+    The enumeration is the provider API's only NON-destructive existence read (``revoke``
+    answers by destroying the record). A provider fault propagates: a revoke must never
+    proceed on a guessed existence."""
+    return any(uid == user_id for uid, _description in await provider.list_identities())
+
+
 async def revoke_api_key(user_id: str) -> bool:
     """Delete a provisioned key and all of its records. Returns ``False`` if
-    ``user_id`` is not provisioned.
+    ``user_id`` has no identity record.
 
-    ORCHESTRATES the backends in FAIL-CLOSED order: (1) the provider's ``revoke``
-    deletes the identity/key record FIRST — authentication stops immediately,
-    regardless of the policy rows; then (2) the PG policy row is deleted and (3) the
-    live-context hash ``ac:context:{user_id}`` is deleted. A failure in step 2/3
-    RAISES loudly (never a silent orphan): an orphaned policy denies nothing once the
-    key is dead, but the failure must still surface, and an orphaned context hash
-    would corrupt a future remint of the same ``user_id`` by leaving it the dead
-    key's usage/quota counters."""
+    That record is the single existence signal of a MINTED key; a policy row alone is NOT
+    one — role assignment provisions policy rows for account users this surface must never
+    delete.
+
+    FAIL-CLOSED step ORDER, every step retriable:
+
+    1. read existence from the provider BEFORE deleting anything, so a half-finished
+       revoke still has the evidence a plain retry needs;
+    2. the PG policy row FIRST — it is the whole authority a bound background execution
+       runs on, so the fire dies even if a later step fails;
+    3. bump the policy version IMMEDIATELY behind that delete, inside this call: the
+       enforcer's cache is keyed ``(user_id, version)``, so until the bump lands a warm
+       slot serves the key's pre-delete scopes and condition for the cache ttl;
+    4. delete the live-context hash ``ac:context:{user_id}`` — an orphan would hand a
+       future remint of the same ``user_id`` the dead key's usage/quota counters;
+    5. the provider's ``revoke`` LAST, destroying step 1's existence evidence only once
+       every other record is gone, so no fault strands a step behind a retry answering
+       ``False``.
+
+    A failure in steps 2-5 RAISES loudly rather than leaving a silent orphan. The residue
+    is a key that verifies while holding no policy, which the authentication backend
+    refuses outright; repeating the call clears it."""
     s = _settings()
     provider = _identity_provider()
     store = access_control_store()
 
-    # 1. Kill the KEY first (provider) — the next request with the deleted key fails
-    #    to authenticate. An unknown user is a clean False the route maps to a 404.
-    if not await provider.revoke(user_id):
+    if not await _has_identity_record(provider, user_id):
+        # Never minted under this id: a clean False the route maps to a 404. Any policy
+        # row it holds belongs to another provisioning surface.
         return False
 
-    # 2. Policy row, then 3. the live-context hash. Both MUST clear — a failed delete
-    #    raises loudly rather than leaving a silent orphan.
     await store.delete_policy(user_id)
+    await bump_policy_version()
     async with client_ctx(RedisClient, s.redis) as r:
         await awaited(r.delete(_context_key(s, user_id)))
+    # A concurrent revoke that won the race reached the same outcome, so still report True.
+    await provider.revoke(user_id)
     return True
 
 

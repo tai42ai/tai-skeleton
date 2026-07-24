@@ -31,6 +31,8 @@ async def test_on_event_fires_tool_with_merged_expr_and_kwargs(make_app):
             name="ship",
             topic="orders",
             tool="ship_tool",
+            execution_key="k-fire",
+            execution_key_fingerprint="fp-fire",
             condition='.status == "paid"',
             expr="{id: .id}",
             tool_kwargs={"extra": 1},
@@ -50,6 +52,8 @@ async def test_on_event_without_expr_uses_tool_kwargs_only(make_app):
             name="noexpr",
             topic="t",
             tool="noop",
+            execution_key="k-fire",
+            execution_key_fingerprint="fp-fire",
             tool_kwargs={"k": "v"},
         )
     )
@@ -67,6 +71,8 @@ async def test_on_event_skips_hook_when_condition_false(make_app):
             name="cond",
             topic="t",
             tool="noop",
+            execution_key="k-fire",
+            execution_key_fingerprint="fp-fire",
             condition='.status == "paid"',
         )
     )
@@ -85,6 +91,8 @@ async def test_on_event_raises_when_condition_errors_at_runtime(make_app):
             name="bad-runtime",
             topic="t",
             tool="noop",
+            execution_key="k-fire",
+            execution_key_fingerprint="fp-fire",
             condition=".x | tonumber",
         )
     )
@@ -128,7 +136,11 @@ async def test_on_event_bounds_fanout_at_max_workers(make_app):
     app = make_app()
     manager = InMemoryHooksManager(_settings(max_workers=2))
     for name in ("a", "b", "c", "d"):
-        await manager.register(HookParams(name=name, topic="t", tool=f"tool_{name}"))
+        await manager.register(
+            HookParams(
+                name=name, topic="t", tool=f"tool_{name}", execution_key="k-fire", execution_key_fingerprint="fp-fire"
+            )
+        )
 
     state = _track_peak_concurrency(app)
 
@@ -147,8 +159,24 @@ async def test_semaphore_bounds_total_across_concurrent_events(make_app):
     app = make_app()
     manager = InMemoryHooksManager(_settings(max_workers=2))
     for name in ("a", "b"):
-        await manager.register(HookParams(name=f"t1-{name}", topic="t1", tool=f"tool_t1_{name}"))
-        await manager.register(HookParams(name=f"t2-{name}", topic="t2", tool=f"tool_t2_{name}"))
+        await manager.register(
+            HookParams(
+                name=f"t1-{name}",
+                topic="t1",
+                tool=f"tool_t1_{name}",
+                execution_key="k-fire",
+                execution_key_fingerprint="fp-fire",
+            )
+        )
+        await manager.register(
+            HookParams(
+                name=f"t2-{name}",
+                topic="t2",
+                tool=f"tool_t2_{name}",
+                execution_key="k-fire",
+                execution_key_fingerprint="fp-fire",
+            )
+        )
 
     state = _track_peak_concurrency(app)
 
@@ -164,8 +192,12 @@ async def test_on_event_isolates_a_failing_hook(make_app, caplog):
     # One hook's tool raises; the other still runs and the gather does not crash.
     app = make_app(raise_tools={"boom"})
     manager = InMemoryHooksManager(_settings())
-    await manager.register(HookParams(name="bad", topic="t", tool="boom"))
-    await manager.register(HookParams(name="good", topic="t", tool="ok"))
+    await manager.register(
+        HookParams(name="bad", topic="t", tool="boom", execution_key="k-fire", execution_key_fingerprint="fp-fire")
+    )
+    await manager.register(
+        HookParams(name="good", topic="t", tool="ok", execution_key="k-fire", execution_key_fingerprint="fp-fire")
+    )
 
     with caplog.at_level(logging.ERROR):
         await manager.on_event("t", {})
@@ -185,6 +217,8 @@ async def test_condition_rendered_via_template_id(make_app):
             name="byid",
             topic="t",
             tool="noop",
+            execution_key="k-fire",
+            execution_key_fingerprint="fp-fire",
             condition_id="cond-tmpl",
         )
     )
@@ -198,13 +232,32 @@ async def test_condition_rendered_via_template_id(make_app):
 
 
 def test_validate_jq_accepts_valid_expr_and_condition():
-    BaseHooksManager.validate_jq_fields(HookParams(name="ok", topic="t", tool="noop", condition=".a", expr=".b"))
+    BaseHooksManager.validate_jq_fields(
+        HookParams(
+            name="ok",
+            topic="t",
+            tool="noop",
+            execution_key="k-fire",
+            execution_key_fingerprint="fp-fire",
+            condition=".a",
+            expr=".b",
+        )
+    )
     # Nothing to validate when both inline fields are absent.
-    BaseHooksManager.validate_jq_fields(HookParams(name="ok2", topic="t", tool="noop"))
+    BaseHooksManager.validate_jq_fields(
+        HookParams(name="ok2", topic="t", tool="noop", execution_key="k-fire", execution_key_fingerprint="fp-fire")
+    )
 
 
 def test_validate_jq_rejects_bad_expr():
-    bad = HookParams(name="bad", topic="t", tool="noop", expr="this is ( not jq")
+    bad = HookParams(
+        name="bad",
+        topic="t",
+        tool="noop",
+        execution_key="k-fire",
+        execution_key_fingerprint="fp-fire",
+        expr="this is ( not jq",
+    )
     with pytest.raises(ValueError, match="expr is not valid jq"):
         BaseHooksManager.validate_jq_fields(bad)
 
@@ -212,25 +265,65 @@ def test_validate_jq_rejects_bad_expr():
 # -- tool_kwargs_override ----------------------------------------------
 
 
-async def test_override_merges_last_over_event_input_and_hook_kwargs(make_app):
+async def test_override_merges_over_event_input_but_under_hook_kwargs(make_app):
     # Three colliding layers on key ``k``: expr-derived event_input (weakest),
-    # the hook's static tool_kwargs (middle), the link override (strongest).
+    # the link override (middle), the hook's static tool_kwargs (strongest).
     app = make_app()
     manager = InMemoryHooksManager(_settings())
     await manager.register(
-        HookParams(name="h", topic="t", tool="tool", expr="{k: .k, e: 1}", tool_kwargs={"k": "hook", "h": 2})
+        HookParams(
+            name="h",
+            topic="t",
+            tool="tool",
+            execution_key="k-fire",
+            execution_key_fingerprint="fp-fire",
+            expr="{k: .k, m: .m, e: 1}",
+            tool_kwargs={"k": "hook", "h": 2},
+        )
     )
 
-    await manager.on_event("t", {"k": "event"}, tool_kwargs_override={"k": "link", "l": 3})
+    await manager.on_event("t", {"k": "event", "m": "event"}, tool_kwargs_override={"k": "link", "m": "link", "l": 3})
 
-    assert app.tools.runs == [("tool", {"k": "link", "e": 1, "h": 2, "l": 3})]
+    # ``k``: hook beats link beats event. ``m``: link beats event. ``l``: link only.
+    assert app.tools.runs == [("tool", {"k": "hook", "e": 1, "h": 2, "l": 3, "m": "link"})]
+
+
+async def test_hook_pinned_tool_kwargs_are_not_overridable_by_a_trigger_link(make_app):
+    # A hook's static tool_kwargs pin an argument no link can replace or clear; a key
+    # the author never pinned is the link's to supply.
+    app = make_app()
+    manager = InMemoryHooksManager(_settings())
+    await manager.register(
+        HookParams(
+            name="h",
+            topic="t",
+            tool="tool",
+            execution_key="k-fire",
+            execution_key_fingerprint="fp-fire",
+            tool_kwargs={"recipient": "ops@example.com"},
+        )
+    )
+
+    await manager.on_event("t", {}, tool_kwargs_override={"recipient": "attacker@example.com", "subject": "hi"})
+
+    assert app.tools.runs == [("tool", {"recipient": "ops@example.com", "subject": "hi"})]
 
 
 async def test_none_override_is_byte_identical(make_app):
     # No override ⇒ exactly today's merge (regression guard for universal_webhook).
     app = make_app()
     manager = InMemoryHooksManager(_settings())
-    await manager.register(HookParams(name="h", topic="t", tool="tool", expr="{id: .id}", tool_kwargs={"x": 1}))
+    await manager.register(
+        HookParams(
+            name="h",
+            topic="t",
+            tool="tool",
+            execution_key="k-fire",
+            execution_key_fingerprint="fp-fire",
+            expr="{id: .id}",
+            tool_kwargs={"x": 1},
+        )
+    )
 
     await manager.on_event("t", {"id": 9}, tool_kwargs_override=None)
     assert app.tools.runs == [("tool", {"id": 9, "x": 1})]
@@ -243,8 +336,12 @@ async def test_none_override_is_byte_identical(make_app):
 async def test_override_applies_to_every_hook_on_topic(make_app):
     app = make_app()
     manager = InMemoryHooksManager(_settings())
-    await manager.register(HookParams(name="a", topic="t", tool="tool_a"))
-    await manager.register(HookParams(name="b", topic="t", tool="tool_b"))
+    await manager.register(
+        HookParams(name="a", topic="t", tool="tool_a", execution_key="k-fire", execution_key_fingerprint="fp-fire")
+    )
+    await manager.register(
+        HookParams(name="b", topic="t", tool="tool_b", execution_key="k-fire", execution_key_fingerprint="fp-fire")
+    )
 
     await manager.on_event("t", {}, tool_kwargs_override={"shared": True})
 
@@ -279,7 +376,16 @@ async def test_span_writer_records_override_values(make_app, monkeypatch):
 
     make_app()  # bind the fake tai42_app so the firing path resolves its tool runner
     manager = InMemoryHooksManager(_settings())
-    await manager.register(HookParams(name="h", topic="t", tool="tool", tool_kwargs={"a": 1}))
+    await manager.register(
+        HookParams(
+            name="h",
+            topic="t",
+            tool="tool",
+            execution_key="k-fire",
+            execution_key_fingerprint="fp-fire",
+            tool_kwargs={"a": 1},
+        )
+    )
 
     await manager.on_event("t", {}, tool_kwargs_override={"o": 2})
 
