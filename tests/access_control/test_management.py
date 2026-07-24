@@ -118,6 +118,29 @@ async def test_mint_rejects_unknown_scope_before_provisioning(
     assert pg.policy("u1") is None
 
 
+async def test_mint_accepts_universal_wildcard_scope(
+    pg: FakeAccessControlPg, provider: _SpyProvider, redis: FakeRedis
+) -> None:
+    # "*" names no routed scope, so the typo guard must NOT 400 a wildcard mint: the
+    # policy stores ["*"] and the mint still stamps a fresh per-mint fingerprint.
+    raw_key, body, key_fingerprint = await management.add_user_api_key("u1", "desc", ["*"])
+    assert raw_key == "sk-u1"
+    assert pg.policy("u1")["scopes"] == ["*"]
+    assert body["scopes"] == ["*"]
+    assert key_fingerprint
+    assert body["policy_data"][KEY_FINGERPRINT_CLAIM] == key_fingerprint
+
+
+async def test_mint_still_rejects_a_typo_scope_alongside_the_wildcard(
+    pg: FakeAccessControlPg, provider: _SpyProvider, redis: FakeRedis
+) -> None:
+    # The wildcard skip does not disable the guard: a typo naming no route still raises.
+    with pytest.raises(ValueError, match="does not exist"):
+        await management.add_user_api_key("u1", "desc", ["*", "ghost"])
+    assert provider.provision_calls == []
+    assert pg.policy("u1") is None
+
+
 async def test_mint_rejects_duplicate_user_before_provisioning(
     pg: FakeAccessControlPg, provider: _SpyProvider, redis: FakeRedis
 ) -> None:

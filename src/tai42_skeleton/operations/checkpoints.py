@@ -6,8 +6,10 @@ mechanism for the DB-backed providers (``postgres``/``sqlite``); ``redis`` carri
 its own native key TTL and ``memory`` is process-lifetime, so both are a no-op
 here, as is an unset TTL. Deletion uses the saver's own ``adelete_thread`` surface.
 
-As an operation it projects as a tool, so it is schedulable through the existing
-``/api/schedules`` surface with no extra runner.
+As an operation it projects as a tool, so it is runnable by name through
+``/api/schedules``. Native recurrence additionally needs a ``schedule_task``-branched
+vehicle (a deployment manifest wraps the tool with the backend's schedule extension);
+external cron of ``tai checkpoints sweep`` is the busless alternative.
 """
 
 from __future__ import annotations

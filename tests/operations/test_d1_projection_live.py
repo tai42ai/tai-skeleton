@@ -35,6 +35,7 @@ from tai42_contract.manifest import ApiToolsConfig
 
 import tai42_skeleton.routers as _routers_pkg
 from tai42_skeleton.app.instance import app
+from tai42_skeleton.app.route_registry import load_all_routes, route_registry
 from tai42_skeleton.manifest import Manifest
 from tai42_skeleton.operations.projection import is_tier1, is_tier2, project_operations
 from tai42_skeleton.operations.registry import operation_registry
@@ -58,6 +59,32 @@ def _all_router_modules() -> list[str]:
         for info in pkgutil.iter_modules(_routers_pkg.__path__, _routers_pkg.__name__ + ".")
         if info.name.rsplit(".", 1)[-1] not in _INFRA_ROUTERS
     ]
+
+
+@pytest.fixture(scope="module", autouse=True)
+def _restore_global_app_surface():
+    """Snapshot and restore the global router/manifest state around this module so the
+    full suite stays order-independent."""
+    manifest_before = app._manifest
+    app._manifest = None
+    surface_before = {(m.path, m.methods) for m in load_all_routes()}  # offline full import
+    routes_before = dict(route_registry._routes)
+    ops_before = dict(operation_registry._operations)
+    routing_before = {n: (m.route_template, m.http_method, m.path_params) for n, m in ops_before.items()}
+    try:
+        yield
+    finally:
+        app._manifest = manifest_before
+        route_registry._routes.clear()
+        route_registry._routes.update(routes_before)
+        operation_registry._operations.clear()
+        operation_registry._operations.update(ops_before)
+        for name, (template, method, path_params) in routing_before.items():
+            metadata = operation_registry._operations[name]
+            metadata.route_template, metadata.http_method, metadata.path_params = template, method, path_params
+        # The restored table must read back the complete offline surface — a partial
+        # restore would leave the started/curated boot state leaking to the next reader.
+        assert {(m.path, m.methods) for m in load_all_routes()} == surface_before
 
 
 def _manifest(**api_tools: object) -> Manifest:

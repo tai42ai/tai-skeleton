@@ -272,6 +272,12 @@ entries:
     package: tai42-channel-twilio
     module: tai42_channel_twilio.register
     description: Deliver ask_user questions to a phone over Twilio SMS/WhatsApp and bridge the reply back.
+  - name: whatsapp-cloud
+    kind: channel
+    group: chat
+    package: tai42-channel-whatsapp-cloud
+    module: tai42_channel_whatsapp_cloud.register
+    description: Deliver ask_user questions to a human on WhatsApp via the Meta Cloud API and bridge the reply back.
 
   # -- Accounts providers ----------------------------------------------------
   - name: accounts-postgres
@@ -317,6 +323,7 @@ packages:
   tai42-channel-telegram: tai-channel-telegram
   tai42-channel-slack: tai-channel-slack
   tai42-channel-twilio: tai-channel-twilio
+  tai42-channel-whatsapp-cloud: tai-channel-whatsapp-cloud
   tai42-identity-redis: tai-identity-redis
   tai42-accounts-postgres: tai-accounts-postgres
   tai42-accounts-oidc: tai-accounts-oidc
