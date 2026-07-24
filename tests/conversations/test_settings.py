@@ -16,7 +16,7 @@ def test_default_bounds_match_the_design():
     assert s.delivery_grace_seconds == 3600
     assert s.inbound_dedupe_ttl_seconds >= 48 * 3600
     assert s.answer_retention_ttl_seconds == 30 * 86400
-    assert s.max_message_chars == {"twilio": 1600, "telegram": 4096, "slack": 40000, "whatsapp-cloud": 4096}
+    assert s.max_message_chars == {"twilio": 1600, "telegram": 4096, "slack": 40000, "whatsapp": 4096}
 
 
 def test_keyspace_helpers_are_distinct_greppable_segments():

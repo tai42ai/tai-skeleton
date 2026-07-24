@@ -8,7 +8,7 @@ _DEFAULT_MAX_MESSAGE_CHARS: dict[str, int] = {
     "twilio": 1600,
     "telegram": 4096,
     "slack": 40000,
-    "whatsapp-cloud": 4096,
+    "whatsapp": 4096,
 }
 
 
