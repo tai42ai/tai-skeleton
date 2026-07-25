@@ -1,0 +1,9 @@
+# Hello-world manifest: one local tool module, nothing else.
+#
+# `module` is a Python import path, so `myapp` must be importable — run the
+# server with this directory on PYTHONPATH (see examples/README.md). `include`
+# limits which tool names from the module are exposed; omit it to expose all.
+tools:
+  - title: hello
+    module: myapp.tools
+    include: [greet]

@@ -1,0 +1,120 @@
+# Example tai42-skeleton manifest.
+#
+# Start the server with `tai serve --manifest-path <this file>` (or set
+# TAI_MANIFEST_PATH in the env as the flag's default). Every section is optional —
+# an empty manifest ({}) boots a bare MCP server with no tools. For a minimal
+# runnable app, see hello/ next to this file.
+#
+# The `*_module(s)` entries are Python import paths; importing them runs their
+# `@tai42_app.*` registration decorators (tools, agents, storage, monitoring, ...).
+
+# --- Startup module hooks (import paths into your own package) ---------------
+backend_module: ""          # registers the agent backend (e.g. "myapp.backend")
+storage_module: ""          # registers the Storage provider (e.g. "tai42_storage_local")
+monitoring_module: ""       # registers a monitoring backend (optional)
+
+lifecycle_modules:          # modules with on_startup / on_reload handlers
+  # The DEFAULT identity provider: the redis-backed api-key provider. It registers
+  # itself as the "redis" identity provider at import (import-only, the same
+  # mechanism the shared_secret webhook verifier below uses). The skeleton ships NO
+  # concrete identity provider, so a deployment with access control enabled MUST
+  # name one here; removing or replacing this line SWAPS the authn backend (e.g. for
+  # an OIDC/SAML provider plugin). This is also the module the metrics entrypoint
+  # imports so `/metrics` token verification can resolve the provider.
+  - tai42_identity_redis.redis_api_key_provider
+  # The builtin `shared_secret` webhook verifier registers via a lifecycle module
+  # (import-only); opt it in to lock a `universal_webhook` topic with a header
+  # secret. Provider verifiers (e.g. github) ship as their own packages, added
+  # here the same way.
+  # - tai42_skeleton.webhooks.builtin.shared_secret
+# --- HTTP routers -----------------------------------------------------------
+# `default_routers` selects the built-in router set the server mounts:
+#   all  (default) — every core API router PLUS the Studio SPA catch-all last;
+#                    the normal full-Studio deployment.
+#   api            — every core API router but NOT the SPA catch-all; a headless
+#                    JSON `/api` deployment with no browser UI.
+#   none           — mount nothing by default; `routers_modules` lists everything
+#                    (a fully-manual or MCP-only surface).
+default_routers: all
+# `routers_modules` lists ONLY extras/plugins — modules NOT already in the
+# default set. A plugin-installed router is auto-added here; the loader keeps the
+# SPA catch-all last, and a module already covered by the default set is mounted
+# once (no double-mount). Leave empty for a stock deployment.
+routers_modules: []
+middlewares_modules: []     # modules adding your own middlewares
+  # The app-level rate limiter that guards the two PUBLIC door families (the
+  # interactions callback and `universal_webhook/*`) is registered automatically —
+  # it is always on so an open door never ships without flood control. Tune or
+  # turn off each family via TAI_RATE_LIMIT_* env (both enabled by default).
+extensions_modules: []      # modules registering tool extensions
+  # The skeleton ships built-in tool extensions; opt one in by naming its module
+  # here, then attach it to a tool via that tool's `extensions:` map (see the
+  # `tools` block below). `monitor` traces a standalone tool call as one live
+  # span (`extensions: {toolname: [monitor]}`). `ask_external` wraps a
+  # callback_url-taking tool into an external human-in-the-loop question
+  # (`extensions: {toolname: [ask_external]}`).
+  # - tai42_skeleton.extensions.builtin.monitor
+  # - tai42_skeleton.extensions.builtin.ask_external
+
+# --- Local tools ------------------------------------------------------------
+# Each entry imports `module`; `include` filters which tool names to expose
+# (omit or [] = all tools defined in that module). `exclude` is the inverse.
+# `include`/`exclude` are SELECTION only.
+#
+# `extensions` (optional) is a separate map that ATTACHES a registered tool
+# extension to a selected tool, decoupled from selection: `{toolname: [ext]}`
+# branches `toolname` into `toolname_ext`; a value may be one combo `[ext]` or a
+# list of combos `[[ext], [ext, other]]`, and a stacked combo `[[a, b]]` layers
+# both onto one branch. It never selects a tool — a mapped tool absent from the
+# selected set raises loudly.
+#
+# The skeleton also ships two runtime-native built-in tools; opt each module in
+# the same way (see the built-in tools & extensions docs at
+# https://tai42.ai/concepts/tools-and-extensions):
+#   - title: file-loader
+#     module: tai42_skeleton.tools.builtin.file_loader  # file_loader (url or resource id -> text/media)
+#   - title: ask-user
+#     module: tai42_skeleton.tools.builtin.interactions  # ask_user (human-in-the-loop)
+#
+# Management tools (run_tool, reload_config, update_manifest, list_hooks,
+# the mcp/template/resource families, notify_user, ...) are not builtin
+# modules. Those capabilities live in the operations layer and PROJECT onto the
+# MCP tool surface directly from the operations registry — configure them with
+# the `api_tools` block, not a `tools[].module` entry:
+#   api_tools:
+#     enabled: true               # project operations as MCP tools (default true)
+#     expose_destructive: true    # include destructive ops (default true)
+#     include: []                 # op names to add (e.g. a tier-2 op like update_manifest)
+#     exclude: []                 # op names to drop from the projected surface
+tools:
+  - title: my_tools
+    module: myapp.tools
+    include: [greet]
+
+# --- Agents -----------------------------------------------------------------
+# Each entry imports `module`; its `@tai42_app.agents.agent` decorator registers
+# the agent and auto-generates its run tool.
+agents:
+  - title: my_agents
+    module: myapp.agents
+    include: []
+
+# --- External MCP servers to mount ------------------------------------------
+# Exactly ONE transport per entry: `url` (remote HTTP/SSE), `uds` (unix socket),
+# or `command` (stdio launcher) — the transport is inferred from whichever is
+# set. `headers` is HTTP-only; `args`/`env` are command-only.
+mcp:
+  - title: example-http
+    config:
+      url: https://mcp.example.com/mcp
+      headers: {}
+  - title: example-stdio
+    config:
+      command: uvx
+      args: [some-mcp-server]
+      env: {}
+
+# --- Curated end-user built-in tools (optional) -----------------------------
+# Names of built-in tools offered to end users; empty = none. MCP tools always
+# pass through regardless of this list.
+user_tools: []
