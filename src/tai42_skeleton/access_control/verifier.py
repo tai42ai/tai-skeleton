@@ -250,29 +250,14 @@ class AccessControlVerifier(TokenVerifier):
         if public in found_ids and self._is_reserved_prefix(path):
             found_ids.discard(public)
 
-        # Acknowledged-public tier (GET/HEAD, deny-wins, lowest precedence): a GET or HEAD
-        # to a CONCRETE registered non-/api, non-/mcp route that the operator has consciously
-        # declared public in ``acknowledged_public_routes`` resolves to the public resource
-        # id, so the app serves its OWN operational probes (``/health``, ``/ready``)
-        # publicly by their own route-level declaration — a route owns its
-        # access declaration — rather than needing an always-public prefix. HEAD is admitted
-        # alongside GET: a probe (or load balancer) that HEADs a public GET route must not be
-        # denied — HEAD is GET without a body, so anything publicly GETtable is publicly
-        # HEADable. Without this tier a fresh access-control-on deployment resolves ``/health``
-        # to nothing (it is a registered route, so the SPA-shell fallback below skips it) and
-        # the guard denies it 403.
-        #
-        # Deny wins / lowest precedence: fires ONLY when the route table resolved NOTHING
-        # (``not found_ids``), mirroring the SPA-shell fallback below, so an operator who
-        # pins one of these paths to a protected scope in the route table still overrides.
-        # The control plane can never enter this tier, three locks over:
-        # ``registered_reserved_get_paths_cached()`` excludes every /api and /mcp route by
-        # construction, ``acknowledged_public_routes`` is validated never under /api or /mcp at
-        # settings construction, and the ``_is_reserved_prefix`` guard drops any reserved
-        # path regardless. Scoped to ACKNOWLEDGED routes only (not a blanket public-GET): a
-        # registered GET route absent from ``acknowledged_public_routes`` stays gated.
-        # ``path`` is the single canonical form from the top of this method, and both the
-        # registered set and the acknowledged set hold canonical paths.
+        # Acknowledged-public tier (GET/HEAD, deny-wins, lowest precedence): a GET/HEAD to a
+        # concrete registered non-/api route in ``acknowledged_public_routes`` resolves public,
+        # so the app serves /health,/ready by their own route-level declaration without an
+        # always-public prefix. HEAD rides with GET (a public GET route must answer HEAD
+        # probes). Fires only when the route table resolved nothing, so an operator's protected
+        # pin still wins. The control plane can never enter it: the registered set and the
+        # acknowledged validation both exclude /api,/mcp, and ``_is_reserved_prefix`` drops any
+        # reserved path.
         if (
             method in ("GET", "HEAD")
             and not found_ids
