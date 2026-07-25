@@ -735,3 +735,51 @@ async def test_acknowledged_tier_reserved_prefix_never_public(monkeypatch):
     # Registered + acknowledged, but reserved → the tier's ``_is_reserved_prefix`` guard
     # drops it: it resolves to nothing and is denied.
     assert await v.resolve_resource_ids("/control", method="GET") == []
+
+
+# -- Always-public route patterns: the plugin studio-asset door --------------
+
+
+async def test_plugin_studio_asset_is_public(monkeypatch):
+    # The plugin studio-asset door (/api/plugins/{name}/studio/{path}, registered
+    # authed=False) resolves public via the default always-public route pattern — the
+    # acknowledged tier excludes /api, and no fixed prefix reaches /studio/ after {name}.
+    settings = AccessControlSettings()
+    _wire(monkeypatch, FakeAccessControlPg())
+    v = _verifier(settings)
+    for path in (
+        "/api/plugins/tai42_babelfish_flows/studio/main-abc123.css",
+        "/api/plugins/x/studio/nested/asset.js",
+    ):
+        assert await v.resolve_resource_ids(path, method="GET") == [settings.public_resource_id]
+
+
+async def test_plugin_list_and_bare_studio_not_public_via_pattern(monkeypatch):
+    # Only the /studio/<asset> door is public: the authed /api/plugins LIST and a bare
+    # /api/plugins/{name}/studio (no asset) do NOT match the pattern.
+    settings = AccessControlSettings()
+    _wire(monkeypatch, FakeAccessControlPg())
+    v = _verifier(settings)
+    assert await v.resolve_resource_ids("/api/plugins", method="GET") == []
+    assert await v.resolve_resource_ids("/api/plugins/x/studio", method="GET") == []
+
+
+def test_always_public_route_patterns_reserved_rejected():
+    # A pattern that can match a reserved control-plane path is rejected at construction:
+    # a public pattern cannot target the never-public surface.
+    with pytest.raises(ValueError, match="never-public control plane"):
+        AccessControlSettings(always_public_route_patterns=(r"/api/auth/.+",))
+
+
+async def test_always_public_pattern_runtime_reserved_drop_backstop(monkeypatch):
+    # Defense in depth: a pattern the construction guard's probes miss but that still
+    # matches a reserved path is dropped at runtime — never served public.
+    settings = AccessControlSettings(always_public_route_patterns=(r"/api/auth/deep/secret",))
+    _wire(monkeypatch, FakeAccessControlPg())
+    v = _verifier(settings)
+    assert await v.resolve_resource_ids("/api/auth/deep/secret", method="GET") == []
+
+
+def test_always_public_route_patterns_invalid_regex_raises():
+    with pytest.raises(ValueError, match="not a valid regex"):
+        AccessControlSettings(always_public_route_patterns=(r"/api/plugins/[unclosed",))

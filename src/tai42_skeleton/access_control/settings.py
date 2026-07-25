@@ -163,8 +163,15 @@ class AccessControlSettings(TaiBaseSettings):
         "/{spa_path:path}",
     )
 
+    # Public-regardless-of-table route PATTERNS: the pattern analog of
+    # ``always_public_path_prefixes`` for a public surface no fixed prefix can reach.
+    # Default: the plugin studio-asset door (an ``authed=False`` static-UI route under a
+    # variable ``{name}``). A full-match resolves public; the reserved-drop still applies.
+    always_public_route_patterns: tuple[str, ...] = (r"/api/plugins/[^/]+/studio/.+",)
+
     path_patterns: dict[str, str] = {}  # noqa: RUF012
     compiled_patterns: list[tuple[Pattern, str]] = []  # noqa: RUF012
+    compiled_always_public_route_patterns: list[Pattern] = []  # noqa: RUF012
 
     def model_post_init(self, __context):
         if self.enable and not self.auth_providers:
@@ -253,6 +260,26 @@ class AccessControlSettings(TaiBaseSettings):
             self.compiled_patterns = [
                 (re.compile(pattern), template) for pattern, template in self.path_patterns.items()
             ]
+
+        # Compile the always-public route patterns; an invalid regex fails loudly. A
+        # pattern that can match a reserved (never-public) path is rejected here too, so a
+        # public pattern can never target the control plane — the runtime reserved-drop is
+        # a backstop, not the only guard (mirrors the reserved/always-public disjointness).
+        compiled_always_public: list[Pattern] = []
+        for pattern in self.always_public_route_patterns:
+            try:
+                compiled = re.compile(pattern)
+            except re.error as exc:
+                raise ValueError(f"always_public_route_patterns entry {pattern!r} is not a valid regex: {exc}") from exc
+            for reserved in self.reserved_public_pin_prefixes:
+                for probe in (reserved, f"{reserved}/x"):
+                    if compiled.fullmatch(probe):
+                        raise ValueError(
+                            f"always_public_route_patterns entry {pattern!r} matches reserved path {probe!r} "
+                            f"(under {reserved!r}) — a public pattern cannot target the never-public control plane"
+                        )
+            compiled_always_public.append(compiled)
+        self.compiled_always_public_route_patterns = compiled_always_public
 
 
 @settings_cache

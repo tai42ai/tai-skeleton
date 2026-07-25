@@ -32,6 +32,13 @@ def is_always_public_prefix(path: str, settings: AccessControlSettings) -> bool:
     return any(under_prefix(path, prefix) for prefix in settings.always_public_path_prefixes)
 
 
+def matches_always_public_route_pattern(path: str, settings: AccessControlSettings) -> bool:
+    """Whether the canonical ``path`` full-matches an always-public route pattern (a public
+    surface a fixed prefix cannot reach, e.g. the plugin studio-asset door). Full-match, so
+    a longer path never inherits a shorter pattern's public grant."""
+    return any(pattern.fullmatch(path) for pattern in settings.compiled_always_public_route_patterns)
+
+
 def registered_reserved_get_paths() -> frozenset[str]:
     """The DERIVED SPA-shell reserved set: the canonical path of every CONCRETE,
     non-``/api``, non-``/mcp`` registered GET route (``/health``, ``/ready``, and any
@@ -233,6 +240,13 @@ class AccessControlVerifier(TokenVerifier):
         # reserved url, or a public pattern that fullmatches a reserved path). An
         # otherwise-unmapped reserved path then resolves to nothing and is denied.
         public = self.settings.public_resource_id
+
+        # Always-public route patterns (e.g. the plugin studio-asset door): public
+        # regardless of the route table. Placed before the reserved-drop, so a pattern that
+        # matched a reserved path is still dropped and can never open the control plane.
+        if matches_always_public_route_pattern(path, self.settings):
+            found_ids.add(public)
+
         if public in found_ids and self._is_reserved_prefix(path):
             found_ids.discard(public)
 

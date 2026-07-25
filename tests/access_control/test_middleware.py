@@ -470,6 +470,7 @@ async def test_h5_unauthenticated_route_walk(monkeypatch):
     # Backstop invariant — the control plane never leaks unauthenticated, hostile
     # /api-canonicalizing forms never reach data, genuine deep links reach the shell.
     from tai42_skeleton.access_control.path_canon import under_prefix
+    from tai42_skeleton.access_control.verifier import matches_always_public_route_pattern
     from tai42_skeleton.app.route_registry import load_all_routes
 
     settings = AccessControlSettings()
@@ -488,7 +489,11 @@ async def test_h5_unauthenticated_route_walk(monkeypatch):
             continue
         sent = await _drive(mw, _http_scope(path=path, user=UnauthenticatedUser(), auth=AuthCredentials()))
         status = _status(sent)
-        if under_prefix(path, "/api") or under_prefix(path, "/mcp"):
+        if matches_always_public_route_pattern(path, settings):
+            # A public asset door (e.g. the plugin studio bundles) is served public by
+            # design even though it sits under /api.
+            assert status == 200, f"public asset door {path} not served public: {status}"
+        elif under_prefix(path, "/api") or under_prefix(path, "/mcp"):
             # Every control-plane GET route terminal-denies unauthenticated — never the
             # shell, never data.
             assert status in (401, 403), f"control-plane {path} leaked unauthenticated: {status}"
