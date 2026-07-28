@@ -230,7 +230,7 @@ async def _agent_event_stream(request: Request, agent: Agent, run_kwargs: dict[s
     declared=DeclaredRouteMetadata(
         reload_gated=True,
         reads_body=True,
-        error_statuses=(400, 401, 404, 503),
+        error_statuses=(400, 401, 404),
         success_status=200,
     ),
     action="write",
@@ -291,7 +291,7 @@ async def run_agent(request: Request) -> Response:
     declared=DeclaredRouteMetadata(
         reload_gated=True,
         reads_body=True,
-        error_statuses=(400, 401, 404, 503),
+        error_statuses=(400, 401, 404),
         success_status=200,
     ),
     action="write",

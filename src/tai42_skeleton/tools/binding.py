@@ -58,28 +58,26 @@ CLIENT_TOOL_NAME_MAX_LEN = 64
 _VAR_PARAM_KINDS = (inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD)
 
 
-class UnknownToolError(RuntimeError):
+class UnknownToolError(Exception):
     """Raised when a tool name is not registered on the live server.
 
     Carries the missing ``tool_name`` so a caller can build a typed 404/501
-    without matching the message text. Subclasses ``RuntimeError`` so an existing
-    ``except RuntimeError`` handler still catches it."""
+    without matching the message text — and so a catch can tell WHICH tool was
+    missing.
+
+    A tool body can itself dispatch by name, so an ``UnknownToolError`` escaping a
+    RUN may name a DIFFERENT tool than the one the caller asked for; that inner
+    failure must surface as its own error, never as "the requested tool does not
+    exist". A door catching around a run therefore compares ``tool_name`` before
+    answering a 404/501 about the requested tool. A LOOKUP
+    (:meth:`ToolBinding.get_tool`, :meth:`ToolBinding.get_client_tools`) only ever
+    raises for a name the caller itself asked for — the single requested name, or the
+    first missing name of a requested list — so a catch around a lookup needs no such
+    comparison."""
 
     def __init__(self, tool_name: str) -> None:
         super().__init__(f"No such tool: {tool_name}.")
         self.tool_name = tool_name
-
-
-def is_unknown_tool_error(exc: BaseException, tool_name: str) -> bool:
-    """Whether ``exc`` is the run-tool seam's unknown-tool error for ``tool_name``.
-
-    Recognizes the typed :class:`UnknownToolError` and, defensively, a plain
-    ``RuntimeError("No such tool: {name}.")`` carrying the same message, so a
-    caller can tell an unknown-tool failure apart from any other error whichever
-    shape the binding raises."""
-    if isinstance(exc, UnknownToolError):
-        return exc.tool_name == tool_name
-    return isinstance(exc, RuntimeError) and str(exc) == f"No such tool: {tool_name}."
 
 
 def _derive_input_schema(func: Callable[..., Any]) -> dict[str, Any]:

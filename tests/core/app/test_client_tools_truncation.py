@@ -9,7 +9,7 @@ import pytest
 
 from tai42_skeleton.app import server as server_module
 from tai42_skeleton.tools import binding as binding_module
-from tai42_skeleton.tools.binding import ToolBinding
+from tai42_skeleton.tools.binding import ToolBinding, UnknownToolError
 
 _LONG_PREFIX = "x" * 64
 
@@ -53,5 +53,5 @@ class TestGetClientToolsTruncation:
 
     def test_unknown_requested_name_still_raises(self):
         app = _app(["short_tool"])
-        with pytest.raises(RuntimeError, match="No such tool"):
+        with pytest.raises(UnknownToolError, match="No such tool"):
             asyncio.run(app.get_client_tools(["missing"]))

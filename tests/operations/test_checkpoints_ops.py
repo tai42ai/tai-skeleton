@@ -21,6 +21,7 @@ from tai42_skeleton.operations import OperationRegistry, operation_metadata_of
 from tai42_skeleton.operations import checkpoints as checkpoints_ops
 from tai42_skeleton.operations import schedules as schedules_ops
 from tai42_skeleton.operations.projection import project_operations
+from tai42_skeleton.tools.binding import UnknownToolError
 
 
 def _iso(dt: datetime) -> str:
@@ -171,7 +172,7 @@ async def test_schedulable_via_create_schedule(monkeypatch: pytest.MonkeyPatch) 
 
         async def run_tool(self, key: str, arguments: dict) -> object:
             if key not in self._registered:
-                raise RuntimeError(f"No such tool: {key}.")
+                raise UnknownToolError(key)
             return {"scheduled": key, "arguments": arguments}
 
     fake = _FakeTools({"backend_list_schedules", "backend_delete_schedule", "sweep_checkpoints"})

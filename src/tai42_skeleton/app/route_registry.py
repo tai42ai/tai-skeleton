@@ -23,6 +23,13 @@ passes it explicitly at its registration. A handler that declares nothing (a
 route outside the ``/api/*`` spec surface, e.g. ``/health`` or ``/ready``)
 records trivial defaults, since its behavioral metadata is never emitted.
 
+``error_statuses`` are the statuses a route answers with the plain
+``{"error": ...}`` envelope. The reload gate's ``503`` is not one of them — it
+answers the constant-message reloading envelope with a ``Retry-After`` header — so
+it is declared by ``reload_gated`` alone and the emitter owns its response. A route
+declaring ``503`` therefore says it answers a PLAIN ``503`` too, and one declaring
+both publishes a ``503`` admitting either body.
+
 The per-method success CONTENT TYPE is derived from each handler's source: the
 default JSON surface answers the ``{"data": ...}`` envelope, while a streaming,
 CSV, HTML, or asset-serving route answers its own media type, which the emitter

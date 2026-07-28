@@ -22,16 +22,16 @@ jobs:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           path: tai-skeleton
-      # The committed uv.lock resolves tai42-contract, tai42-kit, and tai42-toolbox from
-      # sibling checkouts ([tool.uv.sources] editable paths), so CI clones them
-      # next to this repo. tai42-toolbox is pulled by the dev extra's
-      # tai42-skeleton[toolbox] self-reference (the toolbox starter's boot test).
+      # The committed uv.lock resolves tai42-contract, tai42-kit, tai42-toolbox, and
+      # tai42-identity-redis from sibling checkouts ([tool.uv.sources] editable paths),
+      # so CI clones all four next to this repo. tai42-toolbox is pulled by the dev
+      # extra's tai42-skeleton[toolbox] self-reference (the toolbox starter's boot test).
       # TEMPORARY (private dev): the sibling repos are private, so cross-repo
       # checkout needs TAI_CI_TOKEN (fine-grained, Contents:read on the tai
       # library repos); the default GITHUB_TOKEN cannot read another private repo.
-      # TODO(public): once these repos are public and tai42-contract/tai42-kit/
-      # tai42-toolbox publish to PyPI, delete the token lines and the sibling
-      # checkouts — install from PyPI.
+      # TODO(public): once these repos are public AND tai42-contract/tai42-kit/
+      # tai42-toolbox/tai42-identity-redis are published to PyPI, delete the
+      # token lines and the sibling checkouts — install from PyPI.
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           repository: ${{ github.repository_owner }}/tai-contract

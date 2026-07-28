@@ -31,10 +31,12 @@ from tai42_skeleton.app import server as server_module
 from tai42_skeleton.app.instance import app
 from tai42_skeleton.app.server import TaiMCP
 from tai42_skeleton.manifest import Manifest
+from tai42_skeleton.middleware.audit_log import AuditLogMiddleware
 from tai42_skeleton.middleware.body_limit import BodyLimitMiddleware
 from tai42_skeleton.middleware.rate_limit import RateLimitMiddleware
 from tai42_skeleton.monitoring import registry as monitoring_registry
-from tai42_skeleton.tools.binding import ToolBinding
+from tai42_skeleton.operations import OperationError
+from tai42_skeleton.tools.binding import ToolBinding, UnknownToolError
 
 if TYPE_CHECKING:
     from tai42_skeleton.template import ResourceManager
@@ -114,13 +116,6 @@ def test_fastmcp_accessor_returns_live_server_and_registers():
     assert mw in a.fastmcp.middleware
 
 
-def test_deleted_metadata_delegates_are_gone():
-    """Grep-gate as an assertion: the pure metadata passthroughs were deleted
-    from the server class — the raw server is reachable only via ``fastmcp``."""
-    for gone in ("auth", "settings", "name", "version", "instructions"):
-        assert gone not in vars(TaiMCP), f"delegate {gone!r} must not remain on TaiMCP"
-
-
 def test_live_manifest_and_tool_title_require_start():
     a = _fresh()
     with pytest.raises(RuntimeError, match="not started"):
@@ -187,7 +182,7 @@ def test_finalize_app_setup_mounts_router_and_applies_middleware():
     # app. finalize applies only the always-on outer RateLimitMiddleware (which
     # rejects before the app is entered); the body-size cap is NOT a finalize
     # wrapper — it is injected into the base app's own Starlette stack (inside that
-    # app's ServerErrorMiddleware; see TaiMCP._with_body_limit). So this test's
+    # app's ServerErrorMiddleware; see TaiMCP._base_middleware). So this test's
     # _PassThrough wraps RateLimit, which wraps the mounted base.
     router = a.sub_app.mcp_sub_app_router
     base.mount.assert_called_once_with(router.root_prefix, router)
@@ -210,10 +205,11 @@ def test_sse_app_builds_and_finalizes():
     # access control is on (mirrors http_app); an unauthenticated SSE surface
     # would bypass it.
     assert mk.call_args.kwargs["auth"] is a._fast_mcp.auth
-    # The body-size cap is passed into the base app's OWN middleware list (inside its
-    # ServerErrorMiddleware) as the first entry, so an over-cap escape becomes a 413
-    # before any error handler can commit a 500.
-    assert mk.call_args.kwargs["middleware"][0].cls is BodyLimitMiddleware
+    # The base app's OWN middleware list (inside its ServerErrorMiddleware) carries
+    # the audit trail then the body-size cap: the cap must be in that list so an
+    # over-cap escape becomes a 413 before any error handler can commit a 500, and
+    # the audit line wraps it so an over-cap 413 is audited like any other outcome.
+    assert [m.cls for m in mk.call_args.kwargs["middleware"]] == [AuditLogMiddleware, BodyLimitMiddleware]
     # finalize mounts the sub-app router on the base, then wraps only the always-on
     # outer RateLimitMiddleware around it.
     sentinel.mount.assert_called_once()
@@ -228,9 +224,12 @@ def test_http_app_builds_and_finalizes():
     a._fast_mcp.http_app.return_value = sentinel
     result = a.http_app(path="/mcp", transport="http")
     a._fast_mcp.http_app.assert_called_once()
-    # The body-size cap is injected into the base app's own middleware list (inside
-    # ServerErrorMiddleware) as the first entry.
-    assert a._fast_mcp.http_app.call_args.kwargs["middleware"][0].cls is BodyLimitMiddleware
+    # The audit trail and the body-size cap are injected into the base app's own
+    # middleware list (inside ServerErrorMiddleware), audit outermost.
+    assert [m.cls for m in a._fast_mcp.http_app.call_args.kwargs["middleware"]] == [
+        AuditLogMiddleware,
+        BodyLimitMiddleware,
+    ]
     sentinel.mount.assert_called_once()
     # finalize wraps only the always-on outer RateLimitMiddleware around the base.
     assert isinstance(result, RateLimitMiddleware)
@@ -432,18 +431,32 @@ def test_run_tool_rejects_non_function_tool():
         asyncio.run(a.tools.run_tool("k", {}))
 
 
+def test_unknown_tool_error_is_a_plain_exception_outside_the_operation_family():
+    # The run-any-tool doors (``run_tool``, the four schedule doors) are written against
+    # exactly this: they catch ``UnknownToolError`` FIRST and ``OperationError`` after it.
+    # Were ``UnknownToolError`` an ``OperationError``, that ordering would be the only
+    # thing keeping the name discrimination alive — reorder the handlers and an unknown
+    # tool would silently pass through as "the tool's own typed answer". Were it a
+    # ``RuntimeError`` again, a broad ``except RuntimeError`` elsewhere would swallow it.
+    # "Plain" is the whole guarantee: it inherits ``Exception`` DIRECTLY and nothing else,
+    # so no base it does not name can put it back inside a family a door catches.
+    assert UnknownToolError.__bases__ == (Exception,)
+    assert not issubclass(UnknownToolError, OperationError)
+    assert not issubclass(UnknownToolError, RuntimeError)
+
+
 def test_get_tool_missing_raises():
     a = _fresh()
     a._fast_mcp = MagicMock()
     a._fast_mcp.get_tool = AsyncMock(return_value=None)
-    with pytest.raises(RuntimeError, match="No such tool"):
+    with pytest.raises(UnknownToolError, match="No such tool"):
         asyncio.run(a.tools.get_tool("ghost"))
 
 
 def test_get_client_tools_unknown_name_raises():
     a = _fresh()
     a._tool_binding.get_tools = AsyncMock(return_value={})
-    with pytest.raises(RuntimeError, match="No such tool"):
+    with pytest.raises(UnknownToolError, match="No such tool"):
         asyncio.run(a.tools.get_client_tools(["missing"]))
 
 

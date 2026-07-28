@@ -47,12 +47,18 @@ def _path_param_names(path: str) -> tuple[str, ...]:
 def _declared_metadata(
     op: OperationMetadata, method: str, *, authed: bool, success_status: int
 ) -> DeclaredRouteMetadata:
-    """The route's behavioral properties taken from the operation, not divined."""
+    """The route's behavioral properties taken from the operation, not divined.
+
+    ``error_statuses`` are the statuses answered with the plain ``{"error": ...}``
+    envelope this adapter renders: the operation's own typed errors, plus the ``401``
+    the auth edge answers for an authed route. The reload gate's ``503`` is NOT among
+    them — it answers a different body (the constant-message reloading envelope with a
+    ``Retry-After`` header), and ``reload_gated`` already declares it, so the emitter
+    owns that response.
+    """
     statuses: set[int] = {cls.status for cls in op.error_classes}
     if authed:
         statuses.add(401)
-    if op.reload_gated:
-        statuses.add(503)
     reads_body = op.request_model is not None and method in _BODY_METHODS
     return DeclaredRouteMetadata(
         reload_gated=op.reload_gated,

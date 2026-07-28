@@ -184,7 +184,7 @@ async def test_over_cap_to_json_route_returns_413_not_400(monkeypatch):
 
 async def test_over_cap_413_inside_server_error_middleware(monkeypatch):
     # Production layering: BodyLimitMiddleware runs INSIDE the base app's own
-    # Starlette ``ServerErrorMiddleware`` (TaiMCP._with_body_limit passes it into the
+    # Starlette ``ServerErrorMiddleware`` (TaiMCP._base_middleware passes it into the
     # base-app middleware list). Were the cap placed OUTSIDE the error handler, that
     # handler would catch the raised ``_BodyTooLarge`` and commit a 500 before the
     # cap could answer 413. Driving an over-cap body through a real Starlette app —

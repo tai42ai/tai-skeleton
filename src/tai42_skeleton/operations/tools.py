@@ -8,18 +8,33 @@ Reads:
 * ``tool_schema`` — one tool's input/output/description (unknown name → 404).
 * ``tools_schema`` — the same schema view for every tool, keyed by name.
 
-Mutations (each applied on this worker and broadcast to the fleet over the bus):
+Mutations:
 
-* ``run_tool`` — execute an arbitrary registered tool with REAL side effects. A
-  "run any tool by name" META-EXECUTOR: hardcode-blocked from the MCP surface
-  (``meta_executor=True``, tier 1) and admin-fenced at the HTTP edge; it is reachable
-  only as the route + ``tai tools run`` CLI + internal dispatch. Its argument is
-  ``tool_name`` (the route's request-model shape).
+* ``run_tool`` — execute an arbitrary registered tool with REAL side effects, on THIS
+  worker only. A "run any tool by name" META-EXECUTOR: hardcode-blocked from the MCP
+  surface (``meta_executor=True``, tier 1) and admin-fenced at the HTTP edge; it is
+  reachable only as the route + ``tai tools run`` CLI + internal dispatch. Its argument
+  is ``tool_name`` (the route's request-model shape).
 * ``reload_tool`` — re-register one app tool from its stored definition.
 * ``remove_tool`` — remove one app tool from the live registry.
 
-``run_tool`` / ``reload_tool`` / ``remove_tool`` mutate the live registry, so they are
-``destructive`` and honor the reload gate.
+``reload_tool`` / ``remove_tool`` mutate the live registry, so each is applied on this
+worker and then broadcast to the fleet over the bus. All three are ``destructive`` and
+honor the reload gate.
+
+What each ``run_tool`` branch records: the two 500 branches — an
+:class:`~tai42_skeleton.tools.binding.UnknownToolError` naming a DIFFERENT tool than the
+one asked for (a dispatch failure inside the running tool's own body) and any other
+raise during execution — emit ``logger.exception`` (ERROR, with the caught exception's
+traceback); the latter falls back to the exception's CLASS name when the message is
+empty, so the envelope always names something. The 404 for a tool that resolved at
+lookup and then did not resolve at dispatch emits a ``logger.warning``, so an anomaly
+answered as a plain 404 still leaves a server record. Three branches are silent: the 404
+for a name that never resolved at all (a caller's own typo, which the response answers),
+the typed-``OperationError`` passthrough (the tool's own answer, delivered to the caller
+intact), and a RESOLVE that fails for anything OTHER than an unknown tool — that raise
+leaves the door untouched, neither enveloped nor logged, so a registry that cannot answer
+surfaces as itself.
 """
 
 from __future__ import annotations
@@ -30,9 +45,16 @@ from typing import TYPE_CHECKING, Any
 from pydantic import BaseModel, Field
 from tai42_contract.app import tai42_app
 
-from tai42_skeleton.operations import BadRequestError, NotFoundError, OperationError, OperationFailed, operation
+from tai42_skeleton.operations import (
+    BadRequestError,
+    NotFoundError,
+    OperationError,
+    OperationFailed,
+    PermissionDenied,
+    operation,
+)
 from tai42_skeleton.operations._broadcast import broadcast
-from tai42_skeleton.tools.binding import UnknownToolError, is_unknown_tool_error
+from tai42_skeleton.tools.binding import UnknownToolError
 
 if TYPE_CHECKING:
     from fastmcp.tools import Tool
@@ -112,7 +134,7 @@ async def tools_schema() -> dict:
     destructive=True,
     reload_gated=True,
     meta_executor=True,
-    errors=[BadRequestError, NotFoundError, OperationFailed],
+    errors=[BadRequestError, NotFoundError, PermissionDenied, OperationFailed],
     request_model=RunToolRequest,
 )
 async def run_tool(tool_name: str, arguments: dict[str, object]) -> Any:
@@ -122,32 +144,38 @@ async def run_tool(tool_name: str, arguments: dict[str, object]) -> Any:
     registered tool. Per-tool scoped keys are not supported.
     """
     # Resolve the name first: an unknown tool is a loud 404 (matching the schema route),
-    # told apart from a tool that raises DURING execution — which becomes a structured
-    # 500 carrying the caught error, never an opaque "Internal Server Error". Dual-catch
-    # the typed ``UnknownToolError`` AND the legacy ``RuntimeError("No such tool: ...")``
-    # message so a binding rewrite that drops the typed error cannot silently turn the
-    # 404 back into a raw 500.
+    # told apart from a tool that raises DURING execution. Only the unknown-tool error is
+    # dressed up here — any other failure of the RESOLVE itself propagates untouched, so a
+    # registry that cannot answer surfaces as itself rather than as a verdict about the
+    # tool. In the DISPATCH phase below every raise is enveloped instead: a structured 500
+    # carrying the caught error (unless it is already a typed operation error), never an
+    # opaque "Internal Server Error".
     try:
         await tai42_app.tools.get_tool(tool_name)
-    except RuntimeError as exc:
-        if is_unknown_tool_error(exc, tool_name):
-            raise NotFoundError(f"unknown tool: {tool_name}") from exc
-        raise
+    except UnknownToolError as exc:
+        # A lookup raises for exactly the name it was asked, so no name check is needed.
+        raise NotFoundError(f"unknown tool: {tool_name}") from exc
     try:
         return await tai42_app.tools.run_tool(tool_name, arguments, offload_sync=True)
     except UnknownToolError as exc:
-        # The tool was resolved above but vanished before the run (a concurrent
-        # reload) — still an unknown-tool 404, not a masked 500.
-        raise NotFoundError(f"unknown tool: {tool_name}") from exc
+        # Discriminate by NAME: the requested tool vanishing between lookup and dispatch
+        # (a concurrent reload) is still a 404, warned because the caller sees only a
+        # plain 404; a DIFFERENT tool failing to resolve is a raise DURING execution and
+        # takes the structured-500 path, never the requested tool's 404.
+        if exc.tool_name == tool_name:
+            logger.warning("run-tool: %r resolved at lookup but did not resolve at dispatch; answering 404", tool_name)
+            raise NotFoundError(f"unknown tool: {tool_name}") from exc
+        logger.exception("run-tool %r raised unknown-tool %r during execution", tool_name, exc.tool_name)
+        raise OperationFailed(str(exc)) from exc
     except OperationError:
-        # A typed operation error is already the answer the surfaces owe the caller —
-        # most sharply a ``PermissionDenied`` taken by the tool-dispatch seam, which is a
-        # 403 denial, not a crash. Flattening it into ``OperationFailed`` would report a
-        # routine refusal as a 500 with an exception traceback.
+        # A typed operation error is the tool's own answer (e.g. a PermissionDenied 403);
+        # flattening it into ``OperationFailed`` would report a refusal as a crash.
         raise
     except Exception as exc:
-        logger.exception("run-tool %s raised during execution", tool_name)
-        raise OperationFailed(str(exc)) from exc
+        logger.exception("run-tool %r raised during execution", tool_name)
+        # A bare raise stringifies to ""; the class-name fallback keeps the envelope
+        # from emitting {"error": ""}.
+        raise OperationFailed(str(exc) or type(exc).__name__) from exc
 
 
 @operation(

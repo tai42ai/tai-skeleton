@@ -1,18 +1,16 @@
 """AES-GCM-256 wrap/unwrap for connector token blobs.
 
 Blob layout: [1-byte format version] || [12-byte nonce] || [ciphertext + 16-byte
-GCM tag]. The leading version byte (``0x01``) makes KEK rotation possible without
-re-reading a headerless blob: encryption always uses the current ``CONNECTORS_KEK``,
-while decryption tries the whole key-ring (current + optional
-``CONNECTORS_KEK_PREVIOUS``). The connection_id is bound as AAD so a blob cannot be
-swapped between connections.
+GCM tag]. The leading version byte (``0x01``) names the blob format version, so a
+reader detects a blob written in a different format instead of misreading it.
+Encryption and decryption both use ``CONNECTORS_KEK``. The connection_id is bound as
+AAD so a blob cannot be swapped between connections.
 """
 
 from __future__ import annotations
 
 import os
 
-from cryptography.exceptions import InvalidTag
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from tai42_contract.connectors.errors import ConnectorError
 
@@ -28,17 +26,9 @@ class ConnectorEncryptionConfigError(ConnectorError):
 
 
 def ensure_kek() -> bytes:
-    """Return the current KEK (the encryption key), or raise a config error."""
+    """Return the KEK used to both encrypt and decrypt blobs, or raise a config error."""
     try:
         return connector_crypto_secrets().require_kek_bytes()
-    except (RuntimeError, ValueError) as exc:
-        raise ConnectorEncryptionConfigError(str(exc)) from exc
-
-
-def _decrypt_ring() -> list[bytes]:
-    """The decryption key-ring: current KEK first, then the optional previous KEK."""
-    try:
-        return connector_crypto_secrets().kek_ring_bytes()
     except (RuntimeError, ValueError) as exc:
         raise ConnectorEncryptionConfigError(str(exc)) from exc
 
@@ -66,17 +56,6 @@ def decrypt(blob: bytes, *, connection_id: str) -> bytes:
     if version != _KEK_FORMAT_VERSION:
         raise ValueError(f"unsupported connector token-blob format version byte: {version:#04x}")
     nonce, ct = blob[1 : 1 + _NONCE_LEN], blob[1 + _NONCE_LEN :]
-    aad = _aad(connection_id)
-    # Try every key in the ring so a blob written under the previous KEK still
-    # decrypts across a rotation. The final InvalidTag propagates if none match; an
-    # empty ring is a config fault (the settings guarantee at least the current KEK)
-    # and raises loudly rather than returning a silently-undecrypted blob.
-    last_error: InvalidTag | None = None
-    for kek in _decrypt_ring():
-        try:
-            return AESGCM(kek).decrypt(nonce, ct, aad)
-        except InvalidTag as exc:
-            last_error = exc
-    if last_error is None:
-        raise ConnectorEncryptionConfigError("decryption key-ring is empty; no KEK to decrypt the token blob")
-    raise last_error
+    # A blob the KEK cannot open is unreadable: the ``InvalidTag`` propagates
+    # loudly rather than returning a silently-undecrypted blob.
+    return AESGCM(ensure_kek()).decrypt(nonce, ct, _aad(connection_id))

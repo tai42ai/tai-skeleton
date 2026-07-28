@@ -83,11 +83,6 @@ class ConnectorCryptoSecrets(TaiBaseSettings):
     # only when the engine actually encrypts/signs.
     kek: SecretStr | None = None
 
-    # Optional base64 32-byte PREVIOUS KEK, retained across a rotation so blobs
-    # written under the old key still decrypt. Encryption always uses ``kek``;
-    # this key is decrypt-only, dropped once every blob has been re-encrypted.
-    kek_previous: SecretStr | None = None
-
     # Base64 key (>=32 bytes) signing the OAuth ``state`` param.
     state_hmac_key: SecretStr | None = None
 
@@ -103,21 +98,6 @@ class ConnectorCryptoSecrets(TaiBaseSettings):
         kek = self.kek.get_secret_value() if self.kek is not None else None
         _validate_b64_key(kek, env_var="CONNECTORS_KEK", min_bytes=_KEK_BYTE_LENGTH, exact=True)
         return _require_key_bytes(kek, env_var="CONNECTORS_KEK", what="encryption KEK")
-
-    def kek_ring_bytes(self) -> list[bytes]:
-        """Return the decryption key-ring: the current KEK first, then the
-        optional previous KEK. Encryption always uses the first entry; the
-        previous KEK lets blobs written before a rotation still decrypt.
-
-        Raises (value-free) if the current KEK is unset/malformed, or if a
-        supplied previous KEK is malformed.
-        """
-        ring = [self.require_kek_bytes()]
-        previous = self.kek_previous.get_secret_value() if self.kek_previous is not None else None
-        if previous:
-            _validate_b64_key(previous, env_var="CONNECTORS_KEK_PREVIOUS", min_bytes=_KEK_BYTE_LENGTH, exact=True)
-            ring.append(_require_key_bytes(previous, env_var="CONNECTORS_KEK_PREVIOUS", what="previous encryption KEK"))
-        return ring
 
     def require_state_hmac_key_bytes(self) -> bytes:
         """Return the decoded state-HMAC key, or raise (value-free) if unset/malformed."""

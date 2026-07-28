@@ -101,7 +101,7 @@ class PresetStoreView(PresetStore):
         fixed_kwargs: dict[str, Any] | None = None,
         tags: list[str] | None = None,
         extensions: Sequence[Sequence[ExtensionElement]] | None = None,
-        output_schema: dict[str, Any] | None | CarryForward = CARRY_FORWARD,
+        output_schema: dict[str, Any] | CarryForward | None = CARRY_FORWARD,
     ) -> DocumentVersion:
         active = await self._active_body(name)
         new_extensions = active.extensions if extensions is None else extensions

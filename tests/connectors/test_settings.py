@@ -125,24 +125,6 @@ def test_malformed_kek_error_does_not_leak_plaintext(monkeypatch):
     assert bad not in str(ei.value)
 
 
-def test_kek_ring_bytes_current_only():
-    s = ConnectorCryptoSecrets(kek=SecretStr(_KEK))
-    assert s.kek_ring_bytes() == [bytes(32)]
-
-
-def test_kek_ring_bytes_includes_previous():
-    prev = base64.b64encode(bytes(range(32))).decode()
-    s = ConnectorCryptoSecrets(kek=SecretStr(_KEK), kek_previous=SecretStr(prev))
-    assert s.kek_ring_bytes() == [bytes(32), bytes(range(32))]
-
-
-def test_kek_ring_bytes_rejects_malformed_previous():
-    bad_prev = base64.b64encode(bytes(16)).decode()  # valid base64, wrong length
-    s = ConnectorCryptoSecrets(kek=SecretStr(_KEK), kek_previous=SecretStr(bad_prev))
-    with pytest.raises(ValueError, match="exactly 32 bytes"):
-        s.kek_ring_bytes()
-
-
 def test_connector_crypto_secrets_is_cached():
     assert connector_crypto_secrets() is connector_crypto_secrets()
 

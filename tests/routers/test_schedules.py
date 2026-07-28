@@ -3,7 +3,7 @@
 Handlers are driven directly (the router-test pattern); the ``tai42_app.tools``
 facet is faked by swapping the bound app impl for a stand-in exposing ``tools``.
 The fake's ``get_tools()`` decides backend presence, and ``run_tool`` raises the
-binding's real unknown-tool ``RuntimeError`` for any name it does not know.
+binding's real ``UnknownToolError`` for any name it does not know.
 """
 
 from __future__ import annotations
@@ -17,6 +17,7 @@ from starlette.requests import Request
 from tai42_contract.app import tai42_app
 
 from tai42_skeleton.routers import schedules as router
+from tai42_skeleton.tools.binding import UnknownToolError
 
 _MARKERS = {"backend_list_schedules", "backend_delete_schedule"}
 
@@ -44,7 +45,7 @@ def _json(resp) -> dict:
 
 class _FakeTools:
     """A tool registry where ``registered`` names run and return ``run_result``;
-    any other name raises the binding's unknown-tool ``RuntimeError``."""
+    any other name raises the binding's ``UnknownToolError``."""
 
     def __init__(self, registered: set[str], run_result=None):
         self._registered = registered
@@ -56,7 +57,7 @@ class _FakeTools:
 
     async def run_tool(self, key, arguments):
         if key not in self._registered:
-            raise RuntimeError(f"No such tool: {key}.")
+            raise UnknownToolError(key)
         self.run_calls.append((key, arguments))
         return self._run_result
 
@@ -136,29 +137,28 @@ async def test_create_501_when_backend_absent(install):
 
 
 async def test_create_404_when_client_tool_unknown(install):
-    # Backend present, but the caller named a tool that is not registered. The
-    # fake raises the legacy ``RuntimeError("No such tool: ...")`` message, which
-    # the dual-catch still recognizes as unknown-tool.
+    # Backend present, but the caller named a tool that is not registered: the
+    # binding's typed ``UnknownToolError`` becomes a 404, never a masked 500.
     install(_FakeTools(_MARKERS))
     resp = await router.create_schedule(_body_req(b'{"tool_name": "typo_tool"}'))
     assert resp.status_code == 404
     assert _json(resp) == {"error": "unknown tool: typo_tool"}
 
 
-async def test_create_404_when_client_tool_unknown_typed_error(install, monkeypatch):
-    # The dual-catch also recognizes the TYPED ``UnknownToolError`` the binding
-    # raises, not only the legacy message string.
-    from tai42_skeleton.tools.binding import UnknownToolError
-
-    fake = install(_FakeTools(_MARKERS))
+async def test_create_maps_unknown_tool_raised_for_another_name_to_structured_500(install, monkeypatch):
+    # An ``UnknownToolError`` naming a DIFFERENT tool escaped the target's own body;
+    # it is that tool's failure, not "the requested tool does not exist", so the door
+    # answers a structured 500 naming the inner tool — never a 404 for the requested
+    # name, and never an unstructured propagation out of the door.
+    fake = install(_FakeTools(_MARKERS | {"send_report"}))
 
     async def _run_tool(key, arguments):
-        raise UnknownToolError(key)
+        raise UnknownToolError("some_inner_tool")
 
     monkeypatch.setattr(fake, "run_tool", _run_tool)
-    resp = await router.create_schedule(_body_req(b'{"tool_name": "typo_tool"}'))
-    assert resp.status_code == 404
-    assert _json(resp) == {"error": "unknown tool: typo_tool"}
+    resp = await router.create_schedule(_body_req(b'{"tool_name": "send_report"}'))
+    assert resp.status_code == 500
+    assert _json(resp) == {"error": "schedule creation failed (unknown tool some_inner_tool)"}
 
 
 async def test_create_bad_json_400(install):

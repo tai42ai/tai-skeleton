@@ -15,7 +15,9 @@ from tai42_skeleton.access_control.settings import AccessControlSettings, access
 from tai42_skeleton.config.config_mode import config_mode
 from tai42_skeleton.config.factory import ConfigManagerFactory
 from tai42_skeleton.manifest import Manifest
+from tai42_skeleton.middleware.audit_log import AuditLogMiddleware
 from tai42_skeleton.routers.metrics_settings import activate_multiproc_env, metrics_settings
+from tai42_skeleton.settings.audit_log import audit_log_settings
 
 logger = logging.getLogger(__name__)
 
@@ -92,8 +94,8 @@ def _register_manifest_identity_provider(settings: AccessControlSettings) -> Non
 
 
 def create_app() -> FastAPI:
-    """Build the metrics app: access-control middleware plus the ``/metrics``
-    route.
+    """Build the metrics app: access-control middleware, the audit trail beneath
+    it, plus the ``/metrics`` route.
 
     Reads access-control settings, so it must run after the env bootstrap
     (``load_dotenv`` in ``main``) for a local ``.env`` to take effect.
@@ -106,6 +108,13 @@ def create_app() -> FastAPI:
     # and /metrics token verification cannot resolve the configured provider.
     _register_manifest_identity_provider(settings)
     auth_adapter = AuthAdapter(settings)
+    # The audit trail covers this process exactly as it covers the served app —
+    # ``/metrics`` is an ordinary audited route, never a carve-out. Added BEFORE the
+    # gate below because ``add_middleware`` prepends: added first, it ends up
+    # INNERMOST, where the gate's resolved identity is already bound. Off
+    # (``AUDIT_LOG_ENABLE=false``) means never registered, not a registered no-op.
+    if audit_log_settings().enable:
+        app.add_middleware(AuditLogMiddleware)
     for middleware in reversed(auth_adapter.get_middleware()):
         # ``add_middleware`` is ParamSpec-typed against the middleware class; a
         # starlette ``Middleware`` carries its class + kwargs erased, so the

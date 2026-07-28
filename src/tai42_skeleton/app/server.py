@@ -41,9 +41,11 @@ from tai42_skeleton.backend.registry import BackendHolder
 from tai42_skeleton.backup import BackupRegistry, register_core_sections
 from tai42_skeleton.channels.registry import ChannelRegistry
 from tai42_skeleton.config import ConfigManagerFactory
+from tai42_skeleton.middleware.audit_log import AuditLogMiddleware
 from tai42_skeleton.middleware.body_limit import BodyLimitMiddleware
 from tai42_skeleton.middleware.rate_limit import RateLimitMiddleware
 from tai42_skeleton.presets.manager import PresetManager
+from tai42_skeleton.settings.audit_log import audit_log_settings
 from tai42_skeleton.storage import StorageRegistry
 from tai42_skeleton.template import ResourceManager
 from tai42_skeleton.tools.binding import ToolBinding
@@ -274,16 +276,29 @@ class TaiMCP(TaiMCPLifecycleMixin):
             raise RuntimeError("TaiMCP is not started — call start()/app_context first.")
         return self._manifest.live_manifest.model_dump(mode="json", exclude_none=True)
 
-    def _with_body_limit(self, middleware: list[Middleware] | None) -> list[Middleware]:
-        # The app-level body-size cap is the backstop on EVERY route (authed routes
-        # read their bodies unbounded otherwise); always on, tune via
-        # TAI_BODY_LIMIT_MAX_BODY_BYTES. It MUST sit inside the base app's own
-        # Starlette stack (its own ``ServerErrorMiddleware``), not as an outer
-        # finalize wrapper: an over-cap escape (``_BodyTooLarge``) has to reach
-        # BodyLimitMiddleware and become a 413 before any error handler commits a 500.
-        # RateLimitMiddleware, by contrast, rejects before the app is entered, so it
-        # stays an outer finalize wrapper.
-        return [Middleware(BodyLimitMiddleware), *(middleware or [])]
+    def _base_middleware(self, middleware: list[Middleware] | None) -> list[Middleware]:
+        """The app's own base-app middleware, outermost first, ahead of whatever the
+        launch surface's caller passes.
+
+        FastMCP builds the base app's stack as ``[*auth middleware, *middleware]``, so
+        everything returned here runs AFTER the access-control gate has resolved the
+        caller — which is what lets AuditLogMiddleware read the bound identity instead
+        of re-resolving it. It wraps the body cap, so an over-cap 413 is audited like
+        any other outcome. It is the one entry the operator can switch off
+        (``AUDIT_LOG_ENABLE=false``), and off means absent from this list — no
+        registered no-op.
+
+        The app-level body-size cap is the backstop on EVERY route (authed routes
+        read their bodies unbounded otherwise); always on, tune via
+        TAI_BODY_LIMIT_MAX_BODY_BYTES. It MUST sit inside the base app's own
+        Starlette stack (its own ``ServerErrorMiddleware``), not as an outer
+        finalize wrapper: an over-cap escape (``_BodyTooLarge``) has to reach
+        BodyLimitMiddleware and become a 413 before any error handler commits a 500.
+        RateLimitMiddleware, by contrast, rejects before the app is entered, so it
+        stays an outer finalize wrapper.
+        """
+        audit = [Middleware(AuditLogMiddleware)] if audit_log_settings().enable else []
+        return [*audit, Middleware(BodyLimitMiddleware), *(middleware or [])]
 
     def sse_app(
         self,
@@ -299,7 +314,7 @@ class TaiMCP(TaiMCPLifecycleMixin):
             sse_path=actual_path,
             message_path=actual_message_path,
             auth=self._fast_mcp.auth,
-            middleware=self._with_body_limit(middleware),
+            middleware=self._base_middleware(middleware),
         )
 
         return self._http_surface.finalize(base_app)
@@ -315,7 +330,7 @@ class TaiMCP(TaiMCPLifecycleMixin):
 
         base_app = self._fast_mcp.http_app(
             path=path,
-            middleware=self._with_body_limit(middleware),
+            middleware=self._base_middleware(middleware),
             json_response=json_response,
             stateless_http=stateless_http,
             transport=transport,

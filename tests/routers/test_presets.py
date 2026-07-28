@@ -34,6 +34,7 @@ from tai42_skeleton.manifest import Manifest
 from tai42_skeleton.operations import presets as preset_ops
 from tai42_skeleton.routers import presets as router
 from tai42_skeleton.routers import tools as tools_router
+from tai42_skeleton.tools.binding import UnknownToolError
 from tests.versioning.conftest import FakeVersioningPg
 
 _MANIFEST = {
@@ -637,7 +638,7 @@ def test_delete_unregisters_base_and_branches_emits(pg, emit):
             tools = set(await instance.app.tools.get_tools())
             assert not ({"wv", "wv_exta", "wv_extb"} & tools)
             for name in ("wv", "wv_exta", "wv_extb"):
-                with pytest.raises(RuntimeError):
+                with pytest.raises(UnknownToolError):
                     await instance.app.tools.run_tool(name, {"text": "hi"})
             assert emit == ["tool"]
 
@@ -785,7 +786,7 @@ def test_emit_extensions_only_change_emits(pg, emit):
             assert "wv_extb" in tools
             assert "wv_exta" not in tools
             assert await instance.app.tools.run_tool("wv_extb", {"text": "hi"}) == "hi|b"
-            with pytest.raises(RuntimeError):
+            with pytest.raises(UnknownToolError):
                 await instance.app.tools.run_tool("wv_exta", {"text": "hi"})
 
     asyncio.run(run())
@@ -827,7 +828,7 @@ def test_save_version_clearing_extensions_tears_branch_and_emits(pg, emit):
             assert resp.status_code == 200
             assert emit == ["tool"]
             assert "wv_exta" not in set(await instance.app.tools.get_tools())
-            with pytest.raises(RuntimeError):
+            with pytest.raises(UnknownToolError):
                 await instance.app.tools.run_tool("wv_exta", {"text": "hi"})
             v2 = _data(await router.get_version(_request("GET", "/api/presets/wv/versions/2", name="wv", version="2")))
             assert v2["body"]["extensions"] == []

@@ -144,6 +144,8 @@ def _error(message: str, status_code: int) -> JSONResponse:
     declared=DeclaredRouteMetadata(
         reload_gated=True,
         reads_body=True,
+        # The declared 503 is the plain-envelope one this handler answers on a full
+        # thread queue; the reload gate's own 503 comes from ``reload_gated``.
         error_statuses=(400, 401, 404, 429, 501, 503),
         success_status=202,
         additional_success_statuses=(200,),

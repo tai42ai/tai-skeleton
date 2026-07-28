@@ -306,10 +306,10 @@ async def edit_user_payload(
     user_id: str,
     description: str | _Unset = _UNSET,
     scopes: list[str] | _Unset = _UNSET,
-    policy_data: dict[str, Any] | None | _Unset = _UNSET,
-    condition: str | None | _Unset = _UNSET,
-    condition_id: str | None | _Unset = _UNSET,
-    condition_kwargs: dict[str, Any] | None | _Unset = _UNSET,
+    policy_data: dict[str, Any] | _Unset | None = _UNSET,
+    condition: str | _Unset | None = _UNSET,
+    condition_id: str | _Unset | None = _UNSET,
+    condition_kwargs: dict[str, Any] | _Unset | None = _UNSET,
 ) -> dict[str, Any] | None:
     """Partially update an existing key's description and policy in place (never
     rotates the key). Only the arguments the caller actually supplies are written;

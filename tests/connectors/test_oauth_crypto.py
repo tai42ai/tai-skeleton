@@ -1,5 +1,5 @@
 """AES-GCM token-blob crypto: round-trip, AAD binding, tamper + config errors,
-format-version byte + KEK-rotation key-ring."""
+and the format-version byte."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ from tai42_kit.settings import reset_all_settings
 from tai42_skeleton.connectors.oauth import crypto
 from tai42_skeleton.connectors.oauth.crypto import ConnectorEncryptionConfigError
 
-from .conftest import CID, CID2, TEST_KEK_B64
+from .conftest import CID, CID2
 
 
 def test_encrypt_decrypt_round_trip():
@@ -77,46 +77,14 @@ def test_decrypt_rejects_unknown_version_byte():
         crypto.decrypt(bytes(blob), connection_id=CID)
 
 
-def test_decrypt_accepts_blob_written_under_previous_kek(monkeypatch):
-    # Write under key A (the current KEK from conftest)...
-    blob = crypto.encrypt(b"rotated-secret", connection_id=CID)
-
-    # ...then rotate: a NEW current key B with A demoted to CONNECTORS_KEK_PREVIOUS.
-    new_kek = base64.b64encode(bytes(range(64, 96))).decode("ascii")
-    monkeypatch.setenv("CONNECTORS_KEK", new_kek)
-    monkeypatch.setenv("CONNECTORS_KEK_PREVIOUS", TEST_KEK_B64)
-    reset_all_settings()
-
-    # The old blob still decrypts via the previous key in the ring...
-    assert crypto.decrypt(blob, connection_id=CID) == b"rotated-secret"
-
-    # ...and a fresh write uses the new current key (decrypts with B alone).
-    fresh = crypto.encrypt(b"fresh-secret", connection_id=CID)
-    monkeypatch.delenv("CONNECTORS_KEK_PREVIOUS", raising=False)
-    reset_all_settings()
-    assert crypto.decrypt(fresh, connection_id=CID) == b"fresh-secret"
-
-
-def test_decrypt_fails_when_neither_ring_key_matches(monkeypatch):
-    # A blob written under key A cannot be read once the ring holds only unrelated
-    # keys — it is dead, surfacing as InvalidTag (not silently readable).
+def test_decrypt_fails_under_a_different_kek(monkeypatch):
+    # A blob written under key A cannot be read once CONNECTORS_KEK holds an
+    # unrelated key — it is dead, surfacing as InvalidTag (not silently readable).
     blob = crypto.encrypt(b"payload", connection_id=CID)
     other = base64.b64encode(bytes(range(96, 128))).decode("ascii")
     monkeypatch.setenv("CONNECTORS_KEK", other)
-    monkeypatch.delenv("CONNECTORS_KEK_PREVIOUS", raising=False)
     reset_all_settings()
     with pytest.raises(InvalidTag):
-        crypto.decrypt(blob, connection_id=CID)
-
-
-def test_decrypt_empty_ring_raises_loudly(monkeypatch):
-    # An empty decrypt key-ring is a config fault, not a tag mismatch. The loop
-    # never sets last_error, so decrypt must raise a loud config error (this path
-    # replaces a bare ``assert`` that ``python -O`` would strip) rather than fall
-    # through and return an undecrypted blob.
-    blob = crypto.encrypt(b"payload", connection_id=CID)
-    monkeypatch.setattr(crypto, "_decrypt_ring", list)
-    with pytest.raises(ConnectorEncryptionConfigError, match="key-ring is empty"):
         crypto.decrypt(blob, connection_id=CID)
 
 
@@ -132,6 +100,17 @@ def test_missing_kek_raises_config_error(monkeypatch):
     reset_all_settings()
     with pytest.raises(ConnectorEncryptionConfigError):
         crypto.ensure_kek()
+
+
+def test_missing_kek_raises_config_error_via_decrypt(monkeypatch):
+    # With no CONNECTORS_KEK configured, decrypt fails as a loud config error rather
+    # than a tag mismatch — the missing key surfaces through decrypt itself, not only
+    # through a direct ensure_kek() call.
+    blob = crypto.encrypt(b"payload", connection_id=CID)
+    monkeypatch.delenv("CONNECTORS_KEK", raising=False)
+    reset_all_settings()
+    with pytest.raises(ConnectorEncryptionConfigError):
+        crypto.decrypt(blob, connection_id=CID)
 
 
 def test_malformed_kek_raises_config_error_via_settings(monkeypatch):

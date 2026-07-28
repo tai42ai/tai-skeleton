@@ -6,8 +6,15 @@ of its own. This module walks the shared route-enumeration primitive
 OpenAPI 3.1 document: one operation per method, api-key ``security`` for authed
 routes, request bodies from ``request_model.model_json_schema()``, and responses
 that wrap the ``{"data": ...}`` success envelope and the ``{"error": ...}``
-failure envelope — including the retriable ``503`` reloading response every
-reload-gated route declares.
+failure envelope.
+
+The two sources of a ``503`` are kept apart, because they answer with different
+bodies. A route's ``error_statuses`` are the statuses it answers with the plain
+``{"error": ...}`` envelope, so a declared ``503`` (an operation's
+``UnavailableError``) documents that envelope. The reload gate is the OTHER source:
+it is declared as ``reload_gated`` and this module owns its response entirely — the
+constant-message ``ReloadingError`` body plus the ``Retry-After`` header. A route
+carrying BOTH publishes a ``503`` admitting either body.
 
 Emission is OFFLINE by construction: the registry is populated purely by
 importing the router modules, so no database, Redis, or live config/manifest is
@@ -53,8 +60,17 @@ _STATUS_DESCRIPTIONS: dict[int, str] = {
     415: "Unsupported media type.",
     422: "Request failed validation.",
     500: "Internal server error.",
-    503: "The server is applying a config reload; retry shortly.",
+    503: "A dependency this route needs is temporarily unavailable; retry shortly.",
 }
+
+# The reload gate's own ``503`` — a different body from the typed ``503`` above, so
+# it carries its own description. A route that answers both publishes the combined
+# one.
+_RELOADING_DESCRIPTION = "The server is applying a config reload; retry shortly."
+_RELOADING_OR_UNAVAILABLE_DESCRIPTION = (
+    "The server is applying a config reload, or a dependency this route needs is "
+    "temporarily unavailable; retry shortly."
+)
 
 
 def _openapi_path(path: str) -> str:
@@ -166,20 +182,39 @@ def _success_response(meta: RouteMetadata, method: str, components: dict[str, An
 
 
 def _error_response(status: int) -> dict[str, Any]:
-    if status == 503:
-        return {
-            "description": _STATUS_DESCRIPTIONS[503],
-            "headers": {
-                "Retry-After": {
-                    "description": "Seconds to wait before retrying.",
-                    "schema": {"type": "integer"},
-                }
-            },
-            "content": {"application/json": {"schema": {"$ref": f"#/components/schemas/{_RELOADING_ERROR_SCHEMA}"}}},
-        }
+    """The response for a status the route answers with the plain ``{"error": ...}``
+    envelope — every entry of ``error_statuses``, the declared ``503`` included."""
     return {
         "description": _STATUS_DESCRIPTIONS.get(status, "Error."),
         "content": {"application/json": {"schema": {"$ref": f"#/components/schemas/{_ERROR_SCHEMA}"}}},
+    }
+
+
+def _reload_gate_response(*, also_unavailable: bool) -> dict[str, Any]:
+    """The reload gate's ``503``: the constant-message ``ReloadingError`` body plus the
+    ``Retry-After`` header the gate stamps.
+
+    ``also_unavailable`` marks a route that ALSO answers a typed ``UnavailableError``
+    ``503`` with the plain ``{"error": ...}`` envelope; its one ``503`` slot must then
+    admit either body, and ``Retry-After`` rides only the reloading half.
+
+    The combined schema is ``anyOf``, not ``oneOf``: ``Error`` is open (it constrains
+    only ``error``), so a reloading body satisfies BOTH branches — under ``oneOf``,
+    which demands exactly one match, the gate's own response would fail its own spec.
+    """
+    reloading: dict[str, Any] = {"$ref": f"#/components/schemas/{_RELOADING_ERROR_SCHEMA}"}
+    if also_unavailable:
+        schema: dict[str, Any] = {"anyOf": [reloading, {"$ref": f"#/components/schemas/{_ERROR_SCHEMA}"}]}
+        description = _RELOADING_OR_UNAVAILABLE_DESCRIPTION
+        header_description = "Seconds to wait before retrying; carried by the reloading answer."
+    else:
+        schema = reloading
+        description = _RELOADING_DESCRIPTION
+        header_description = "Seconds to wait before retrying."
+    return {
+        "description": description,
+        "headers": {"Retry-After": {"description": header_description, "schema": {"type": "integer"}}},
+        "content": {"application/json": {"schema": schema}},
     }
 
 
@@ -189,6 +224,11 @@ def _operation(meta: RouteMetadata, method: str, components: dict[str, Any]) -> 
         responses[str(status)] = _success_response(meta, method, components)
     for status in meta.error_statuses:
         responses[str(status)] = _error_response(status)
+    # The reload gate is declared as ``reload_gated``, never as an error status, so its
+    # response is added here and OVERWRITES a declared 503 — merged into one slot that
+    # admits both bodies when the route answers both.
+    if meta.reload_gated:
+        responses["503"] = _reload_gate_response(also_unavailable=503 in meta.error_statuses)
 
     operation: dict[str, Any] = {
         "operationId": _operation_id(method, meta.path),

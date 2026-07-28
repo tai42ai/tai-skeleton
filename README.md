@@ -36,16 +36,20 @@ helpers). It is the runnable body every plugin plugs into.
 
 ## Install
 
-Requires **Python 3.13+**. Nothing is on PyPI yet, so install from source: clone
-the three repos **side by side** — this repo's `[tool.uv.sources]` points at
-`../tai-contract` and `../tai-kit`:
+Requires **Python 3.13+**. Install from PyPI into the environment that runs the
+server:
 
 ```bash
-git clone https://github.com/tai42ai/tai-contract
-git clone https://github.com/tai42ai/tai-kit
+uv add tai42-skeleton
+```
+
+Or from source:
+
+```bash
 git clone https://github.com/tai42ai/tai-skeleton
 cd tai-skeleton
-uv sync
+uv venv --python 3.13
+uv pip install --no-sources --editable .
 ```
 
 Add the `toolbox` extra for batteries — it pulls in the `tai42-toolbox` contrib
@@ -53,26 +57,31 @@ package, whose composition tool extensions (`chain`, `batch`) and generic tool
 collection load from the manifest (see [`examples/toolbox`](examples/toolbox)):
 
 ```bash
-uv sync --extra toolbox
+uv add "tai42-skeleton[toolbox]"                      # from PyPI
+uv pip install --no-sources --editable ".[toolbox]"   # from a source checkout
 ```
-
-Once the packages are published, `pip install tai42-skeleton[toolbox]` will work
-too.
 
 ## Run it
 
-The hello-world app in [`examples/hello`](examples/hello) boots one local `greet`
-tool, no external services. From the repo root:
+The hello-world app in [`examples/hello`](examples/hello) registers one local
+`greet` tool and needs no services to stand up. From the repo root:
 
 ```bash
 ACCESS_CONTROL_ENABLE=false \
 PYTHONPATH=examples/hello \
-uv run tai serve --manifest-path examples/hello/manifest.yml --port 8765
+uv run --no-sync tai serve --manifest-path examples/hello/manifest.yml --port 8765
 ```
 
-The MCP endpoint is then `http://127.0.0.1:8765/mcp`. `tai backend` runs the
-agent/worker backend process and `tai metrics` serves the Prometheus endpoint;
-the full command surface is in the CLI reference below.
+The MCP endpoint is then `http://127.0.0.1:8765/mcp`, and it lists 94 tools, not
+one: alongside `greet` the server projects 93 **operation tools** from its own
+management operations, because the manifest's `api_tools` block is on by
+default. Set `api_tools: {enabled: false}` to switch that projection off and
+leave `greet` on its own. The server also polls the marketplace for security
+advisories on a timer — that is its one outbound call, and
+`MARKETPLACE_ADVISORIES_POLL=false` turns it off.
+
+`tai backend` runs the agent/worker backend process and `tai metrics` serves the
+Prometheus endpoint; the full command surface is in the CLI reference below.
 
 `tai serve`, `tai backend`, and `tai metrics` form one run family over a single
 shared Prometheus multiprocess directory (`PROMETHEUS_MULTIPROC_DIR`, default a
@@ -106,15 +115,17 @@ co-tenant deployments would otherwise cross-talk.
 
 ## Development
 
-The dev venv resolves `tai42-contract`, `tai42-kit`, `tai42-toolbox`, and
-`tai42-identity-redis` from sibling checkouts (see `[tool.uv.sources]`):
+Set up the dev venv and run the gates. `--no-sources` ignores the sibling-checkout
+overrides in `[tool.uv.sources]`, so the dev deps come from PyPI and the clone stands
+alone; `--no-sync` runs each gate against that environment instead of re-resolving:
 
 ```bash
-uv sync --extra dev
-uv run ruff check .
-uv run ruff format --check .
-uv run pyright
-uv run pytest -q
+uv venv --python 3.13
+uv pip install --no-sources --editable ".[dev]"
+uv run --no-sync ruff check .
+uv run --no-sync ruff format --check .
+uv run --no-sync pyright
+uv run --no-sync pytest --cov --cov-report=term-missing
 ```
 
 See `CONTRIBUTING.md` for the rules.

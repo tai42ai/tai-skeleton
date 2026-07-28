@@ -15,13 +15,20 @@ import sys
 
 import pytest
 from click.testing import CliRunner
+from jsonschema import Draft202012Validator, ValidationError
 from openapi_spec_validator import validate
 from pydantic import BaseModel
 
 from tai42_skeleton.app.reload_gate import REJECT_MESSAGE
 from tai42_skeleton.app.route_registry import RouteMetadata, load_api_routes, method_to_action
 from tai42_skeleton.cli import app as app_module
-from tai42_skeleton.cli.openapi import _assign_component, _openapi_path, _register_model, build_openapi_spec
+from tai42_skeleton.cli.openapi import (
+    _STATUS_DESCRIPTIONS,
+    _assign_component,
+    _openapi_path,
+    _register_model,
+    build_openapi_spec,
+)
 
 
 @pytest.fixture(scope="module")
@@ -78,8 +85,142 @@ def test_gated_routes_declare_the_retriable_503(spec: dict, api_routes: list[Rou
             assert "503" in op["responses"], f"gated route {method} {meta.path} lacks the 503 response"
             response = op["responses"]["503"]
             assert response["headers"]["Retry-After"]["schema"]["type"] == "integer"
-            ref = response["content"]["application/json"]["schema"]["$ref"]
-            assert ref.endswith("/ReloadingError")
+
+
+# -- The two sources of a 503, and the SHAPE each publishes -------------------
+#
+# A 503 reaches a route from two independent sources that answer DIFFERENT bodies, so
+# the published shape has to follow the source rather than the status:
+#
+# * the reload gate (``reload_gated``) answers the constant-message ``ReloadingError``
+#   body plus a ``Retry-After`` header;
+# * a declared ``503`` (an operation's ``UnavailableError``, or a native handler that
+#   declares one) answers the plain ``{"error": <message>}`` envelope with no
+#   ``reloading`` field and no header.
+#
+# Every route publishing a 503 is pinned into its class below, so a route changing
+# source — or a new one arriving — trips here and its shape is re-confirmed.
+_EXPECTED_503_GATE_ONLY: set[tuple[str, str]] = {
+    ("DELETE", "/api/presets/{name}"),
+    ("DELETE", "/api/sub-mcp/{slug}"),
+    ("POST", "/api/agents/authored/{name}/runs"),
+    ("POST", "/api/agents/{name}/runs"),
+    ("POST", "/api/backup/import"),
+    ("POST", "/api/checkpoints/sweep"),
+    ("POST", "/api/config/env"),
+    ("POST", "/api/config/reload"),
+    ("POST", "/api/manifest/replace"),
+    ("POST", "/api/mcp-config"),
+    ("POST", "/api/mcp-status/reload-failed"),
+    ("POST", "/api/mcp-status/{title}/deregister"),
+    ("POST", "/api/mcp-status/{title}/reload"),
+    ("POST", "/api/presets/{name}/rename"),
+    ("POST", "/api/presets/{name}/rollback"),
+    ("POST", "/api/presets/{name}/versions"),
+    ("POST", "/api/run-tool"),
+    ("POST", "/api/sub-mcp"),
+    ("POST", "/api/tools/reload"),
+    ("POST", "/api/tools/remove"),
+    ("POST", "/api/tools/{name}/extensions"),
+}
+
+_EXPECTED_503_DECLARED_ONLY: set[tuple[str, str]] = {
+    ("GET", "/api/schedules"),
+    ("GET", "/api/schedules/server-datetime"),
+    ("POST", "/api/presets/validate"),
+    ("PUT", "/api/presets/{name}/versions/{version}/tags"),
+}
+
+_EXPECTED_503_BOTH: set[tuple[str, str]] = {
+    ("DELETE", "/api/schedules/{schedule_name}"),
+    ("POST", "/api/conversations/{route_name}/messages"),
+    ("POST", "/api/marketplace/install"),
+    ("POST", "/api/marketplace/uninstall"),
+    ("POST", "/api/marketplace/update"),
+    ("POST", "/api/presets"),
+    ("POST", "/api/schedules"),
+    ("POST", "/api/tool-runs"),
+}
+
+
+def _503_source_classes(api_routes: list[RouteMetadata]) -> dict[str, set[tuple[str, str]]]:
+    classes: dict[str, set[tuple[str, str]]] = {"gate": set(), "declared": set(), "both": set()}
+    for meta in api_routes:
+        declared = 503 in meta.error_statuses
+        if meta.reload_gated and declared:
+            key = "both"
+        elif meta.reload_gated:
+            key = "gate"
+        elif declared:
+            key = "declared"
+        else:
+            continue
+        classes[key].update((method, meta.path) for method in meta.methods)
+    return classes
+
+
+def test_503_source_classes_match_ground_truth(api_routes: list[RouteMetadata]) -> None:
+    classes = _503_source_classes(api_routes)
+    assert classes["gate"] == _EXPECTED_503_GATE_ONLY
+    assert classes["declared"] == _EXPECTED_503_DECLARED_ONLY
+    assert classes["both"] == _EXPECTED_503_BOTH
+
+
+@pytest.mark.parametrize(("method", "path"), sorted(_EXPECTED_503_GATE_ONLY))
+def test_gate_only_503_publishes_the_reloading_shape(spec: dict, method: str, path: str) -> None:
+    # Reload gate alone: the constant-message reloading body, and the Retry-After header
+    # the gate always stamps.
+    response = spec["paths"][path][method.lower()]["responses"]["503"]
+    assert response["content"]["application/json"]["schema"] == {"$ref": "#/components/schemas/ReloadingError"}
+    assert response["headers"]["Retry-After"]["schema"] == {"type": "integer"}
+
+
+@pytest.mark.parametrize(("method", "path"), sorted(_EXPECTED_503_DECLARED_ONLY))
+def test_declared_only_503_publishes_the_plain_error_shape(spec: dict, method: str, path: str) -> None:
+    # No reload gate on these doors: the adapter renders ``{"error": <message>}`` with no
+    # ``reloading`` field and no ``Retry-After``, so neither may be published.
+    response = spec["paths"][path][method.lower()]["responses"]["503"]
+    assert response["content"]["application/json"]["schema"] == {"$ref": "#/components/schemas/Error"}
+    assert "headers" not in response
+    assert response["description"] == _STATUS_DESCRIPTIONS[503]
+
+
+@pytest.mark.parametrize(("method", "path"), sorted(_EXPECTED_503_BOTH))
+def test_both_sources_503_publishes_a_schema_admitting_either_body(spec: dict, method: str, path: str) -> None:
+    # One 503 slot, two possible bodies: the schema must admit both, and the header is
+    # published because the reloading half carries it.
+    response = spec["paths"][path][method.lower()]["responses"]["503"]
+    schema = response["content"]["application/json"]["schema"]
+    assert schema == {
+        "anyOf": [
+            {"$ref": "#/components/schemas/ReloadingError"},
+            {"$ref": "#/components/schemas/Error"},
+        ]
+    }
+    assert response["headers"]["Retry-After"]["schema"] == {"type": "integer"}
+
+
+def test_the_combined_503_schema_admits_both_bodies_and_oneof_would_not(spec: dict) -> None:
+    """The combined shape is ``anyOf`` for a reason, pinned by validating real bodies.
+
+    ``Error`` constrains only ``error``, so a reloading body satisfies BOTH branches.
+    Under ``anyOf`` each of the two real bodies validates; under ``oneOf`` — exactly one
+    branch — the gate's own response would fail the spec it is published under.
+    """
+    combined = spec["paths"]["/api/schedules"]["post"]["responses"]["503"]["content"]["application/json"]["schema"]
+    # The published component schemas ride along so the document-relative ``$ref``s in the
+    # combined schema resolve exactly as they do in the spec.
+    components = {"components": spec["components"]}
+    reloading_body = {"error": REJECT_MESSAGE, "reloading": True}
+    unavailable_body = {"error": "no installed backend exposes scheduling tools"}
+
+    any_of = Draft202012Validator({**combined, **components})
+    any_of.validate(reloading_body)
+    any_of.validate(unavailable_body)
+
+    one_of = Draft202012Validator({"oneOf": combined["anyOf"], **components})
+    with pytest.raises(ValidationError):
+        one_of.validate(reloading_body)
 
 
 # The reload-gated routes, hand-maintained as ground truth. ``reload_gated`` is
@@ -259,6 +400,59 @@ def test_scope_url_delete_doors_document_the_400(
     assert set(meta.error_statuses) == {400, 401, 404}
     responses = spec["paths"][path][method.lower()]["responses"]
     assert "400" in responses, f"{method} {path} is missing the 400 response"
+
+
+# The five run-any-tool doors and the exact status set each declares, hand-maintained as
+# ground truth. All five dispatch a named tool and share one error story: a typed
+# ``PermissionDenied`` from under the dispatch passes through (403 on every one) and any
+# other raise is enveloped as an ``OperationFailed`` (500 on every one). The sets are the
+# statuses each door answers with the plain ``{"error": ...}`` envelope — its ``errors=``
+# list plus the 401 the authed flag adds. The reload gate's 503 is NOT one of them (it
+# answers a different body); the gated doors among these carry it via ``reload_gated``,
+# and the test adds it to the expected SPEC responses from that flag.
+#
+# Declared is not the same as reachable, and nothing here says a door cannot answer a
+# status it leaves undeclared. ``PermissionDenied`` is only the sharpest case of the
+# passthrough: the dispatch re-raises EVERY ``OperationError`` the inner tool raises, so
+# a tool whose body raises its own ``NotFoundError`` answers 404 through a door whose set
+# below holds none. That status belongs to the inner tool, not to the door's contract —
+# the equality is over what each door DECLARES, which is what a client reads off the spec.
+_EXPECTED_TOOL_DISPATCH_DOOR_STATUSES: dict[tuple[str, str], set[int]] = {
+    # BadRequestError, 401 authed, PermissionDenied, NotFoundError, OperationFailed. Its
+    # only 503 is the reload gate's, so none is declared here.
+    ("POST", "/api/run-tool"): {400, 401, 403, 404, 500},
+    # 401 authed, PermissionDenied, OperationFailed, NotSupportedError, UnavailableError
+    # (503 — these two doors are not reload-gated, so the dispatch seam is its only source).
+    ("GET", "/api/schedules"): {401, 403, 500, 501, 503},
+    ("GET", "/api/schedules/server-datetime"): {401, 403, 500, 501, 503},
+    # BadRequestError, 401 authed, PermissionDenied, NotFoundError, OperationFailed,
+    # NotSupportedError, UnavailableError (503) — and the reload gate's own 503 beside it.
+    ("POST", "/api/schedules"): {400, 401, 403, 404, 500, 501, 503},
+    # 401 authed, PermissionDenied, OperationFailed, NotSupportedError, UnavailableError
+    # (503) — and the reload gate's own 503 beside it.
+    ("DELETE", "/api/schedules/{schedule_name}"): {401, 403, 500, 501, 503},
+}
+
+
+@pytest.mark.parametrize(("method", "path"), sorted(_EXPECTED_TOOL_DISPATCH_DOOR_STATUSES))
+def test_tool_dispatch_doors_declare_their_exact_status_sets(
+    spec: dict, api_routes: list[RouteMetadata], method: str, path: str
+) -> None:
+    # Both halves are pinned by EQUALITY: the route's declared error set, and the emitted
+    # operation's response codes. Beyond the declared set an emitted operation carries its
+    # ``200`` success (none of the five declares a second success code —
+    # ``test_declared_additional_success_set_matches_ground_truth`` pins that) and, for a
+    # gated door, the reload gate's 503; so an extra or a missing code in the spec fails here.
+    expected = _EXPECTED_TOOL_DISPATCH_DOOR_STATUSES[(method, path)]
+    (meta,) = [m for m in api_routes if m.path == path and method in m.methods]
+    assert set(meta.error_statuses) == expected
+    published = {str(status) for status in expected} | {"200"}
+    if meta.reload_gated:
+        published.add("503")
+    responses = spec["paths"][path][method.lower()]["responses"]
+    assert set(responses) == published, (
+        f"{method} {path} publishes {sorted(responses)}, expected the error set plus the 200 success"
+    )
 
 
 def test_hook_registration_documents_the_required_execution_key(spec: dict) -> None:

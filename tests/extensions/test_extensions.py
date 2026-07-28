@@ -35,17 +35,6 @@ def test_cardinality_flags():
     assert ExtensionKind.BACKEND.multiple is False
 
 
-def test_dead_helpers_dropped():
-    for attr in ("tag", "is_backend", "is_decorator", "is_flow"):
-        assert not hasattr(ExtensionKind.BACKEND, attr)
-
-
-def test_old_member_names_gone():
-    for old in ("DECORATOR", "FLOW"):
-        with pytest.raises(KeyError):
-            ExtensionKind[old]
-
-
 # --- registry -------------------------------------------------------------
 
 

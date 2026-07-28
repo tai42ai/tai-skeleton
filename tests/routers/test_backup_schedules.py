@@ -18,6 +18,7 @@ from tai42_contract.app import tai42_app
 from tai42_skeleton.backup.registry import BackupRegistry
 from tai42_skeleton.backup.sections import register_core_sections
 from tai42_skeleton.routers.backup import export_backup, import_backup
+from tai42_skeleton.tools.binding import UnknownToolError
 
 
 def _post_req(payload: dict) -> Request:
@@ -48,7 +49,7 @@ class _FakeTools:
 
     async def run_tool(self, key, arguments):
         if key not in self._registered:
-            raise RuntimeError(f"No such tool: {key}.")
+            raise UnknownToolError(key)
         self.run_calls.append((key, arguments))
         return self._registered[key]
 

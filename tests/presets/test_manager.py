@@ -24,6 +24,7 @@ from tai42_contract.presets.errors import PresetNameConflictError, PresetNotFoun
 from tai42_skeleton.app.instance import app
 from tai42_skeleton.exceptions.exceptions import TaiValidationError
 from tai42_skeleton.manifest import Manifest
+from tai42_skeleton.tools.binding import UnknownToolError
 from tests.versioning.conftest import FakeVersioningPg
 
 _MANIFEST = {
@@ -235,7 +236,7 @@ def test_remove_tears_down_base_and_branches(pg: FakeVersioningPg):
             assert not ({"shouty", "shouty_exta", "shouty_extb"} & tools)
             assert not mgr.is_registered("shouty")
             for name in ("shouty", "shouty_exta", "shouty_extb"):
-                with pytest.raises(RuntimeError):
+                with pytest.raises(UnknownToolError):
                     await app.tools.run_tool(name, {"text": "hi"})
 
     asyncio.run(run())

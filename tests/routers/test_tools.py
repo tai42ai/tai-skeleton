@@ -227,22 +227,6 @@ async def test_run_tool_unknown_tool_404(install):
     assert "unknown tool" in _json(resp)["error"]
 
 
-async def test_run_tool_unknown_tool_404_legacy_runtime_error(install):
-    # Defensive dual-catch: even if the binding raises a plain
-    # ``RuntimeError("No such tool: ...")`` instead of the typed error, the door
-    # still answers 404, never a masked 500.
-    fake = _FakeTools({})
-
-    async def _legacy_get_tool(key):
-        raise RuntimeError(f"No such tool: {key}.")
-
-    fake.get_tool = _legacy_get_tool  # type: ignore[method-assign]
-    install(fake)
-    resp = await router.run_tool(_body_req(b'{"tool_name": "nope"}'))
-    assert resp.status_code == 404
-    assert "unknown tool" in _json(resp)["error"]
-
-
 async def test_run_tool_raised_error_is_structured_500(install):
     # A tool that raises DURING execution returns a structured ``{"error": ...}``
     # 500 carrying the caught message, never the opaque "Internal Server Error".

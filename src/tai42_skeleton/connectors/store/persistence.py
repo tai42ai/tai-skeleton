@@ -7,6 +7,11 @@ error-handling contract instead of duplicating it.
 :func:`load_record` raises :class:`ConnectionNotFoundError` on a missing blob and
 re-raises (after logging ERROR) on a decrypt failure. :func:`load_record_or_none`
 returns ``None`` on either, for list / projection paths that must keep going.
+
+A broken ``CONNECTORS_KEK`` config is neither: it is not a property of any one blob,
+so both helpers let it propagate — unlogged in :func:`load_record`, so the deployment
+fault is not filed against one blob, and unswallowed in :func:`load_record_or_none`,
+so it does not empty every projection.
 """
 
 from __future__ import annotations
@@ -58,17 +63,22 @@ async def load_record_with_blob(
     serving read (an expired session reads as missing), set ``True`` ONLY by the
     cleanup path (disconnect) so an expired connection stays loadable-to-purge.
 
-    Decrypt failures log at ERROR (KEK rotation / on-disk corruption are
-    operator-visible incidents) and re-raise the underlying exception unchanged.
+    Decrypt failures log at ERROR (a ``CONNECTORS_KEK`` that is not the one this blob
+    was written with, or a corrupted blob, are operator-visible incidents) and re-raise
+    the underlying exception unchanged. A missing or malformed ``CONNECTORS_KEK`` is
+    excluded: it raises :class:`ConnectorEncryptionConfigError` for EVERY blob, so it
+    propagates unlogged here rather than blaming one blob for a deployment fault.
     """
     blob = await token_store().get(connection_id, include_expired=include_expired)
     if blob is None:
         raise ConnectionNotFoundError(connection_id)
     try:
         plain = crypto.decrypt(blob, connection_id=connection_id)
+    except crypto.ConnectorEncryptionConfigError:
+        raise
     except Exception:
         logger.error(
-            "connectors: connection blob %s failed to decrypt — possible KEK rotation issue or on-disk corruption",
+            "connectors: connection blob %r failed to decrypt — wrong CONNECTORS_KEK for this blob or a corrupted blob",
             connection_id,
             exc_info=True,
         )
@@ -88,10 +98,25 @@ async def load_record(connection_id: str, *, include_expired: bool = False) -> C
 
 
 async def load_record_or_none(connection_id: str) -> ConnectionRecord | None:
-    """Return ``None`` on missing OR unreadable.
+    """Return ``None`` on missing OR unreadable, and raise on a broken KEK config.
 
     For list-projection paths where one bad row must not poison the whole
     response. Unreadable blobs log at WARNING.
+
+    Three cases reach the ``except``, and only two of them are one bad row:
+
+    * a decrypt failure for this blob — the KEK is not the one it was written
+      with, or the ciphertext is corrupt;
+    * shape drift — the blob decrypts but its JSON does not match the current
+      ``ConnectionRecord`` shape (e.g. one missing a required field like kind);
+    * a missing or malformed ``CONNECTORS_KEK``, which is not about this blob at
+      all: it raises :class:`ConnectorEncryptionConfigError` for EVERY row, so
+      tolerating it would answer "no connections" behind a warning per row and
+      pass a deployment fault off as empty data.
+
+    The first two skip the one bad row so it never poisons a whole
+    list/projection; the config fault propagates. The single-record
+    :func:`load_record` path raises loudly on all three.
     """
     blob = await token_store().get(connection_id)
     if blob is None:
@@ -99,13 +124,11 @@ async def load_record_or_none(connection_id: str) -> ConnectionRecord | None:
     try:
         plain = crypto.decrypt(blob, connection_id=connection_id)
         return ConnectionRecord.model_validate_json(plain)
+    except crypto.ConnectorEncryptionConfigError:
+        raise
     except Exception:
-        # Unreadable = decrypt failure OR a blob whose JSON does not match the
-        # current ConnectionRecord shape (e.g. one missing a required field like
-        # kind). Skip the one bad row so it never poisons a whole list/projection;
-        # the single-record load_record path still raises loudly.
         logger.warning(
-            "connectors: skipping unreadable connection %s",
+            "connectors: skipping unreadable connection %r",
             connection_id,
             exc_info=True,
         )
