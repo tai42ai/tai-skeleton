@@ -1,0 +1,654 @@
+"""ASGI behavior of ``ResourceGuardMiddleware``: scope passthrough, the unknown
+/ public / protected route decisions, scope checks, and the request-user context
+set/reset around a successful downstream call.
+"""
+
+from __future__ import annotations
+
+import logging
+import re
+
+import pytest
+from fastmcp.server.auth import AccessToken
+from starlette.authentication import AuthCredentials, AuthenticationError, UnauthenticatedUser
+from tai42_contract.access_control.context import get_current_user_id
+from tai42_contract.access_control.identity import AuthIdentity, IdentityProvider
+
+from tai42_skeleton.access_control import store as store_module
+from tai42_skeleton.access_control import verifier as verifier_module
+from tai42_skeleton.access_control.middleware import ResourceGuardMiddleware
+from tai42_skeleton.access_control.policy import PolicyEnforcer
+from tai42_skeleton.access_control.roles import EDITOR_JQ
+from tai42_skeleton.access_control.settings import AccessControlSettings
+from tai42_skeleton.access_control.user import TaiUser
+from tai42_skeleton.access_control.verifier import AccessControlVerifier
+from tai42_skeleton.middleware.audit_log import AuditLogMiddleware
+
+from .conftest import FakeAccessControlPg, FakeRedis, make_client_ctx, make_pg_ctx
+
+PUBLIC_ID = "public"
+
+# The refusal audit line ResourceGuard._deny writes at each http deny; the trailing
+# ``reason=`` group is present for the 403s, absent for the 401s.
+_REJECT_LINE = re.compile(
+    r"^audit: principal=(?P<principal>\S+) method=(?P<method>\S+) route=(?P<route>\S+) "
+    r"status=(?P<status>\d+) duration_ms=(?P<duration_ms>\d+) ts=(?P<ts>\S+)"
+    r"(?: reason=(?P<reason>\S+))?$"
+)
+
+
+def _audit_lines(caplog) -> list[str]:
+    return [r.getMessage() for r in caplog.records if r.getMessage().startswith("audit: ")]
+
+
+def _one_reject(caplog) -> re.Match[str]:
+    lines = _audit_lines(caplog)
+    assert len(lines) == 1, lines
+    match = _REJECT_LINE.fullmatch(lines[0])
+    assert match is not None, lines[0]
+    return match
+
+
+class _NoIdentityProvider(IdentityProvider):
+    """A provider that authenticates nobody — used to drive the real verifier
+    inside the guard for unauthenticated end-to-end checks."""
+
+    async def validate_token(self, token: str) -> AuthIdentity | None:
+        return None
+
+
+class _FakeVerifier(AccessControlVerifier):
+    """Subclasses the real verifier so it is accepted where one is expected;
+    only ``resolve_resource_ids`` (the method the middleware calls) is faked."""
+
+    def __init__(self, resource_ids: list[str]) -> None:
+        self._ids = resource_ids
+
+    async def resolve_resource_ids(
+        self, path: str, method: str | None = None, *, policy_version: int | None = None
+    ) -> list[str]:
+        return self._ids
+
+
+class _RaisingVerifier(AccessControlVerifier):
+    """Stands in for a verifier whose backend fetch fails (fail-closed by raise)."""
+
+    def __init__(self) -> None:
+        pass
+
+    async def resolve_resource_ids(
+        self, path: str, method: str | None = None, *, policy_version: int | None = None
+    ) -> list[str]:
+        raise RuntimeError("redis down")
+
+
+def _http_scope(path="/x", user=None, auth=None) -> dict:
+    scope = {
+        "type": "http",
+        "method": "GET",
+        "path": path,
+        "query_string": b"",
+        "headers": [],
+    }
+    if user is not None:
+        scope["user"] = user
+    if auth is not None:
+        scope["auth"] = auth
+    return scope
+
+
+def _ws_scope(path="/x", user=None, auth=None) -> dict:
+    scope = {
+        "type": "websocket",
+        "path": path,
+        "query_string": b"",
+        "headers": [],
+    }
+    if user is not None:
+        scope["user"] = user
+    if auth is not None:
+        scope["auth"] = auth
+    return scope
+
+
+async def _drive(mw: ResourceGuardMiddleware, scope, app_probe=None):
+    sent: list[dict] = []
+
+    async def receive():
+        return {"type": "http.request", "body": b"", "more_body": False}
+
+    async def send(message):
+        sent.append(message)
+
+    await mw(scope, receive, send)
+    return sent
+
+
+def _status(sent: list[dict]) -> int:
+    return next(m["status"] for m in sent if m["type"] == "http.response.start")
+
+
+def _body(sent: list[dict]) -> bytes:
+    return next(m["body"] for m in sent if m["type"] == "http.response.body")
+
+
+def _make_app(captured):
+    async def app(scope, receive, send):
+        captured["called"] = True
+        captured["user_id_in_ctx"] = get_current_user_id()
+        await send({"type": "http.response.start", "status": 200, "headers": []})
+        await send({"type": "http.response.body", "body": b"ok"})
+
+    return app
+
+
+def _authed_user(user_id="u1") -> TaiUser:
+    return TaiUser(AccessToken(token="t", client_id=user_id, scopes=[], claims={}))
+
+
+async def test_non_http_scope_passes_through():
+    captured: dict = {}
+    mw = ResourceGuardMiddleware(_make_app(captured), _FakeVerifier(["x"]), PUBLIC_ID)
+    sent: list = []
+
+    async def receive():
+        return {}
+
+    async def send(m):
+        sent.append(m)
+
+    await mw({"type": "lifespan"}, receive, send)
+    assert captured.get("called") is True
+
+
+DISABLE_HINT = "set ACCESS_CONTROL_ENABLE=false to disable access control for local development"
+
+
+async def test_unknown_route_is_forbidden(caplog):
+    mw = ResourceGuardMiddleware(_make_app({}), _FakeVerifier([]), PUBLIC_ID)
+    with caplog.at_level("WARNING"):
+        sent = await _drive(mw, _http_scope())
+    assert _status(sent) == 403
+    # The server-side log names the kill switch; the client body stays generic.
+    assert DISABLE_HINT in caplog.text
+    assert DISABLE_HINT.encode() not in _body(sent)
+
+
+async def test_unknown_route_admits_super_admin():
+    """A route with no configured resource fails closed for ordinary identities, but
+    the admin discriminator is admitted — a root identity is never gated by a missing
+    route row (it can map the route anyway)."""
+    captured: dict = {}
+    mw = ResourceGuardMiddleware(_make_app(captured), _FakeVerifier([]), PUBLIC_ID)
+    admin = TaiUser(AccessToken(token="t", client_id="root", scopes=["*"], claims={}), is_admin=True)
+    sent = await _drive(mw, _http_scope(user=admin, auth=AuthCredentials(["*"])))
+    assert _status(sent) == 200
+    assert captured["called"] is True
+    assert captured["user_id_in_ctx"] == "root"
+
+
+async def test_unknown_route_denies_non_admin_even_with_wildcard_scope():
+    """A non-admin (here a wildcard-scoped but NOT admin-flagged identity — e.g. an owned
+    key or a condition-bearing role-holder) still fails closed on an unconfigured route:
+    the carve-out keys on the admin discriminator, never on the raw ``*`` scope."""
+    mw = ResourceGuardMiddleware(_make_app({}), _FakeVerifier([]), PUBLIC_ID)
+    non_admin = TaiUser(AccessToken(token="t", client_id="editor", scopes=["*"], claims={}), is_admin=False)
+    sent = await _drive(mw, _http_scope(user=non_admin, auth=AuthCredentials(["*"])))
+    assert _status(sent) == 403
+
+
+async def test_public_route_allows_unauthenticated():
+    captured: dict = {}
+    mw = ResourceGuardMiddleware(_make_app(captured), _FakeVerifier([PUBLIC_ID]), PUBLIC_ID)
+    scope = _http_scope(user=UnauthenticatedUser(), auth=AuthCredentials())
+    sent = await _drive(mw, scope)
+    assert captured["called"] is True
+    assert _status(sent) == 200
+
+
+async def test_route_matching_public_and_protected_is_treated_protected():
+    # Deny wins: a path is public only when public is the ONLY resolved id. A
+    # path that also matched a protected route must not be opened by an
+    # over-broad public pattern — unauthenticated callers are challenged.
+    mw = ResourceGuardMiddleware(_make_app({}), _FakeVerifier([PUBLIC_ID, "protected"]), PUBLIC_ID)
+    scope = _http_scope(user=UnauthenticatedUser(), auth=AuthCredentials())
+    sent = await _drive(mw, scope)
+    assert _status(sent) == 401
+
+
+async def test_protected_route_requires_authentication(caplog):
+    mw = ResourceGuardMiddleware(_make_app({}), _FakeVerifier(["u1"]), PUBLIC_ID)
+    scope = _http_scope(user=UnauthenticatedUser(), auth=AuthCredentials())
+    with caplog.at_level("WARNING"):
+        sent = await _drive(mw, scope)
+    assert _status(sent) == 401
+    assert DISABLE_HINT in caplog.text
+
+
+async def test_protected_route_missing_scope_is_forbidden(caplog):
+    mw = ResourceGuardMiddleware(_make_app({}), _FakeVerifier(["needed"]), PUBLIC_ID)
+    scope = _http_scope(user=_authed_user(), auth=AuthCredentials(["other"]))
+    with caplog.at_level("WARNING"):
+        sent = await _drive(mw, scope)
+    assert _status(sent) == 403
+    # The client body is generic and does not disclose the required resource name.
+    assert _body(sent) == b'{"error":"Forbidden"}'
+    assert b"needed" not in _body(sent)
+    # The required scope is logged server-side for operators.
+    assert "needed" in caplog.text
+    # The deny log also names the kill switch for local development.
+    assert DISABLE_HINT in caplog.text
+
+
+async def test_protected_route_with_matching_scope_runs_app_and_sets_context():
+    captured: dict = {}
+    mw = ResourceGuardMiddleware(_make_app(captured), _FakeVerifier(["res-a"]), PUBLIC_ID)
+    scope = _http_scope(user=_authed_user("u7"), auth=AuthCredentials(["res-a"]))
+    sent = await _drive(mw, scope)
+    assert _status(sent) == 200
+    assert captured["called"] is True
+    assert captured["user_id_in_ctx"] == "u7"
+    # Context is reset after the downstream call returns.
+    assert get_current_user_id() is None
+
+
+async def test_plugin_visible_read_sees_caller_mid_request_and_none_after():
+    """A plugin reads the caller through the shared ``tai42_contract`` accessor, not
+    a skeleton-internal one. Prove the guard writes the SAME context the contract
+    exposes: an arbitrary downstream reader sees the caller mid-request and ``None``
+    once the request unwinds."""
+    from tai42_contract.access_control import get_current_user_id as contract_read
+
+    seen: dict[str, str | None] = {}
+
+    async def plugin_reader_app(scope, receive, send):
+        # Stands in for any plugin resolving "who is calling right now".
+        seen["mid_request"] = contract_read()
+        await send({"type": "http.response.start", "status": 200, "headers": []})
+        await send({"type": "http.response.body", "body": b"ok"})
+
+    mw = ResourceGuardMiddleware(plugin_reader_app, _FakeVerifier(["res-a"]), PUBLIC_ID)
+    scope = _http_scope(user=_authed_user("plugin-caller"), auth=AuthCredentials(["res-a"]))
+    sent = await _drive(mw, scope)
+    assert _status(sent) == 200
+    assert seen["mid_request"] == "plugin-caller"
+    # The binding does not outlive the request.
+    assert contract_read() is None
+
+
+async def test_context_is_reset_when_downstream_raises():
+    """The request-user context must be reset even when the downstream app raises,
+    so a failed request never leaks an authenticated identity into the next one."""
+
+    async def raising_app(scope, receive, send):
+        raise RuntimeError("downstream boom")
+
+    mw = ResourceGuardMiddleware(raising_app, _FakeVerifier(["res-a"]), PUBLIC_ID)
+    scope = _http_scope(user=_authed_user("u9"), auth=AuthCredentials(["res-a"]))
+    with pytest.raises(RuntimeError, match="downstream boom"):
+        await _drive(mw, scope)
+    # The finally-reset ran on the exception path.
+    assert get_current_user_id() is None
+
+
+async def test_wildcard_scope_grants_any_resource():
+    captured: dict = {}
+    mw = ResourceGuardMiddleware(_make_app(captured), _FakeVerifier(["res-a"]), PUBLIC_ID)
+    scope = _http_scope(user=_authed_user(), auth=AuthCredentials(["*"]))
+    sent = await _drive(mw, scope)
+    assert _status(sent) == 200
+    assert captured["called"] is True
+
+
+async def test_multiple_protected_ids_require_all_scopes(caplog):
+    # Deny wins: a path resolving to several protected resources (e.g. a broad
+    # tier plus a more-specific override) requires the caller to hold EVERY one —
+    # a broad tier's scope alone must not open the restricted route.
+    mw = ResourceGuardMiddleware(_make_app({}), _FakeVerifier(["broad", "restricted"]), PUBLIC_ID)
+    scope = _http_scope(user=_authed_user(), auth=AuthCredentials(["broad"]))
+    with caplog.at_level("WARNING"):
+        sent = await _drive(mw, scope)
+    assert _status(sent) == 403
+
+
+async def test_multiple_protected_ids_allow_when_all_scopes_held():
+    captured: dict = {}
+    mw = ResourceGuardMiddleware(_make_app(captured), _FakeVerifier(["broad", "restricted"]), PUBLIC_ID)
+    scope = _http_scope(user=_authed_user(), auth=AuthCredentials(["broad", "restricted"]))
+    sent = await _drive(mw, scope)
+    assert _status(sent) == 200
+    assert captured["called"] is True
+
+
+async def test_resolve_error_fails_closed_with_403_on_http():
+    """A verifier backend error must fail closed as a clean 403 deny, never leak
+    out of the middleware as a raw 500."""
+    mw = ResourceGuardMiddleware(_make_app({}), _RaisingVerifier(), PUBLIC_ID)
+    sent = await _drive(mw, _http_scope())
+    assert _status(sent) == 403
+
+
+async def test_websocket_unknown_route_closes_with_policy_violation():
+    """A deny on a websocket scope must send a websocket.close frame (1008), not
+    an http.response.start (which would be a malformed close)."""
+    mw = ResourceGuardMiddleware(_make_app({}), _FakeVerifier([]), PUBLIC_ID)
+    sent = await _drive(mw, _ws_scope())
+    assert sent == [{"type": "websocket.close", "code": 1008}]
+
+
+async def test_websocket_protected_route_unauthenticated_closes():
+    mw = ResourceGuardMiddleware(_make_app({}), _FakeVerifier(["u1"]), PUBLIC_ID)
+    scope = _ws_scope(user=UnauthenticatedUser(), auth=AuthCredentials())
+    sent = await _drive(mw, scope)
+    assert sent == [{"type": "websocket.close", "code": 1008}]
+
+
+async def test_public_and_protected_route_denies_unauthenticated_end_to_end(monkeypatch):
+    # M3 end-to-end through the REAL verifier: a path that is both a public exact
+    # match and covered by a protected dynamic pattern resolves to both ids, so the
+    # guard keeps it protected and challenges the unauthenticated request with 401.
+    settings = AccessControlSettings()
+    pg = FakeAccessControlPg()
+    pg.add_route("/mixed", PUBLIC_ID)
+    pg.add_route("/protected-template", "protected", pattern=r"^/mixed$")
+    monkeypatch.setattr(store_module, "client_ctx", make_pg_ctx(pg))
+    monkeypatch.setattr(verifier_module, "client_ctx", make_client_ctx(FakeRedis()))
+    real_verifier = AccessControlVerifier(settings, providers=[_NoIdentityProvider()])
+    mw = ResourceGuardMiddleware(_make_app({}), real_verifier, PUBLIC_ID)
+    scope = _http_scope(path="/mixed", user=UnauthenticatedUser(), auth=AuthCredentials())
+    sent = await _drive(mw, scope)
+    assert _status(sent) == 401
+
+
+async def test_websocket_resolve_error_fails_closed_with_close():
+    mw = ResourceGuardMiddleware(_make_app({}), _RaisingVerifier(), PUBLIC_ID)
+    sent = await _drive(mw, _ws_scope())
+    assert sent == [{"type": "websocket.close", "code": 1008}]
+
+
+# -- authenticated-always-allowed carve-out ----------------------------------
+
+
+class _SpyResolveVerifier(AccessControlVerifier):
+    """Records every path it is asked to resolve, so a test can prove the carve-out is
+    decided BEFORE (and without) route resolution."""
+
+    def __init__(self) -> None:
+        self.calls: list[str] = []
+
+    async def resolve_resource_ids(
+        self, path: str, method: str | None = None, *, policy_version: int | None = None
+    ) -> list[str]:
+        self.calls.append(path)
+        return []
+
+
+async def test_carve_out_authenticated_reaches_app_without_route_rows():
+    # An authenticated caller reaches a carve-out path with NO route rows, and the
+    # verifier's resolution is never consulted (the store is never queried).
+    captured: dict = {}
+    spy = _SpyResolveVerifier()
+    mw = ResourceGuardMiddleware(_make_app(captured), spy, PUBLIC_ID, ("/api/auth/me",))
+    scope = _http_scope(path="/api/auth/me", user=_authed_user("u1"), auth=AuthCredentials(["read"]))
+    sent = await _drive(mw, scope)
+    assert _status(sent) == 200
+    assert captured["called"] is True
+    # The identity contextvar is bound for the carved request (the /me handler reads it).
+    assert captured["user_id_in_ctx"] == "u1"
+    assert spy.calls == []
+
+
+async def test_carve_out_unauthenticated_is_401(caplog):
+    mw = ResourceGuardMiddleware(_make_app({}), _FakeVerifier([]), PUBLIC_ID, ("/api/auth/me",))
+    scope = _http_scope(path="/api/auth/me", user=UnauthenticatedUser(), auth=AuthCredentials())
+    with caplog.at_level("WARNING"):
+        sent = await _drive(mw, scope)
+    assert _status(sent) == 401
+    assert DISABLE_HINT in caplog.text
+
+
+async def test_carve_out_is_exact_path_not_prefix():
+    # A DIFFERENT unmapped /api/auth path still 403s (CASE A) — the carve-out is
+    # exact-path, so it can never swallow a future sibling route.
+    mw = ResourceGuardMiddleware(_make_app({}), _FakeVerifier([]), PUBLIC_ID, ("/api/auth/me",))
+    scope = _http_scope(path="/api/auth/xyz", user=_authed_user(), auth=AuthCredentials(["*"]))
+    sent = await _drive(mw, scope)
+    assert _status(sent) == 403
+
+
+async def test_carve_out_is_exact_matching_the_jq_fence():
+    # The carve-out membership test uses the EXACT request path (no trailing-slash
+    # normalization) so it admits exactly the shape the companion role jq fence admits:
+    # ``/api/auth/me`` exact is carved, but ``/api/auth/me/`` is NOT — it falls through to
+    # resolution (here unmapped → 403), mirroring EDITOR_JQ's exact-match, so the two never
+    # disagree on the trailing-slash variant — a normalizing carve-out would admit
+    # ``/api/auth/me/`` here (200) yet the jq fence denies it (403).
+    captured: dict = {}
+    mw = ResourceGuardMiddleware(_make_app(captured), _FakeVerifier([]), PUBLIC_ID, ("/api/auth/me",))
+    exact = _http_scope(path="/api/auth/me", user=_authed_user(), auth=AuthCredentials(["read"]))
+    assert _status(await _drive(mw, exact)) == 200
+    assert captured["called"] is True
+
+    mw2 = ResourceGuardMiddleware(_make_app({}), _FakeVerifier([]), PUBLIC_ID, ("/api/auth/me",))
+    slashed = _http_scope(path="/api/auth/me/", user=_authed_user(), auth=AuthCredentials(["read"]))
+    assert _status(await _drive(mw2, slashed)) == 403
+
+    # jq parity: the editor fence admits the exact path and denies the trailing-slash one,
+    # exactly as the carve-out now does.
+    enforcer = PolicyEnforcer(AccessControlSettings())
+    await enforcer.enforce({"request": {"path": "/api/auth/me", "method": "GET"}}, EDITOR_JQ)
+    with pytest.raises(AuthenticationError):
+        await enforcer.enforce({"request": {"path": "/api/auth/me/", "method": "GET"}}, EDITOR_JQ)
+
+
+async def test_no_carve_out_configured_leaves_path_to_resolution():
+    # With an empty carve-out set (the default ctor value), the path falls through to the
+    # normal resolution path and 403s as an unknown route.
+    mw = ResourceGuardMiddleware(_make_app({}), _FakeVerifier([]), PUBLIC_ID)
+    scope = _http_scope(path="/api/auth/me", user=_authed_user(), auth=AuthCredentials(["*"]))
+    sent = await _drive(mw, scope)
+    assert _status(sent) == 403
+
+
+# -- SPA-shell public fallback: H4 terminal deny, public deep link, H5 walk ---
+
+
+def _real_guard(monkeypatch, pg: FakeAccessControlPg, settings: AccessControlSettings | None = None):
+    """A guard over the REAL verifier wired to fake stores — everything unmapped unless
+    ``pg`` is seeded. Drives real classification (canonicalization, fallback, exclusions)."""
+    settings = settings or AccessControlSettings()
+    monkeypatch.setattr(store_module, "client_ctx", make_pg_ctx(pg))
+    monkeypatch.setattr(verifier_module, "client_ctx", make_client_ctx(FakeRedis()))
+    verifier = AccessControlVerifier(settings, providers=[_NoIdentityProvider()])
+    return ResourceGuardMiddleware(_make_app({}), verifier, PUBLIC_ID)
+
+
+async def test_spa_deeplink_reaches_shell_unauthenticated(monkeypatch):
+    # An unauthenticated GET to an inner Studio route resolves public (CASE B) and
+    # reaches the app (the 200 shell), not 403 — the deep-link refresh fix.
+    mw = _real_guard(monkeypatch, FakeAccessControlPg())
+    sent = await _drive(mw, _http_scope(path="/agents", user=UnauthenticatedUser(), auth=AuthCredentials()))
+    assert _status(sent) == 200
+
+
+async def test_h4_terminal_deny_unmatched_control_plane(monkeypatch):
+    # H4: an UNMATCHED /api or /mcp path terminal-denies (JSON 401/403), NEVER the shell.
+    mw = _real_guard(monkeypatch, FakeAccessControlPg())
+    for path in ("/api/does-not-exist", "/mcp/does-not-exist"):
+        sent = await _drive(mw, _http_scope(path=path, user=UnauthenticatedUser(), auth=AuthCredentials()))
+        assert _status(sent) in (401, 403)
+
+
+async def test_websocket_deeplink_never_shell_public(monkeypatch):
+    # A websocket upgrade carries no HTTP method → the GET-only fallback never fires →
+    # the deep-link path is never shell-public; the connection is closed.
+    mw = _real_guard(monkeypatch, FakeAccessControlPg())
+    sent = await _drive(mw, _ws_scope(path="/agents", user=UnauthenticatedUser(), auth=AuthCredentials()))
+    assert sent == [{"type": "websocket.close", "code": 1008}]
+
+
+async def test_h5_unauthenticated_route_walk(monkeypatch):
+    # H5 (MUST): walk EVERY registered route + a hostile-path corpus with NO credentials.
+    # Backstop invariant — the control plane never leaks unauthenticated, hostile
+    # /api-canonicalizing forms never reach data, genuine deep links reach the shell.
+    from tai42_skeleton.access_control.path_canon import under_prefix
+    from tai42_skeleton.access_control.verifier import matches_always_public_route_pattern
+    from tai42_skeleton.app.route_registry import load_all_routes
+
+    settings = AccessControlSettings()
+    mw = _real_guard(monkeypatch, FakeAccessControlPg(), settings)
+
+    def concretize(path: str) -> str:
+        return re.sub(r"\{[^}]+\}", "probe", path)
+
+    always_public = settings.always_public_path_prefixes
+    for meta in load_all_routes():
+        if "GET" not in meta.methods:
+            continue
+        path = concretize(meta.path)
+        # The always-public login surface is legitimately public; skip it.
+        if any(under_prefix(path, prefix) for prefix in always_public):
+            continue
+        sent = await _drive(mw, _http_scope(path=path, user=UnauthenticatedUser(), auth=AuthCredentials()))
+        status = _status(sent)
+        if matches_always_public_route_pattern(path, settings):
+            # A public asset door (e.g. the plugin studio bundles) is served public by
+            # design even though it sits under /api.
+            assert status == 200, f"public asset door {path} not served public: {status}"
+        elif under_prefix(path, "/api") or under_prefix(path, "/mcp"):
+            # Every control-plane GET route terminal-denies unauthenticated — never the
+            # shell, never data.
+            assert status in (401, 403), f"control-plane {path} leaked unauthenticated: {status}"
+        else:
+            # Non-/api routes either serve the public shell or deny — never a 5xx leak.
+            assert status in (200, 401, 403), f"unexpected {status} for {path}"
+
+    # The operational probes are served PUBLIC (200) unauthenticated by their own
+    # route-level acknowledgement (``acknowledged_public_routes``) — the app owns its
+    # access declaration, so a fresh access-control-on deployment answers /health, /ready
+    # without a key and without an always-public prefix workaround. They are not
+    # served the SPA shell (they resolve via the acknowledged tier, not the shell fallback);
+    # both reach the downstream 200 here.
+    for path in ("/health", "/ready"):
+        sent = await _drive(mw, _http_scope(path=path, user=UnauthenticatedUser(), auth=AuthCredentials()))
+        assert _status(sent) == 200
+
+    # Hostile corpus: every /api-canonicalizing form is gated (401/403), never data;
+    # a form that genuinely resolves to a non-/api path reaches the public shell. (The
+    # verifier-unit corpus classifies the raw strings directly; here they arrive via
+    # Starlette's ``conn.url.path``, which parses a leading ``//`` as protocol-relative
+    # and yields ``/x`` for ``//api/x`` — so at the guard that form is a bare shell path,
+    # never /api data. The invariant "hostile never reaches /api data" holds either way.)
+    gated = ("/%61pi/x", "/agents/../api/secret", "/api%2Fx")
+    shell = ("/api/../agents", "/API/x", "//api/x")
+    for path in gated:
+        sent = await _drive(mw, _http_scope(path=path, user=UnauthenticatedUser(), auth=AuthCredentials()))
+        assert _status(sent) in (401, 403), f"hostile {path} was not gated"
+    for path in shell:
+        sent = await _drive(mw, _http_scope(path=path, user=UnauthenticatedUser(), auth=AuthCredentials()))
+        assert _status(sent) == 200, f"hostile {path} did not reach the shell"
+
+
+# -- Refusal audit lines at ResourceGuard._deny ------------------------------
+#
+# The route-authorization refusals (the common ones) are answered at ``_deny``,
+# ABOVE the inner AuditLogMiddleware, so this is where they must be audited.
+
+
+async def test_protected_route_unauthenticated_emits_one_unauthenticated_refusal_line(caplog):
+    mw = ResourceGuardMiddleware(_make_app({}), _FakeVerifier(["u1"]), PUBLIC_ID)
+    scope = _http_scope(user=UnauthenticatedUser(), auth=AuthCredentials())
+    with caplog.at_level(logging.INFO):
+        sent = await _drive(mw, scope)
+    assert _status(sent) == 401
+    match = _one_reject(caplog)
+    # No caller bound → the ``unauthenticated`` marker; a 401 carries no reason.
+    assert match.group("principal") == "unauthenticated"
+    assert match.group("status") == "401"
+    assert match.group("reason") is None
+
+
+async def test_scope_miss_emits_one_refusal_line_with_the_real_caller_and_scope_miss(caplog):
+    mw = ResourceGuardMiddleware(_make_app({}), _FakeVerifier(["needed"]), PUBLIC_ID)
+    scope = _http_scope(user=_authed_user("u1"), auth=AuthCredentials(["other"]))
+    with caplog.at_level(logging.INFO):
+        sent = await _drive(mw, scope)
+    assert _status(sent) == 403
+    match = _one_reject(caplog)
+    # An authenticated-but-unauthorized caller: the REAL client id, and ``scope-miss``
+    # so the line is distinguishable from a public route the app answers 403.
+    assert match.group("principal") == "u1"
+    assert match.group("status") == "403"
+    assert match.group("reason") == "scope-miss"
+
+
+async def test_route_unconfigured_emits_one_refusal_line_with_route_unconfigured(caplog):
+    mw = ResourceGuardMiddleware(_make_app({}), _FakeVerifier([]), PUBLIC_ID)
+    scope = _http_scope(user=_authed_user("u2"), auth=AuthCredentials(["x"]))
+    with caplog.at_level(logging.INFO):
+        sent = await _drive(mw, scope)
+    assert _status(sent) == 403
+    match = _one_reject(caplog)
+    assert match.group("principal") == "u2"
+    assert match.group("status") == "403"
+    assert match.group("reason") == "route-unconfigured"
+
+
+async def test_resolve_error_emits_one_refusal_line_with_resolve_error(caplog):
+    mw = ResourceGuardMiddleware(_make_app({}), _RaisingVerifier(), PUBLIC_ID)
+    with caplog.at_level(logging.INFO):
+        sent = await _drive(mw, _http_scope(user=_authed_user("u3"), auth=AuthCredentials(["x"])))
+    assert _status(sent) == 403
+    match = _one_reject(caplog)
+    assert match.group("reason") == "resolve-error"
+
+
+async def test_websocket_deny_writes_no_audit_line(caplog):
+    # The trail is http-shaped (as AuditLogMiddleware is): a websocket deny closes the
+    # socket and audits nothing.
+    mw = ResourceGuardMiddleware(_make_app({}), _FakeVerifier([]), PUBLIC_ID)
+    with caplog.at_level(logging.INFO):
+        sent = await _drive(mw, _ws_scope(user=UnauthenticatedUser(), auth=AuthCredentials()))
+    assert sent == [{"type": "websocket.close", "code": 1008}]
+    assert _audit_lines(caplog) == []
+
+
+async def test_disabled_switch_writes_no_refusal_line(caplog, monkeypatch):
+    # Off means no refusal line at all — the deny still happens, but nothing is audited.
+    from tai42_skeleton.access_control import middleware as middleware_module
+    from tai42_skeleton.settings.audit_log import AuditLogSettings
+
+    monkeypatch.setattr(middleware_module, "audit_log_settings", lambda: AuditLogSettings(enable=False))
+    mw = ResourceGuardMiddleware(_make_app({}), _FakeVerifier(["u1"]), PUBLIC_ID)
+    with caplog.at_level(logging.INFO):
+        sent = await _drive(mw, _http_scope(user=UnauthenticatedUser(), auth=AuthCredentials()))
+    assert _status(sent) == 401
+    assert _audit_lines(caplog) == []
+
+
+async def test_admitted_request_emits_its_accept_line_and_no_refusal_line(caplog):
+    # Production order: ResourceGuard (outer) wraps AuditLogMiddleware (inner). An
+    # ADMITTED request passes the guard into the audit middleware, which writes the
+    # normal accept line (the bound caller, no ``reason=``); a DENIED request is
+    # answered at the guard and never reaches the inner audit line — exactly one
+    # refusal line, no accept line.
+    admitted = ResourceGuardMiddleware(AuditLogMiddleware(_make_app({})), _FakeVerifier(["res-a"]), PUBLIC_ID)
+    with caplog.at_level(logging.INFO):
+        sent = await _drive(admitted, _http_scope(user=_authed_user("u7"), auth=AuthCredentials(["res-a"])))
+    assert _status(sent) == 200
+    lines = _audit_lines(caplog)
+    assert len(lines) == 1, lines
+    match = _REJECT_LINE.fullmatch(lines[0])
+    assert match is not None, lines[0]
+    assert match.group("reason") is None  # accept line: no refusal cause
+    assert match.group("principal") == "u7"
+    assert match.group("status") == "200"
+
+    caplog.clear()
+    denied = ResourceGuardMiddleware(AuditLogMiddleware(_make_app({})), _FakeVerifier(["needed"]), PUBLIC_ID)
+    with caplog.at_level(logging.INFO):
+        sent = await _drive(denied, _http_scope(user=_authed_user("u7"), auth=AuthCredentials(["other"])))
+    assert _status(sent) == 403
+    match = _one_reject(caplog)  # exactly one line, and it is the refusal
+    assert match.group("reason") == "scope-miss"
+    assert match.group("status") == "403"
