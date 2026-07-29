@@ -1,25 +1,19 @@
-import importlib
-import logging
-from typing import Any, cast
+"""Prometheus metrics exporter.
+
+A plain Prometheus exporter over the shared multiprocess directory. Binds
+localhost by default; operators govern exposure via the bind host and cluster
+network policy, never via in-process auth.
+"""
 
 import click
 import uvicorn
 from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.responses import Response
-from tai42_contract.access_control.registry import get_identity_provider_factory
 from tai42_kit.logging import logging_settings, setup_logging
 
-from tai42_skeleton.access_control.adapter import AuthAdapter
-from tai42_skeleton.access_control.settings import AccessControlSettings, access_control_settings
 from tai42_skeleton.config.config_mode import config_mode
-from tai42_skeleton.config.factory import ConfigManagerFactory
-from tai42_skeleton.manifest import Manifest
-from tai42_skeleton.middleware.audit_log import AuditLogMiddleware
 from tai42_skeleton.routers.metrics_settings import activate_multiproc_env, metrics_settings
-from tai42_skeleton.settings.audit_log import audit_log_settings
-
-logger = logging.getLogger(__name__)
 
 
 async def get_metrics() -> Response:
@@ -34,92 +28,8 @@ async def get_metrics() -> Response:
     return Response(render_multiproc_metrics(), media_type="text/plain")
 
 
-def _identity_provider_registered(name: str) -> bool:
-    try:
-        get_identity_provider_factory(name)
-        return True
-    except KeyError:
-        return False
-
-
-def _register_manifest_identity_provider(settings: AccessControlSettings) -> None:
-    """Populate the identity-provider registry for the metrics process.
-
-    The metrics entrypoint builds its OWN ``AuthAdapter`` to guard ``/metrics`` but
-    never runs ``start()``, so nothing has imported the manifest's identity plugin
-    and the module-level registry is empty — token verification could not resolve the
-    configured provider. Mirror the served path: read the manifest and import its
-    ``lifecycle_modules`` (the same import-only home the identity plugin registers
-    through), stopping as soon as the configured provider registers.
-
-    A lifecycle module that cannot import in this app-less process (e.g. one that
-    touches the unbound ``tai42_app`` handle, like a webhook verifier) is not an
-    identity provider — it is logged and skipped. If, after importing them all, the
-    configured provider is STILL unregistered, RAISE loudly: ``/metrics`` must never
-    come up un-authenticatable.
-    """
-    if not settings.enable:
-        # Access control off → the adapter adds no auth middleware, so no token is
-        # ever verified and no identity provider is needed.
-        return
-
-    def _missing() -> list[str]:
-        return [name for name in settings.auth_providers if not _identity_provider_registered(name)]
-
-    if not _missing():
-        return
-
-    manifest = Manifest.model_validate(ConfigManagerFactory.create().read_manifest())
-    for module in manifest.lifecycle_modules or []:
-        try:
-            importlib.import_module(module)
-        except Exception:
-            # The metrics process needs ONLY the identity plugins, which register via
-            # a plain module import with no app handle. Any other lifecycle module
-            # (e.g. one registering through the unbound tai42_app) legitimately cannot
-            # import here — logged (never silent) and skipped.
-            logger.warning(
-                "metrics: skipped manifest lifecycle module %r (not importable in the app-less metrics process)",
-                module,
-                exc_info=True,
-            )
-        if not _missing():
-            return
-
-    raise RuntimeError(
-        f"identity providers {_missing()!r} are not registered after importing the manifest's "
-        "lifecycle_modules — /metrics cannot authenticate. Name the identity plugin(s) (e.g. "
-        "tai42_identity_redis.redis_api_key_provider) in the manifest lifecycle_modules."
-    )
-
-
 def create_app() -> FastAPI:
-    """Build the metrics app: access-control middleware, the audit trail beneath
-    it, plus the ``/metrics`` route.
-
-    Reads access-control settings, so it must run after the env bootstrap
-    (``load_dotenv`` in ``main``) for a local ``.env`` to take effect.
-    """
     app = FastAPI()
-
-    settings = access_control_settings()
-    # The metrics process builds its OWN AuthAdapter and never runs start(), so it
-    # imports the manifest's identity plugin here — otherwise the registry is empty
-    # and /metrics token verification cannot resolve the configured provider.
-    _register_manifest_identity_provider(settings)
-    auth_adapter = AuthAdapter(settings)
-    # The audit trail covers this process exactly as it covers the served app —
-    # ``/metrics`` is an ordinary audited route, never a carve-out. Added BEFORE the
-    # gate below because ``add_middleware`` prepends: added first, it ends up
-    # INNERMOST, where the gate's resolved identity is already bound. Off
-    # (``TAI_AUDIT_LOG_ENABLE=false``) means never registered, not a registered no-op.
-    if audit_log_settings().enable:
-        app.add_middleware(AuditLogMiddleware)
-    for middleware in reversed(auth_adapter.get_middleware()):
-        # ``add_middleware`` is ParamSpec-typed against the middleware class; a
-        # starlette ``Middleware`` carries its class + kwargs erased, so the
-        # ParamSpec can't be bound here.
-        app.add_middleware(cast(Any, middleware.cls), **middleware.kwargs)
 
     # Lazily imported (see ``get_metrics``): keep ``prometheus_client`` out of
     # the CLI-registration import path so a `tai serve` master freezes the mmap

@@ -281,8 +281,8 @@ def test_a_route_whose_endpoint_is_an_asgi_app_still_audits_its_template(caplog)
 
 
 def test_fastapi_router_audits_the_route_objects_template(caplog):
-    # FastAPI (serves the metrics app on :8012) records the matched route object,
-    # so its own ``path`` is the template.
+    # FastAPI records the matched route object, so its own ``path`` is the
+    # template.
     app = FastAPI()
 
     @app.get("/api/things/{thing_id}")
@@ -681,36 +681,10 @@ def test_disabled_toggle_leaves_the_middleware_unregistered(monkeypatch):
     assert AuditLogMiddleware not in classes
 
 
-def test_metrics_app_registers_the_audit_middleware_inside_the_gate(monkeypatch):
-    # ``/metrics`` on :8012 is an ordinary audited route, not a carve-out: registered
-    # on the metrics app too, BENEATH the gate's own middleware.
-    from starlette.middleware import Middleware
-
-    from tai42_skeleton.access_control.settings import AccessControlSettings
-    from tai42_skeleton.cli import metrics
-
-    class _OuterGate:
-        pass
-
-    class _InnerGate:
-        pass
-
-    gate = [Middleware(_OuterGate), Middleware(_InnerGate)]  # type: ignore[arg-type]
-    monkeypatch.setattr(metrics, "access_control_settings", lambda: AccessControlSettings(enable=False))
-    monkeypatch.setattr(metrics, "AuthAdapter", lambda settings: SimpleNamespace(get_middleware=lambda: gate))
-
-    monkeypatch.setattr(metrics, "audit_log_settings", lambda: AuditLogSettings())
-    classes = [middleware.cls for middleware in metrics.create_app().user_middleware]
-    assert classes == [_OuterGate, _InnerGate, AuditLogMiddleware]
-
-    monkeypatch.setattr(metrics, "audit_log_settings", lambda: AuditLogSettings(enable=False))
-    assert [middleware.cls for middleware in metrics.create_app().user_middleware] == [_OuterGate, _InnerGate]
-
-
 @pytest.mark.parametrize("launch", ["http_app", "sse_app"])
 def test_the_served_app_stack_puts_the_audit_middleware_inside_the_gate(launch: str):
-    # Same invariant as the metrics app, pinned on the REAL stack the app that
-    # actually serves traffic builds, not the middleware list handed to the builder.
+    # The audit middleware sits INSIDE the gate, pinned on the REAL stack the app
+    # that actually serves traffic builds, not the middleware list handed to the builder.
     from tai42_skeleton.access_control.adapter import AuthAdapter
     from tai42_skeleton.access_control.settings import AccessControlSettings
     from tai42_skeleton.app.server import TaiMCP

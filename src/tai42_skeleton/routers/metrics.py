@@ -12,9 +12,8 @@ a worker (for :func:`assert_multiproc_value_class`) before the app handle is bou
 a router module is imported at ``start()`` with the app bound, like every other
 route.
 
-Auth posture: ``authed=True`` — like the dedicated metrics server, which guards
-``/metrics`` behind the access-control adapter, the scrape is governed by the
-operator's route→resource table rather than served unconditionally public. An
+Auth posture: ``authed=True`` — the scrape is governed by the operator's
+route→resource table rather than served unconditionally public. An
 operator maps ``/metrics`` to the resource its scrapers hold (or to the public
 marker for an internal-only network); an unmapped ``/metrics`` fails closed. The
 route is a concrete non-``/api`` GET, so it joins the derived reserved set and the

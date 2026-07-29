@@ -1,9 +1,9 @@
 """One structured audit line per HTTP request that reaches it — who, what, when,
 outcome.
 
-Registered INSIDE the access-control stack (``TaiMCP._base_middleware``,
-:func:`tai42_skeleton.cli.metrics.create_app`), after the gate has resolved the
-caller, so THIS middleware writes the line for every request the gate ADMITS. A
+Registered INSIDE the access-control stack (``TaiMCP._base_middleware``), after
+the gate has resolved the caller, so THIS middleware writes the line for every
+request the gate ADMITS. A
 refusal writes its OWN line at the refusal site through the shared
 :func:`emit_audit_line`, so failed authz is on the trail too — the route-
 authorization denials (401/403) at
@@ -28,9 +28,9 @@ the template, never the secret. Under the default Studio SPA catch-all
 (``default_routers="all"``), ``/{spa_path:path}`` matches every GET and
 part-matches every other method, so a near-miss records ``/{spa_path}`` with its
 tail swallowed by the parameter. A request NO route matched — no catch-all
-(``default_routers`` ``"api"``/``"none"``, the FastAPI metrics app), or a request
-the body cap refuses above the router — has no template: it records the bare
-``<unmatched>`` constant, no path text at all.
+(``default_routers`` ``"api"``/``"none"``), or a request the body cap refuses
+above the router — has no template: it records the bare ``<unmatched>``
+constant, no path text at all.
 
 A request handed to a MOUNTED app (the sub-MCP router under ``/app``) is the third
 outcome: the mount matched only its own PREFIX, and what the mounted app did with

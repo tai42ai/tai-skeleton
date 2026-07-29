@@ -11,6 +11,7 @@ from __future__ import annotations
 import pytest
 from click.testing import CliRunner
 from fastapi.responses import Response
+from fastapi.testclient import TestClient
 
 import tai42_skeleton.cli.metrics as metrics
 
@@ -124,6 +125,19 @@ def test_create_app_registers_metrics_route() -> None:
 
     routes = {getattr(route, "path", None) for route in app.routes}
     assert "/metrics" in routes
+
+
+def test_metrics_route_responds_plaintext_200(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
+    # No in-process auth guards ``/metrics``: the plain exporter answers 200 with a
+    # text/plain body over an empty multiproc dir. Exposure is governed by bind host
+    # and network policy, so there is no auth-on/auth-off variation to cover.
+    monkeypatch.setenv("PROMETHEUS_MULTIPROC_DIR", str(tmp_path))
+
+    with TestClient(metrics.create_app()) as client:
+        response = client.get("/metrics")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/plain")
 
 
 async def test_get_metrics_returns_prometheus_text(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
