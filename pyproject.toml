@@ -24,7 +24,7 @@ classifiers = [
 ]
 dependencies = [
     # The pure interface contract this package implements.
-    "tai42-contract>=0.2,<0.3",
+    "tai42-contract>=0.3,<0.4",
     # Generic leaf helpers + pooled-client framework. Extras: the LLM stack
     # (agent facets, checkpoint/store registries), jq (hooks + policy
     # conditions), uvicorn (CLI arg parsing), redis/postgres drivers.
@@ -96,7 +96,7 @@ tai42 = "tai42_skeleton.cli.app:app"
 # (chain, batch) and a collection of generic tools — loaded from the manifest,
 # never imported by skeleton code. Toolbox's own extras still gate its heavier
 # modules. Loose pin: track compatibility, don't pin the patch.
-toolbox = ["tai42-toolbox>=0.2,<0.3"]
+toolbox = ["tai42-toolbox>=0.3,<0.4"]
 
 # File loading + media: opt-in backing deps for the ResourceManager type-detect
 # registry (``load_file``) and the ``file_loader`` builtin. A module whose dep is
