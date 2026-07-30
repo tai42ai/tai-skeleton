@@ -3087,32 +3087,32 @@ wheels = [
 
 [[package]]
 name = "tai42-contract"
-version = "0.2.0"
+version = "0.3.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "pydantic" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/32/6f/dcafdef19c7455faaa3641ba5a2f89158a2cd60290619566408dfc593cd1/tai42_contract-0.2.0.tar.gz", hash = "sha256:f9a6ff932dcde934b62959168eee5265731d9f7217cb239f4351bfc7179d7b33", size = 95490, upload-time = "2026-07-29T09:12:26.487Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/fb/35/faf5887fcf4ec89e9a656023e7afa42fe5db4f8e6cc3684153b9a6cee3fa/tai42_contract-0.3.0.tar.gz", hash = "sha256:f1c9daad5f27a09f82b85eea7f88848c89d4cbbbc4c9c026a8511e96bedc3c17", size = 98284, upload-time = "2026-07-30T15:31:14.801Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/74/3a/db132dd952ed90bb29e4eb98b140f492c51a66dbd9c583c912e4d217c316/tai42_contract-0.2.0-py3-none-any.whl", hash = "sha256:1b3dd987b4fce4faf0f8f94cc550202066aabb6ef8701214cecd01095856770a", size = 120749, upload-time = "2026-07-29T09:12:25.467Z" },
+    { url = "https://files.pythonhosted.org/packages/7c/27/87a486da8989d3a65b624782ae00a45b61b191f17d12622c7bebcd09afc8/tai42_contract-0.3.0-py3-none-any.whl", hash = "sha256:1ca93c2b7cdedb675a75b5a768f6816bd124c81896616c1415c75af109f14b5e", size = 125072, upload-time = "2026-07-30T15:31:13.812Z" },
 ]
 
 [[package]]
 name = "tai42-identity-redis"
-version = "0.2.0"
+version = "0.2.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "tai42-contract" },
     { name = "tai42-kit", extra = ["redis"] },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/f9/a1/14a31ea5e78fb819f98c4a88739cbdf09ff8a75f0cbeb092a43bb44e1826/tai42_identity_redis-0.2.0.tar.gz", hash = "sha256:91f3291656c1378b2af2dae071ea8f3128500dfc3082ee2d0d5e0f58554f0a6b", size = 12995, upload-time = "2026-07-29T09:19:44.383Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/37/8c/81458f56dc4cecd0169d857e59a360cc1369c64ad5ad45e9317d322fd66c/tai42_identity_redis-0.2.1.tar.gz", hash = "sha256:1c44c2b43e3305067d788f0e6bf7c4ef4fc0eb5630ea8d0beeebdccce1e6f4c0", size = 13027, upload-time = "2026-07-30T16:41:11.405Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/4b/e2/1c1bea8697477d98622a7c017e6168b62be3e8adbf83966613487ec27600/tai42_identity_redis-0.2.0-py3-none-any.whl", hash = "sha256:9195f7989b5fb2f2023e96c882c7be7e33743c458afd10be508331cb3da10586", size = 11932, upload-time = "2026-07-29T09:19:43.498Z" },
+    { url = "https://files.pythonhosted.org/packages/9c/68/70274ed860aeddb98824e314206f5acd5ae4a4c1dd6a23707e8610322ec2/tai42_identity_redis-0.2.1-py3-none-any.whl", hash = "sha256:da3f144fae5c37e5e1fbcf2a7914dff75017926a1cc8380f94363bc740d52000", size = 11943, upload-time = "2026-07-30T16:41:10.5Z" },
 ]
 
 [[package]]
 name = "tai42-kit"
-version = "0.2.0"
+version = "0.2.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "anyio" },
@@ -3128,9 +3128,9 @@ dependencies = [
     { name = "ruamel-yaml" },
     { name = "tai42-contract" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/78/8b/3030967cab1a0b022b660e425a95cd6eb2fc244c2f6889f9810bcc247ad0/tai42_kit-0.2.0.tar.gz", hash = "sha256:bf406e2e81d55ef2f7ae37e47b934887c71d6cbc5609d4803acf8e566d174659", size = 75509, upload-time = "2026-07-29T09:18:17.33Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/9d/51/c4e6a5c89b79d8bcb17a078f4beb3385b8abc20f0771dad767f9aad575ce/tai42_kit-0.2.1.tar.gz", hash = "sha256:a6464d885132df7b2ecafd66bf93811ceebd4fef2fb3cab740d03a3cf15e1d5c", size = 75494, upload-time = "2026-07-30T16:40:51.079Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/97/06/7f3ae560c17e1df1535b4fac2c410f8d69bfd93c3764f707ebf9420d1722/tai42_kit-0.2.0-py3-none-any.whl", hash = "sha256:faebeaa546248c792ad12b331e4c62daef70ea43bb4357c726affa87d38af073", size = 91887, upload-time = "2026-07-29T09:18:16.244Z" },
+    { url = "https://files.pythonhosted.org/packages/a9/c9/0cdf7ec9ffeefc731978e0de432a317aad8cd7406f3b092b1eb392a16419/tai42_kit-0.2.1-py3-none-any.whl", hash = "sha256:b18ae70376f81c5d5806fda3ba655e02119756e507b45839bc7d7be2950524fc", size = 91886, upload-time = "2026-07-30T16:40:50.002Z" },
 ]
 
 [package.optional-dependencies]
@@ -3157,7 +3157,7 @@ uvicorn = [
 
 [[package]]
 name = "tai42-skeleton"
-version = "0.3.0"
+version = "0.3.1"
 source = { editable = "." }
 dependencies = [
     { name = "async-lru" },
@@ -3284,11 +3284,11 @@ requires-dist = [
     { name = "starlette", specifier = ">=0.40" },
     { name = "striprtf", marker = "extra == 'files'", specifier = ">=0.0.26" },
     { name = "tabulate", marker = "extra == 'files'", specifier = ">=0.9" },
-    { name = "tai42-contract", specifier = ">=0.2,<0.3" },
+    { name = "tai42-contract", specifier = ">=0.3,<0.4" },
     { name = "tai42-identity-redis", marker = "extra == 'dev'", specifier = ">=0.2,<0.3" },
     { name = "tai42-kit", extras = ["llm", "jq", "uvicorn", "redis", "postgres"], specifier = ">=0.2,<0.3" },
     { name = "tai42-skeleton", extras = ["toolbox", "files"], marker = "extra == 'dev'" },
-    { name = "tai42-toolbox", marker = "extra == 'toolbox'", specifier = ">=0.2,<0.3" },
+    { name = "tai42-toolbox", marker = "extra == 'toolbox'", specifier = ">=0.3,<0.4" },
     { name = "typer", specifier = ">=0.12" },
     { name = "uvicorn", specifier = ">=0.43" },
     { name = "uvloop", marker = "sys_platform != 'win32'", specifier = ">=0.22" },
@@ -3299,7 +3299,7 @@ provides-extras = ["toolbox", "files", "dev"]
 
 [[package]]
 name = "tai42-toolbox"
-version = "0.2.0"
+version = "0.3.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "makefun" },
@@ -3308,9 +3308,9 @@ dependencies = [
     { name = "tai42-contract" },
     { name = "tai42-kit" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/1c/69/0296b1901536f9dce04cd7eb1759cbe3488417ae4375f119ae217434ccbd/tai42_toolbox-0.2.0.tar.gz", hash = "sha256:2c3d5ad5dab723c9590bf9d61307ace0c462df711bf720b063c905a0ebb9ada7", size = 38055, upload-time = "2026-07-29T09:19:33.328Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/90/f9/f2e19387002a66824afe6ce7f44094998c29703478c34d70708b0e727cc9/tai42_toolbox-0.3.1.tar.gz", hash = "sha256:1cec58fcc95f290913ff6ef3f42d824433f8dfde66dcc4cf00730c944b68fe4e", size = 38141, upload-time = "2026-07-30T16:41:18.147Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/fb/70/bdaa10dce2657dae7d65952aacddc4476f5fc9335f733c323a4904478cac/tai42_toolbox-0.2.0-py3-none-any.whl", hash = "sha256:2a961b48dbedd1ce41e9ad977de601760883265be619f244cbb4f8e940ce3b41", size = 43747, upload-time = "2026-07-29T09:19:32.38Z" },
+    { url = "https://files.pythonhosted.org/packages/0f/10/42904e3f9b7d36032be118022a19d467bcbdc792fe9ebf2bbbcb6ca4dde9/tai42_toolbox-0.3.1-py3-none-any.whl", hash = "sha256:7a3a59671714f73e8201d905493e834ffa5401895b9da0d8b33e1498accb74bd", size = 43830, upload-time = "2026-07-30T16:41:17.173Z" },
 ]
 
 [[package]]
