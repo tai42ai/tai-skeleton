@@ -49,8 +49,7 @@ class _Cursor:
                 for f in sorted(pg.folders.values(), key=lambda f: f["id"])
             ]
         elif norm == (
-            "SELECT tool_name, display_name, folder_id, tags, hidden, created_at "
-            "FROM tool_meta ORDER BY tool_name"
+            "SELECT tool_name, display_name, folder_id, tags, hidden, created_at FROM tool_meta ORDER BY tool_name"
         ):
             self._all = [
                 (m["tool_name"], m["display_name"], m["folder_id"], list(m["tags"]), m["hidden"], m["created_at"])

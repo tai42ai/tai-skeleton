@@ -396,9 +396,7 @@ class PresetManager:
             logger.error("preset %r quarantined: %s", name, reason)
             return
         try:
-            await self._register(
-                name, base, body.fixed_kwargs, body.extensions, body.description, body.output_schema
-            )
+            await self._register(name, base, body.fixed_kwargs, body.extensions, body.description, body.output_schema)
         except Exception:
             reason = "registration failed"
             self._quarantine[name] = reason

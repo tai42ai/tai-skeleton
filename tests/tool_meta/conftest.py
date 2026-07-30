@@ -148,9 +148,7 @@ class _FakeCursor:
         elif norm.startswith("UPDATE tool_meta SET display_name"):
             display_name, folder_id, tags, hidden, tool_name = params
             row = pg.meta[tool_name]
-            row.update(
-                {"display_name": display_name, "folder_id": folder_id, "tags": list(tags), "hidden": hidden}
-            )
+            row.update({"display_name": display_name, "folder_id": folder_id, "tags": list(tags), "hidden": hidden})
             self._one = pg.meta_tuple(tool_name)
         elif norm.startswith("INSERT INTO tool_meta"):
             tool_name, display_name, folder_id, tags, hidden = params

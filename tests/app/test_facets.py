@@ -169,9 +169,7 @@ async def test_presets_facet_forwarding():
 async def test_presets_facet_list_active_bodies_validates_each_raw_body():
     app = _app()
     raw = {
-        "a": PresetBody(
-            base_tool="echo", description="d", fixed_kwargs={"x": 1}, extensions=[["exta"]]
-        ).model_dump(),
+        "a": PresetBody(base_tool="echo", description="d", fixed_kwargs={"x": 1}, extensions=[["exta"]]).model_dump(),
     }
     app._versioned_store = MagicMock()
     app._versioned_store.list_active_bodies = AsyncMock(return_value=raw)

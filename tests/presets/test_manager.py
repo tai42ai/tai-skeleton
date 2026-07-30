@@ -52,9 +52,7 @@ async def _create_versioned(name: str, base_tool: str, fixed_kwargs, extensions,
         extensions=extensions,
     )
     body = await app.presets.store.get_active_body(name)
-    await app.preset_manager.register(
-        name, body.base_tool, body.fixed_kwargs, body.extensions, body.description
-    )
+    await app.preset_manager.register(name, body.base_tool, body.fixed_kwargs, body.extensions, body.description)
 
 
 # -- runnable + baked kwargs -------------------------------------------------

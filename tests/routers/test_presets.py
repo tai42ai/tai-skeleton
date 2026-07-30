@@ -330,9 +330,7 @@ def test_create_over_existing_preset_409(pg, emit):
 def test_create_quarantined_name_409(pg, emit):
     async def run():
         async with instance.app.app_context(_manifest()):
-            await instance.app.presets.store.create_preset(
-                _spec("orphan", base_tool="gone_tool"), extensions=[]
-            )
+            await instance.app.presets.store.create_preset(_spec("orphan", base_tool="gone_tool"), extensions=[])
             await instance.app.preset_manager.rehydrate()
             assert instance.app.preset_manager.is_quarantined("orphan")
             resp = await router.create_preset(_request("POST", "/api/presets", body=_create_body("orphan")))
@@ -631,9 +629,7 @@ def test_delete_conflicted_store_side_only_no_emit(pg, emit):
 def test_conflicted_write_locked_then_clean_delete_recreate(pg, emit):
     async def run():
         async with instance.app.app_context(_manifest()):
-            await instance.app.presets.store.create_preset(
-                _spec("orphan", base_tool="gone_tool"), extensions=[]
-            )
+            await instance.app.presets.store.create_preset(_spec("orphan", base_tool="gone_tool"), extensions=[])
             await instance.app.preset_manager.rehydrate()
             assert instance.app.preset_manager.is_quarantined("orphan")
             emit.clear()
@@ -991,9 +987,7 @@ def test_create_bad_field_types_400(pg, emit):
     async def run():
         async with instance.app.app_context(_manifest()):
             base = {"name": "x", "base_tool": "echo", "description": "d"}
-            resp = await router.create_preset(
-                _request("POST", "/api/presets", body={**base, "description": 1})
-            )
+            resp = await router.create_preset(_request("POST", "/api/presets", body={**base, "description": 1}))
             assert resp.status_code == 400
             assert "description" in _err(resp)
             resp = await router.create_preset(_request("POST", "/api/presets", body={**base, "fixed_kwargs": 1}))
@@ -1013,9 +1007,7 @@ def test_create_missing_description_400_nothing_written(pg, emit):
         async with instance.app.app_context(_manifest()):
             # ``description`` is required on create — a body that omits it is a 400 at
             # the HTTP edge, and nothing is written.
-            resp = await router.create_preset(
-                _request("POST", "/api/presets", body={"name": "x", "base_tool": "echo"})
-            )
+            resp = await router.create_preset(_request("POST", "/api/presets", body={"name": "x", "base_tool": "echo"}))
             assert resp.status_code == 400
             assert "description" in _err(resp)
             assert _non_role_documents(pg) == []
@@ -1346,9 +1338,7 @@ def test_delete_store_less_404_without_opening_store(store_less, emit):
 def test_rename_moves_row_rebinds_and_emits_once(pg, emit):
     async def run():
         async with instance.app.app_context(_manifest()):
-            await _create_versioned(
-                "old", base_tool="echo", fixed_kwargs={}, extensions=[["exta"]], description="d"
-            )
+            await _create_versioned("old", base_tool="echo", fixed_kwargs={}, extensions=[["exta"]], description="d")
             await instance.app.presets.store.save_version("old", description="d2")  # v2 → history to preserve
             await instance.app.preset_manager.reload("old")
             assert await instance.app.tools.run_tool("old_exta", {"text": "hi"}) == "hi|a"
@@ -1468,9 +1458,7 @@ def test_rename_onto_existing_preset_409(pg, emit):
 def test_rename_quarantined_old_409(pg, emit):
     async def run():
         async with instance.app.app_context(_manifest()):
-            await instance.app.presets.store.create_preset(
-                _spec("orphan", base_tool="gone_tool"), extensions=[]
-            )
+            await instance.app.presets.store.create_preset(_spec("orphan", base_tool="gone_tool"), extensions=[])
             await instance.app.preset_manager.rehydrate()
             assert instance.app.preset_manager.is_quarantined("orphan")
             resp = await router.rename_preset(
@@ -1486,9 +1474,7 @@ def test_rename_onto_quarantined_new_409(pg, emit):
     async def run():
         async with instance.app.app_context(_manifest()):
             await _create_versioned("old", fixed_kwargs={"units": "v"})
-            await instance.app.presets.store.create_preset(
-                _spec("orphan", base_tool="gone_tool"), extensions=[]
-            )
+            await instance.app.presets.store.create_preset(_spec("orphan", base_tool="gone_tool"), extensions=[])
             await instance.app.preset_manager.rehydrate()
             assert instance.app.preset_manager.is_quarantined("orphan")
             resp = await router.rename_preset(

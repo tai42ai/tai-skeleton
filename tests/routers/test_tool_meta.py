@@ -211,9 +211,7 @@ def test_delete_overlay_is_idempotent(pg: FakeToolMetaPg) -> None:
         assert first.status_code == 200
         assert _data(first)["deleted"] is True
         # Deleting again — no row now — is still a clean 200.
-        second = await router.delete_tool_meta(
-            _request("DELETE", "/api/tool-meta/tools/weather", tool_name="weather")
-        )
+        second = await router.delete_tool_meta(_request("DELETE", "/api/tool-meta/tools/weather", tool_name="weather"))
         assert second.status_code == 200
         assert await instance.app.tool_meta.store.get_meta("weather") is None
 
@@ -310,9 +308,7 @@ def test_folder_rename_unknown_is_404(pg: FakeToolMetaPg) -> None:
 
 def test_folder_delete_unknown_is_404(pg: FakeToolMetaPg) -> None:
     async def run() -> None:
-        resp = await router.delete_folder(
-            _request("DELETE", "/api/tool-meta/folders/no-such", folder_id="no-such")
-        )
+        resp = await router.delete_folder(_request("DELETE", "/api/tool-meta/folders/no-such", folder_id="no-such"))
         assert resp.status_code == 404
 
     _run(run)
