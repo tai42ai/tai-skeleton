@@ -112,8 +112,8 @@ async def test_tools_facet_async_forwarding():
 def test_agents_facet_forwarding():
     app = _app()
     f = AgentsFacet(app)
-    assert f.agent("n") is app._agent_binding.agent.return_value
-    app._agent_binding.agent.assert_called_once_with("n")
+    assert f.agent("n", {"agents"}) is app._agent_binding.agent.return_value
+    app._agent_binding.agent.assert_called_once_with("n", {"agents"})
     assert f.get_agent("n") is app._agent_binding.get_agent.return_value
     app._agent_binding.get_agent.assert_called_once_with("n")
     assert f.all_agents() is app._agent_binding.all_agents.return_value
@@ -161,18 +161,16 @@ async def test_presets_facet_forwarding():
     app._preset_bind = AsyncMock(return_value="bound")
     f = PresetsFacet(app)
     assert f.store == "ps"
-    result = await f.bind("base", {"k": 1}, name="p", description="d", tags=["t"])
+    result = await f.bind("base", {"k": 1}, name="p", description="d")
     assert result == "bound"
-    app._preset_bind.assert_awaited_once_with(
-        "base", {"k": 1}, name="p", description="d", tags=["t"], output_schema=None
-    )
+    app._preset_bind.assert_awaited_once_with("base", {"k": 1}, name="p", description="d", output_schema=None)
 
 
 async def test_presets_facet_list_active_bodies_validates_each_raw_body():
     app = _app()
     raw = {
         "a": PresetBody(
-            base_tool="echo", description="d", fixed_kwargs={"x": 1}, extensions=[["exta"]], tags=["t"]
+            base_tool="echo", description="d", fixed_kwargs={"x": 1}, extensions=[["exta"]]
         ).model_dump(),
     }
     app._versioned_store = MagicMock()

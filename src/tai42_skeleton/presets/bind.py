@@ -7,8 +7,9 @@ constant (``ArgTransform(hide=True, default=<value>)`` — removed from the expo
 input schema, and a caller that passes it is rejected; it cannot be overridden at
 runtime), while the REMAINING arguments keep the base tool's real typed schema
 (names, types, descriptions), NOT one opaque ``params`` blob. The preset's
-``description`` and categorization ``tags`` are set on the transformed tool, so a
-bind re-applies them from the stored body every time.
+``description`` is set on the transformed tool, so a bind re-applies it from the
+stored body every time. A preset carries NO native tags — grouping is the
+tool_meta overlay's job.
 
 Bake through the PROGRAMMATIC ``transform_args`` path (whose ``default`` accepts
 any value, incl. dict/list) rather than a declarative scalar-only path, so a
@@ -45,7 +46,6 @@ async def preset_bind(
     *,
     name: str,
     description: str = "",
-    tags: list[str] | None = None,
     output_schema: dict[str, Any] | None = None,
 ) -> Tool:
     """Return a FastMCP tool transform of ``base_tool`` as the new named tool ``name``.
@@ -64,7 +64,6 @@ async def preset_bind(
             base,
             name=name,
             description=description,
-            tags=set(tags or []),
             transform_args=transform_args,
         )
 
@@ -81,7 +80,6 @@ async def preset_bind(
             base,
             name=name,
             description=description,
-            tags=set(tags or []),
             transform_args=transform_args,
             output_schema=output_schema,
         )
@@ -98,7 +96,6 @@ async def preset_bind(
         base,
         name=name,
         description=description,
-        tags=set(tags or []),
         transform_args=transform_args,
         output_schema=output_schema,
         transform_fn=_enforce_output_schema,

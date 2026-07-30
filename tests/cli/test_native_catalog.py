@@ -12,24 +12,39 @@ from types import SimpleNamespace
 
 import pytest
 from click.testing import CliRunner
+from tai42_contract.plugins import PluginItemKind
 
 from tai42_skeleton.cli import app as app_module
 from tai42_skeleton.cli.native import catalog
 
+# The kinds a catalog entry may declare — the contract's plugin-item vocabulary.
+# Mirrored here so the catalog assertions read as a plain set membership check;
+# test_valid_kinds_track_the_contract below pins this copy to the enum so it
+# cannot silently drift from the source of truth.
 _VALID_KINDS = {
     "tool",
     "agent",
-    "accounts",
     "extension",
     "connector",
     "channel",
-    "identity",
     "backend",
     "storage",
     "monitoring",
     "webhook-verifier",
     "config",
+    "identity",
+    "studio-plugin",
+    "router",
+    "middleware",
 }
+
+
+def test_valid_kinds_track_the_contract() -> None:
+    # The enum is the single source of truth for kinds; if it grows or renames a
+    # member, this fails loudly so _VALID_KINDS (and the catalog) get updated in
+    # lockstep rather than drifting apart. Import the enum from
+    # tai42_contract.plugins — it is not re-exported at the package root.
+    assert {kind.value for kind in PluginItemKind} == _VALID_KINDS
 
 
 def test_load_catalog_joins_repo_for_every_entry() -> None:

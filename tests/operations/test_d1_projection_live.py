@@ -118,7 +118,7 @@ class _RecordingApp:
         self.tools = _RecordingTools()
 
 
-# -- checklist 1: the projected surface is exactly the 93 default ops ----------
+# -- checklist 1: the projected surface is exactly the 100 default ops ---------
 
 
 def test_d1_projected_surface_is_the_expected_op_count():
@@ -130,8 +130,8 @@ def test_d1_projected_surface_is_the_expected_op_count():
             tier1 = sorted(op.name for op in ops if is_tier1(op))
             tier2 = sorted(op.name for op in ops if is_tier2(op) and not is_tier1(op))
 
-            # The arithmetic: 133 total - 36 tier-2 default-excluded - 4 tier-1 hardcode-blocked = 93.
-            assert total == 133, total
+            # The arithmetic: 140 total - 36 tier-2 default-excluded - 4 tier-1 hardcode-blocked = 100.
+            assert total == 140, total
             # Tier-1 (never projectable): the three meta-executors, each running a
             # caller-named tool, plus ``get_me`` (``caller_context=True``).
             assert tier1 == ["create_schedule", "get_me", "run_tool", "submit_run"], tier1
@@ -183,17 +183,17 @@ def test_d1_projected_surface_is_the_expected_op_count():
                 "validate_condition",
             }, tier2
 
-            # The default-projected surface = 93, measured two ways.
+            # The default-projected surface = 100, measured two ways.
             recorder = _RecordingApp()
             projected = project_operations(recorder, ApiToolsConfig(), registry=reg)
-            assert len(projected) == 93, len(projected)
-            assert total - len(tier2) - len(tier1) == 93
+            assert len(projected) == 100, len(projected)
+            assert total - len(tier2) - len(tier1) == 100
 
-            # And the LIVE booted tool surface is exactly those 93 (no keep-set /
+            # And the LIVE booted tool surface is exactly those 100 (no keep-set /
             # plugin / toolbox tools are loaded in this projection-only stack).
             live = await app.tools.get_tools()
             assert set(live) == set(projected)
-            assert len(live) == 93
+            assert len(live) == 100
 
             # Tier-1 and default tier-2 never appear on the live surface.
             assert "run_tool" not in live
@@ -358,7 +358,7 @@ def test_d1_user_tools_curation_coexists_with_api_tools():
             live = await app.tools.get_tools()
             assert "remove_tool" in live
             assert "list_hooks" in live
-            assert len(live) == 93
+            assert len(live) == 100
 
             # user_tools curation is preserved and surfaced to the flow builder
             # (the read-time view over the registered set).

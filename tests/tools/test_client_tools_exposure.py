@@ -93,7 +93,7 @@ def test_client_tool_exposes_preset_and_bakes_constant(preset_manager_restored):
             {"tools": [{"title": "fx", "module": "tests.presets._fixtures", "include": ["weather"]}]}
         )
         async with app.app_context(manifest):
-            await app.preset_manager.register("paris", "weather", {"units": "imperial"}, [], [], "Paris weather")
+            await app.preset_manager.register("paris", "weather", {"units": "imperial"}, [], "Paris weather")
 
             # A preset is a TransformedTool, not a FunctionTool — it is still
             # exposed (resolved via its baked partial), by name and in the full set.

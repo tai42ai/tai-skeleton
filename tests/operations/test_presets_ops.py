@@ -90,12 +90,13 @@ def _reset_preset_registry():
 
 
 async def _create(name: str, base_tool: str = "weather", **over: Any) -> None:
+    # ``description`` is required non-empty on create, so the helper seeds a default
+    # one; a test that exercises the description gate overrides it.
     await preset_ops.create_preset(
         name=name,
         base_tool=base_tool,
-        description=over.get("description", ""),
+        description=over.get("description", "d"),
         fixed_kwargs=over.get("fixed_kwargs", {}),
-        tags=over.get("tags", []),
         extensions=over.get("extensions", []),
         output_schema=over.get("output_schema"),
     )
@@ -331,10 +332,10 @@ def test_save_version_schema_error_400(pg) -> None:
                 await preset_ops.save_version(
                     name="s",
                     fixed_kwargs=None,
-                    tags=None,
                     extensions=None,
                     output_schema={"type": "string"},
                     output_schema_provided=True,
+                    description=None,
                 )
 
     asyncio.run(run())
@@ -353,10 +354,10 @@ def test_save_version_store_value_error_400(pg, monkeypatch) -> None:
                 await preset_ops.save_version(
                     name="s",
                     fixed_kwargs={"units": "z"},
-                    tags=None,
                     extensions=None,
                     output_schema=None,
                     output_schema_provided=False,
+                    description=None,
                 )
 
     asyncio.run(run())
@@ -375,10 +376,10 @@ def test_save_version_store_not_found_404(pg, monkeypatch) -> None:
                 await preset_ops.save_version(
                     name="s",
                     fixed_kwargs={"units": "z"},
-                    tags=None,
                     extensions=None,
                     output_schema=None,
                     output_schema_provided=False,
+                    description=None,
                 )
 
     asyncio.run(run())
@@ -394,10 +395,10 @@ def test_rollback_target_schema_error_400(pg, monkeypatch) -> None:
             await preset_ops.save_version(
                 name="r",
                 fixed_kwargs={"units": "w"},
-                tags=None,
                 extensions=None,
                 output_schema=None,
                 output_schema_provided=False,
+                description=None,
             )
 
             real_get_version = instance.app.presets.store.get_version
@@ -510,7 +511,7 @@ def test_delete_conflicted_hard_delete_failure_reraises(pg, monkeypatch) -> None
     async def run() -> None:
         async with instance.app.app_context(_manifest()):
             # A stored preset whose NAME is a live tool rehydrates into quarantine.
-            body = PresetBody(base_tool="echo", description="d", fixed_kwargs={}, extensions=[], tags=[])
+            body = PresetBody(base_tool="echo", description="d", fixed_kwargs={}, extensions=[])
             await instance.app.versioning.store.create("preset", "weather", body.model_dump())
             await instance.app.preset_manager.rehydrate()
             assert instance.app.preset_manager.is_quarantined("weather")

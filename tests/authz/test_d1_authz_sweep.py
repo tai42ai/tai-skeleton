@@ -185,7 +185,7 @@ _MAIN_MODALITIES = [_A_PLAIN, _A_PRIV, _B_BACKEND, _C_INPROC, _D_PRESET]
 async def _register_preset() -> None:
     """Bake a preset over the projected ``remove_tool`` so the resolver's
     ``PresetManager`` consultation is exercised (case d)."""
-    await app.preset_manager.register(_D_PRESET, _A_PLAIN, {}, [], [], "")
+    await app.preset_manager.register(_D_PRESET, _A_PLAIN, {}, [], "")
 
 
 @pytest.fixture(autouse=True)

@@ -36,6 +36,7 @@ if TYPE_CHECKING:
     from tai42_contract.presets import PresetBody, PresetStore
     from tai42_contract.storage import Storage
     from tai42_contract.sub_mcp import SubMcpAppRouter
+    from tai42_contract.tool_meta import ToolMetaStore
     from tai42_contract.versioning import VersionedStore
     from tai42_contract.webhooks import WebhookVerifier
 
@@ -110,8 +111,8 @@ class ToolsFacet(_Facet):
 class AgentsFacet(_Facet):
     """``app.agents`` — agent registration + lookup (``AppAgents``)."""
 
-    def agent(self, name: str) -> Callable[[type[_AgentT]], type[_AgentT]]:
-        return self._app._agent_binding.agent(name)
+    def agent(self, name: str, tags: set[str] | None = None) -> Callable[[type[_AgentT]], type[_AgentT]]:
+        return self._app._agent_binding.agent(name, tags)
 
     def get_agent(self, name: str) -> Agent:
         return self._app._agent_binding.get_agent(name)
@@ -378,11 +379,10 @@ class PresetsFacet(_Facet):
         *,
         name: str,
         description: str = "",
-        tags: list[str] | None = None,
         output_schema: dict[str, Any] | None = None,
     ) -> Tool:
         return await self._app._preset_bind(
-            base_tool, fixed_kwargs, name=name, description=description, tags=tags, output_schema=output_schema
+            base_tool, fixed_kwargs, name=name, description=description, output_schema=output_schema
         )
 
     @property
@@ -410,6 +410,18 @@ class PresetsFacet(_Facet):
         :class:`~tai42_contract.versioning.errors.DocumentVersionNotFoundError` for an
         unknown preset or version."""
         await self._app._versioned_store.set_version_tags("preset", name, version, tags)
+
+
+class ToolMetaFacet(_Facet):
+    """``app.tool_meta`` — the tool-metadata overlay store (folders + per-tool rows).
+
+    Skeleton-only surface — like ``preset_manager``, it is deliberately not on the
+    ``tai42_contract.app.TaiApp`` protocol; the tool_meta routes and the preset
+    lifecycle cascade reach it through this concrete instance."""
+
+    @property
+    def store(self) -> ToolMetaStore:
+        return self._app._tool_meta_store
 
 
 class BackupFacet(_Facet):

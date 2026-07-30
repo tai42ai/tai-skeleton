@@ -44,7 +44,7 @@ def _json(resp) -> dict:
 _IMPL = object()
 
 
-def _tool(name, *, fn=_IMPL, tags=()):
+def _tool(name, *, fn=_IMPL, tags=(), meta=None):
     return SimpleNamespace(
         name=name,
         parameters={"type": "object", "properties": {}},
@@ -52,6 +52,7 @@ def _tool(name, *, fn=_IMPL, tags=()):
         description=f"{name} desc",
         fn=fn,
         tags=set(tags),
+        meta=meta,
     )
 
 
@@ -110,8 +111,30 @@ async def test_tool_tags_map(install):
     install(_FakeTools({"beta": _tool("beta", tags=("z", "a")), "alpha": _tool("alpha")}))
     resp = await router.tool_tags(_req())
     assert resp.status_code == 200
-    # One entry per tool, tools sorted by name, each tool's tags sorted.
-    assert _json(resp) == {"data": [{"name": "alpha", "tags": []}, {"name": "beta", "tags": ["a", "z"]}]}
+    # One entry per tool, tools sorted by name, each tool's tags sorted; a tool that
+    # declares no visibility meta is not hidden.
+    assert _json(resp) == {
+        "data": [
+            {"name": "alpha", "tags": [], "hidden": False},
+            {"name": "beta", "tags": ["a", "z"], "hidden": False},
+        ]
+    }
+
+
+async def test_tool_tags_exposes_plugin_declared_hidden(install):
+    # ``hidden`` reflects the tool's OWN declaration, read from the FastMCP ``meta``
+    # under the namespaced ``tai42/hidden`` key.
+    install(
+        _FakeTools(
+            {
+                "shown": _tool("shown", meta={"tai42/hidden": False}),
+                "secret": _tool("secret", meta={"tai42/hidden": True}),
+            }
+        )
+    )
+    resp = await router.tool_tags(_req())
+    by_name = {entry["name"]: entry["hidden"] for entry in _json(resp)["data"]}
+    assert by_name == {"secret": True, "shown": False}
 
 
 async def test_tool_tags_empty(install):

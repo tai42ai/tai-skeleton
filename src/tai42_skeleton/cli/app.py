@@ -53,6 +53,7 @@ from tai42_skeleton.cli.commands import (
     sub_mcp,
     system,
     templates,
+    tool_meta,
     tools,
     traces,
 )
@@ -204,6 +205,7 @@ _REMOTE_GROUPS: list[tuple[typer.Typer, str]] = [
     (traces.app, "traces"),
     (interactions.app, "interactions"),
     (system.app, "system"),
+    (tool_meta.app, "tool-meta"),
 ]
 for group_app, group_name in _REMOTE_GROUPS:
     cli_app.add_typer(group_app, name=group_name)

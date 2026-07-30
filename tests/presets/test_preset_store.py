@@ -155,28 +155,29 @@ def view(store: _MemStore) -> PresetStoreView:
 
 
 async def test_create_persists_full_body(view, store):
-    await view.create_preset(_spec(), extensions=[["chain"]], tags=["t1"])
+    await view.create_preset(_spec(), extensions=[["chain"]])
     assert ("preset", "p") in store.docs
     body = await view.get_active_body("p")
     assert body.base_tool == "weather"
     assert body.description == "d"
     assert body.fixed_kwargs == {"a": 1}
     assert body.extensions == [["chain"]]
-    assert body.tags == ["t1"]
     # The typed kwargs accessor projects just fixed_kwargs.
     assert await view.get_active_kwargs("p") == {"a": 1}
 
 
-async def test_tags_round_trip_per_version(view):
-    await view.create_preset(_spec(), extensions=[], tags=["release"])
-    await view.save_version("p", tags=["beta"])
-    assert (await view.get_version("p", 1)).body["tags"] == ["release"]
-    assert (await view.get_version("p", 2)).body["tags"] == ["beta"]
+async def test_description_round_trip_per_version(view):
+    # ``description`` is an editable per-version body field: each version body
+    # holds the value active when it was saved.
+    await view.create_preset(_spec(), extensions=[])
+    await view.save_version("p", description="beta desc")
+    assert (await view.get_version("p", 1)).body["description"] == "d"
+    assert (await view.get_version("p", 2)).body["description"] == "beta desc"
 
 
 async def test_list_presets_delegates(view):
-    await view.create_preset(_spec("a"), extensions=[], tags=[])
-    await view.create_preset(_spec("b"), extensions=[], tags=[])
+    await view.create_preset(_spec("a"), extensions=[])
+    await view.create_preset(_spec("b"), extensions=[])
     assert sorted(r.name for r in await view.list_presets()) == ["a", "b"]
 
 
@@ -184,9 +185,9 @@ async def test_list_presets_delegates(view):
 
 
 async def test_duplicate_maps_to_preset_exists(view):
-    await view.create_preset(_spec(), extensions=[], tags=[])
+    await view.create_preset(_spec(), extensions=[])
     with pytest.raises(PresetExistsError):
-        await view.create_preset(_spec(), extensions=[], tags=[])
+        await view.create_preset(_spec(), extensions=[])
 
 
 async def test_missing_maps_to_preset_not_found(view):
@@ -205,7 +206,7 @@ async def test_missing_maps_to_preset_not_found(view):
 
 
 async def test_missing_version_maps_to_preset_version_not_found(view):
-    await view.create_preset(_spec(), extensions=[], tags=[])
+    await view.create_preset(_spec(), extensions=[])
     with pytest.raises(PresetVersionNotFoundError):
         await view.get_version("p", 99)
     with pytest.raises(PresetVersionNotFoundError):
@@ -213,7 +214,7 @@ async def test_missing_version_maps_to_preset_version_not_found(view):
 
 
 async def test_rollback_delegates(view):
-    await view.create_preset(_spec(fixed_kwargs={"a": 1}), extensions=[], tags=[])
+    await view.create_preset(_spec(fixed_kwargs={"a": 1}), extensions=[])
     await view.save_version("p", fixed_kwargs={"a": 2})
     rec = await view.rollback("p", 1)
     assert rec.active_version == 1
@@ -229,7 +230,7 @@ async def test_name_conflict_raises_before_store_write(store):
 
     view = PresetStoreView(store, name_conflicts=conflicts)
     with pytest.raises(PresetNameConflictError):
-        await view.create_preset(_spec("p"), extensions=[], tags=[])
+        await view.create_preset(_spec("p"), extensions=[])
     # The guard runs before any store write — nothing persisted.
     assert store.docs == {}
 
@@ -239,7 +240,7 @@ async def test_no_conflict_allows_create(store):
         return False
 
     view = PresetStoreView(store, name_conflicts=conflicts)
-    await view.create_preset(_spec("free"), extensions=[], tags=[])
+    await view.create_preset(_spec("free"), extensions=[])
     assert ("preset", "free") in store.docs
 
 
@@ -247,7 +248,7 @@ async def test_no_conflict_allows_create(store):
 
 
 async def test_rename_preset_delegates(view, store):
-    await view.create_preset(_spec("old"), extensions=[], tags=[])
+    await view.create_preset(_spec("old"), extensions=[])
     rec = await view.rename_preset("old", "new")
     assert rec.name == "new"
     assert ("preset", "new") in store.docs
@@ -262,8 +263,8 @@ async def test_rename_absent_maps_to_preset_not_found(view):
 
 
 async def test_rename_onto_existing_maps_to_preset_exists(view):
-    await view.create_preset(_spec("a"), extensions=[], tags=[])
-    await view.create_preset(_spec("b"), extensions=[], tags=[])
+    await view.create_preset(_spec("a"), extensions=[])
+    await view.create_preset(_spec("b"), extensions=[])
     with pytest.raises(PresetExistsError):
         await view.rename_preset("a", "b")
 
@@ -273,7 +274,7 @@ async def test_rename_name_conflict_raises_before_store_write(store):
         return name == "taken"
 
     view = PresetStoreView(store, name_conflicts=conflicts)
-    await view.create_preset(_spec("src"), extensions=[], tags=[])
+    await view.create_preset(_spec("src"), extensions=[])
     with pytest.raises(PresetNameConflictError):
         await view.rename_preset("src", "taken")
     # The predicate gates the NEW name before any store write — the source is intact.
@@ -285,19 +286,19 @@ async def test_rename_name_conflict_raises_before_store_write(store):
 
 async def test_create_rejects_empty_inner_combo(view):
     with pytest.raises(ValueError, match="empty combo"):
-        await view.create_preset(_spec(), extensions=[["chain"], []], tags=[])
+        await view.create_preset(_spec(), extensions=[["chain"], []])
     with pytest.raises(ValueError, match="empty combo"):
-        await view.create_preset(_spec(), extensions=[[]], tags=[])
+        await view.create_preset(_spec(), extensions=[[]])
 
 
 async def test_create_allows_empty_outer_extensions(view):
     # Empty OUTER list is valid on create (no extensions).
-    rec = await view.create_preset(_spec(), extensions=[], tags=[])
+    rec = await view.create_preset(_spec(), extensions=[])
     assert rec.active_version == 1
 
 
 async def test_save_version_rejects_empty_inner_combo(view):
-    await view.create_preset(_spec(), extensions=[["chain"]], tags=[])
+    await view.create_preset(_spec(), extensions=[["chain"]])
     with pytest.raises(ValueError, match="empty combo"):
         await view.save_version("p", extensions=[["batch"], []])
 
@@ -309,7 +310,6 @@ async def _seed(view) -> None:
     await view.create_preset(
         PresetSpec(name="p", description="orig", base_tool="weather", fixed_kwargs={"a": 1}),
         extensions=[["chain"]],
-        tags=["cat"],
     )
 
 
@@ -321,26 +321,24 @@ async def test_save_version_omitted_carries_everything(view):
     assert body.description == "orig"
     assert body.fixed_kwargs == {"a": 1}
     assert body.extensions == [["chain"]]
-    assert body.tags == ["cat"]
 
 
 async def test_save_version_overrides_only_provided_fields(view):
     await _seed(view)
     await view.save_version("p", fixed_kwargs={"b": 2})
     body = await view.get_active_body("p")
-    # base_tool + description ALWAYS carried; extensions + tags carried (omitted).
+    # base_tool + description ALWAYS carried; extensions carried (omitted).
     assert body.base_tool == "weather"
     assert body.description == "orig"
     assert body.fixed_kwargs == {"b": 2}
     assert body.extensions == [["chain"]]
-    assert body.tags == ["cat"]
 
 
-async def test_save_version_override_tags(view):
+async def test_save_version_override_description(view):
     await _seed(view)
-    await view.save_version("p", tags=["new"])
+    await view.save_version("p", description="new")
     body = await view.get_active_body("p")
-    assert body.tags == ["new"]
+    assert body.description == "new"
     assert body.fixed_kwargs == {"a": 1}  # carried
     assert body.extensions == [["chain"]]  # carried
 
@@ -350,16 +348,8 @@ async def test_save_version_override_extensions(view):
     await view.save_version("p", extensions=[["batch"]])
     body = await view.get_active_body("p")
     assert body.extensions == [["batch"]]
-    assert body.tags == ["cat"]  # carried
+    assert body.description == "orig"  # carried
     assert body.fixed_kwargs == {"a": 1}  # carried
-
-
-async def test_save_version_empty_list_clears_tags(view):
-    await _seed(view)
-    await view.save_version("p", tags=[])
-    body = await view.get_active_body("p")
-    assert body.tags == []  # explicitly cleared
-    assert body.extensions == [["chain"]]  # carried, not cleared
 
 
 async def test_save_version_empty_list_clears_extensions(view):
@@ -367,7 +357,7 @@ async def test_save_version_empty_list_clears_extensions(view):
     await view.save_version("p", extensions=[])
     body = await view.get_active_body("p")
     assert body.extensions == []  # explicitly cleared
-    assert body.tags == ["cat"]  # carried, not cleared
+    assert body.description == "orig"  # carried, not cleared
 
 
 async def test_save_version_empty_dict_clears_fixed_kwargs(view):
@@ -378,13 +368,60 @@ async def test_save_version_empty_dict_clears_fixed_kwargs(view):
     assert body.description == "orig"  # never dropped
 
 
+# -- description carry-forward + non-empty validation ------------------------
+
+
+async def test_save_version_description_carries_forward_when_omitted(view):
+    await _seed(view)  # created with description "orig"
+    await view.save_version("p", fixed_kwargs={"b": 2})
+    body = await view.get_active_body("p")
+    assert body.description == "orig"  # carried forward on omit
+
+
+async def test_save_version_explicit_non_empty_description_sets_it(view):
+    await _seed(view)
+    await view.save_version("p", description="edited")
+    assert (await view.get_active_body("p")).description == "edited"
+
+
+async def test_save_version_rejects_explicit_empty_description(view):
+    await _seed(view)
+    # An explicit "" is not a carry-forward; the resulting description is validated
+    # non-empty and the store view rejects it.
+    with pytest.raises(ValueError, match="description must not be empty"):
+        await view.save_version("p", description="")
+
+
+async def test_save_version_carry_forward_from_legacy_empty_description_raises(view):
+    # A body persisted with an empty description heals loudly: the next version save
+    # validates the RESULTING (carried) description, so the carry-forward raises
+    # rather than persisting an empty tool docstring.
+    await view.create_preset(
+        PresetSpec(name="legacy", description="", base_tool="weather", fixed_kwargs={"a": 1}),
+        extensions=[],
+    )
+    with pytest.raises(ValueError, match="description must not be empty"):
+        await view.save_version("legacy", fixed_kwargs={"b": 2})
+
+
+async def test_rollback_restores_older_description(view):
+    await view.create_preset(
+        PresetSpec(name="p", description="v1 desc", base_tool="weather", fixed_kwargs={"a": 1}),
+        extensions=[],
+    )
+    await view.save_version("p", description="v2 desc")
+    assert (await view.get_active_body("p")).description == "v2 desc"
+    await view.rollback("p", 1)
+    assert (await view.get_active_body("p")).description == "v1 desc"
+
+
 # -- output_schema carry-forward ---------------------------------------------
 
 _OUTPUT_SCHEMA: dict[str, Any] = {"type": "object", "properties": {"x": {"type": "string"}}}
 
 
 async def test_create_persists_output_schema(view):
-    await view.create_preset(_spec(), extensions=[], tags=[], output_schema=_OUTPUT_SCHEMA)
+    await view.create_preset(_spec(), extensions=[], output_schema=_OUTPUT_SCHEMA)
     body = await view.get_active_body("p")
     assert body.output_schema == _OUTPUT_SCHEMA
 
@@ -393,7 +430,6 @@ async def _seed_with_schema(view) -> None:
     await view.create_preset(
         PresetSpec(name="p", description="orig", base_tool="weather", fixed_kwargs={"a": 1}),
         extensions=[["chain"]],
-        tags=["cat"],
         output_schema=_OUTPUT_SCHEMA,
     )
 
@@ -401,10 +437,10 @@ async def _seed_with_schema(view) -> None:
 async def test_save_version_output_schema_carries_forward_when_omitted(view):
     await _seed_with_schema(view)
     # ``output_schema`` omitted → the CARRY_FORWARD sentinel keeps the active value.
-    await view.save_version("p", tags=["new"])
+    await view.save_version("p", description="new")
     body = await view.get_active_body("p")
     assert body.output_schema == _OUTPUT_SCHEMA
-    assert body.tags == ["new"]
+    assert body.description == "new"
 
 
 async def test_save_version_output_schema_explicit_value_wins(view):

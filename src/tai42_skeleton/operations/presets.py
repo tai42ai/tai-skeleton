@@ -60,16 +60,16 @@ logger = logging.getLogger(__name__)
 
 
 class PresetCreate(BaseModel):
-    """A preset-creation request. ``extensions`` is the list of extension combos
-    (each element an extension name or a ``{"name", "config"}`` mapping binding
-    author config). ``output_schema`` is the optional author-set OUTPUT JSON
-    Schema (an object schema)."""
+    """A preset-creation request. ``description`` is the bound tool's LLM-facing
+    docstring — REQUIRED non-empty on every create. ``extensions`` is the list of
+    extension combos (each element an extension name or a ``{"name", "config"}``
+    mapping binding author config). ``output_schema`` is the optional author-set
+    OUTPUT JSON Schema (an object schema)."""
 
     name: str
     base_tool: str
-    description: str = ""
+    description: str
     fixed_kwargs: dict[str, Any] = {}
-    tags: list[str] = []
     extensions: list[list[ExtensionElement]] = []
     output_schema: dict[str, Any] | None = None
 
@@ -78,12 +78,14 @@ class PresetVersionSave(BaseModel):
     """A new-preset-version request. At least one field must be present; an
     omitted field carries forward, an explicit ``[]`` clears (the store sentinel
     rule). ``output_schema`` carries forward when omitted, clears on an explicit
-    ``null``, and wins on an explicit object schema."""
+    ``null``, and wins on an explicit object schema. ``description`` carries forward
+    when omitted and is SET by an explicit non-empty string (an explicit ``""`` is
+    rejected — the resulting description is validated non-empty on every save)."""
 
     fixed_kwargs: dict[str, Any] | None = None
-    tags: list[str] | None = None
     extensions: list[list[ExtensionElement]] | None = None
     output_schema: dict[str, Any] | None = None
+    description: str | None = None
 
 
 class PresetRollback(BaseModel):
@@ -109,7 +111,6 @@ class PresetValidate(BaseModel):
     base_tool: str | None = None
     description: str | None = None
     fixed_kwargs: dict[str, Any] | None = None
-    tags: list[str] | None = None
     extensions: list[list[ExtensionElement]] | None = None
     output_schema: dict[str, Any] | None = None
 
@@ -251,6 +252,11 @@ def _spec_reference_error(
             preset = PresetSpec.model_validate(entry)
         except ValidationError as exc:
             return f"{where}.presets[{i}] is not a valid preset spec: {exc}"
+        # An inline preset becomes a bound tool whose docstring IS its description,
+        # fed verbatim to the LLM — an empty one is a behavioral defect, refused at
+        # authoring exactly like the create door refuses it (side door closed).
+        if not preset.description.strip():
+            return f"{where}.presets[{i}] description must not be empty"
         if preset.base_tool in preset_names:
             return f"{where}.presets[{i}] base_tool {preset.base_tool!r} is itself a preset"
         if preset.base_tool not in tools:
@@ -405,7 +411,6 @@ async def _dry_run_bind_error(
     *,
     name: str,
     description: str,
-    tags: list[str],
     output_schema: dict[str, Any] | None = None,
 ) -> str | None:
     """Bake the body through the kernel WITHOUT registering, returning a 400 message
@@ -415,7 +420,7 @@ async def _dry_run_bind_error(
     both the store and the bindings untouched."""
     try:
         await instance.app.presets.bind(
-            base_tool, fixed_kwargs, name=name, description=description, tags=tags, output_schema=output_schema
+            base_tool, fixed_kwargs, name=name, description=description, output_schema=output_schema
         )
     except Exception as exc:
         return f"preset {name!r} cannot bind: {exc}"
@@ -437,7 +442,6 @@ def _store_record_view(name: str, active_version: int, body: PresetBody) -> dict
         "base_tool": body.base_tool,
         "description": body.description,
         "active_version": active_version,
-        "tags": list(body.tags),
         "extensions": [list(combo) for combo in body.extensions],
         "output_schema": body.output_schema,
         "conflicted": mgr.is_quarantined(name),
@@ -449,7 +453,6 @@ def _new_record_view(
     name: str,
     base_tool: str,
     description: str,
-    tags: list[str],
     extensions: list[list[ExtensionElement]],
     output_schema: dict[str, Any] | None,
     *,
@@ -462,7 +465,6 @@ def _new_record_view(
         "base_tool": base_tool,
         "description": description,
         "active_version": active_version,
-        "tags": list(tags),
         "extensions": [list(combo) for combo in extensions],
         "output_schema": output_schema,
         "conflicted": False,
@@ -552,7 +554,6 @@ async def create_preset(
     base_tool: str,
     description: str,
     fixed_kwargs: dict[str, Any],
-    tags: list[str],
     extensions: list[list[ExtensionElement]],
     output_schema: dict[str, Any] | None,
 ) -> dict[str, Any]:
@@ -565,6 +566,10 @@ async def create_preset(
     # over-long one collides after client-tool truncation).
     if not is_valid_preset_name(name):
         raise BadRequestError(f"invalid preset name {name!r}: must match ^[A-Za-z0-9_-]{{1,64}}$")
+    # The description is the bound tool's LLM-facing docstring — required non-empty on
+    # every create path, so no path produces an empty-docstring preset tool.
+    if not description.strip():
+        raise BadRequestError("a preset description must not be empty")
 
     mgr = instance.app.preset_manager
     # Three ordered name pre-checks — the quarantine 409 wins for a name that would
@@ -606,7 +611,7 @@ async def create_preset(
     if schema_error is not None:
         raise BadRequestError(schema_error)
     bind_error = await _dry_run_bind_error(
-        base_tool, fixed_kwargs, name=name, description=description, tags=tags, output_schema=output_schema
+        base_tool, fixed_kwargs, name=name, description=description, output_schema=output_schema
     )
     if bind_error is not None:
         raise BadRequestError(bind_error)
@@ -618,20 +623,27 @@ async def create_preset(
     if not versioned_store_configured():
         raise UnavailableError("presets require a configured versioned-document store")
 
+    # Clean slate: a dangling overlay row for this name (left by a DIFFERENT tool that
+    # once held it, kept across a plugin uninstall) must never be inherited by the
+    # fresh preset, so drop it before the claim. A no-op when no row exists; and if the
+    # create below rolls back, the deleted ghost belonged to a vanished tool and needs
+    # no restoring.
+    await instance.app.tool_meta.store.delete_meta(name)
+
     # The pre-checks already ran, so the store write is safe. Persist THEN register;
     # if register fails, roll the store row fully back through the generic HARD
     # delete so no stored-but-unregistered preset survives.
     spec = PresetSpec(name=name, description=description, base_tool=base_tool, fixed_kwargs=fixed_kwargs)
     try:
         record = await instance.app.presets.store.create_preset(
-            spec, extensions=extensions, tags=tags, output_schema=output_schema
+            spec, extensions=extensions, output_schema=output_schema
         )
     except PresetNameConflictError as exc:
         raise ConflictError(f"preset name {name!r} collides with an existing tool") from exc
     except PresetExistsError as exc:
         raise ConflictError(f"preset {name!r} already exists") from exc
     try:
-        await mgr.register(name, base_tool, fixed_kwargs, extensions, tags, description, output_schema)
+        await mgr.register(name, base_tool, fixed_kwargs, extensions, description, output_schema)
     except Exception as register_exc:
         try:
             await instance.app.versioning.store.delete("preset", name)
@@ -649,7 +661,7 @@ async def create_preset(
     await instance.app.emit_list_changed("tool")
     await _fanout_reload(name)
     return _new_record_view(
-        name, base_tool, description, tags, extensions, output_schema, active_version=record.active_version
+        name, base_tool, description, extensions, output_schema, active_version=record.active_version
     )
 
 
@@ -709,10 +721,10 @@ async def get_version(name: str, version: str) -> dict[str, Any]:
 async def save_version(
     name: str,
     fixed_kwargs: dict[str, Any] | None,
-    tags: list[str] | None,
     extensions: list[list[ExtensionElement]] | None,
     output_schema: dict[str, Any] | None,
     output_schema_provided: bool,
+    description: str | None,
 ) -> dict[str, Any]:
     """Save a new version (carry-forward sentinels on omitted fields) then reload and
     fan out; 409 if the record is conflicted, 404 for an absent name. The
@@ -737,8 +749,11 @@ async def save_version(
     base_tool = active.base_tool
     new_fixed_kwargs = active.fixed_kwargs if fixed_kwargs is None else fixed_kwargs
     new_extensions = active.extensions if extensions is None else extensions
-    new_tags = active.tags if tags is None else tags
     new_output_schema = active.output_schema if not output_schema_provided else output_schema
+    # ``description`` is editable per version under the None-carry sentinel. The
+    # resulting value is validated non-empty in the store view (explicit "" or a
+    # carry-from-empty both raise); mirror the resolution here to feed the dry-run.
+    new_description = active.description if description is None else description
 
     # Validate-before-commit — run the SAME checks create runs so a bad edit is a
     # 400 that commits nothing (never a version that can never bind, which would
@@ -757,8 +772,7 @@ async def save_version(
         base_tool,
         new_fixed_kwargs,
         name=name,
-        description=active.description,
-        tags=new_tags,
+        description=new_description,
         output_schema=new_output_schema,
     )
     if bind_error is not None:
@@ -775,9 +789,9 @@ async def save_version(
         row = await store.save_version(
             name,
             fixed_kwargs=fixed_kwargs,
-            tags=tags,
             extensions=extensions,
             output_schema=output_schema if output_schema_provided else CARRY_FORWARD,
+            description=description,
         )
     except ValueError as exc:
         raise BadRequestError(str(exc)) from exc
@@ -851,7 +865,6 @@ async def rollback_preset(name: str, version: int) -> dict[str, Any]:
         target_body.fixed_kwargs,
         name=name,
         description=target_body.description,
-        tags=target_body.tags,
         output_schema=target_body.output_schema,
     )
     if bind_error is not None:
@@ -979,6 +992,15 @@ async def rename_preset(name: str, new_name: str) -> dict[str, Any]:
     # never unwound here — ``new_name`` is live and correct.
     await mgr.remove(name)
 
+    # Re-key the tool_meta overlay AFTER the versioned rename's rollback window has
+    # closed (after ``mgr.remove`` — the point past which the rename is never
+    # unwound). An overlay re-keyed earlier would be stranded under the new name if a
+    # reload failure rolled the versioned store back to the old name. The re-key
+    # atomically drops any pre-existing ``new_name`` overlay row before moving the old
+    # one (clean slate); a failure here raises loudly, leaving only a dangling old-name
+    # row that the next claim reclaims.
+    await instance.app.tool_meta.store.rename_tool(name, new_name)
+
     # A rename changes the tool listing by definition (old gone, new present), so the
     # emit is unconditional — no wire-diff guard.
     await instance.app.emit_list_changed("tool")
@@ -1021,6 +1043,9 @@ async def delete_preset(name: str) -> dict[str, Any]:
         except Exception:
             logger.exception("failed to hard-delete conflicted preset record %r", name)
             raise
+        # Cascade the overlay row (R5): the tool is gone, so its organizational
+        # metadata goes with it. A no-op when the preset never got a row.
+        await instance.app.tool_meta.store.delete_meta(name)
         mgr.drop_quarantine(name)
         await _fanout_remove(name)
         return {"name": name, "deleted": True}
@@ -1034,6 +1059,10 @@ async def delete_preset(name: str) -> dict[str, Any]:
     except PresetNotFoundError as exc:
         raise NotFoundError(f"preset {name!r} not found") from exc
     await mgr.remove(name)
+    # Cascade the overlay row (R5) once the preset is soft-deleted and torn down.
+    # Keyed by tool name, so the soft-delete ghost in ``versioned_documents`` is
+    # irrelevant; a no-op when the preset never got a row.
+    await instance.app.tool_meta.store.delete_meta(name)
     await instance.app.emit_list_changed("tool")
     await _fanout_remove(name)
     return {"name": name, "deleted": True}
@@ -1073,19 +1102,23 @@ def _verdict(error: str | None) -> dict[str, Any]:
 async def _validate_create(
     name: str,
     base_tool: str,
-    description: str,
+    description: str | None,
     fixed_kwargs: dict[str, Any],
-    tags: list[str],
     extensions: list[list[ExtensionElement]],
     output_schema: dict[str, Any] | None,
 ) -> dict[str, Any]:
     """The create route's full pre-store verdict for a brand-new preset — the exact
-    ordered checks create runs before its store write (name safety → quarantine →
-    tool collision → agent-name collision → duplicate → base rules → agent
-    authoring), then combo → schema → dry-run bake — as a ``valid``/``error``
-    verdict rather than a write."""
+    ordered checks create runs before its store write (name safety → description
+    non-empty → quarantine → tool collision → agent-name collision → duplicate →
+    base rules → agent authoring), then combo → schema → dry-run bake — as a
+    ``valid``/``error`` verdict rather than a write. A draft may omit ``description``
+    (``None``): the emptiness gate applies only to an explicitly provided value, so an
+    unfilled draft validates its structure and defers the required-description rule to
+    the real create's edge."""
     if not is_valid_preset_name(name):
         return _verdict(f"invalid preset name {name!r}: must match ^[A-Za-z0-9_-]{{1,64}}$")
+    if description is not None and not description.strip():
+        return _verdict("a preset description must not be empty")
     mgr = instance.app.preset_manager
     if mgr.is_quarantined(name):
         return _verdict(f"a quarantined preset {name!r} exists — delete the quarantined record first")
@@ -1106,8 +1139,7 @@ async def _validate_create(
         base_tool,
         fixed_kwargs,
         name=name,
-        description=description,
-        tags=tags,
+        description=description or "",
         output_schema=output_schema,
         extensions=extensions,
     )
@@ -1119,7 +1151,6 @@ async def _verdict_bind_chain(
     *,
     name: str,
     description: str,
-    tags: list[str],
     output_schema: dict[str, Any] | None,
     extensions: list[list[ExtensionElement]] | None = None,
 ) -> dict[str, Any]:
@@ -1134,7 +1165,7 @@ async def _verdict_bind_chain(
     if schema_error is not None:
         return _verdict(schema_error)
     bind_error = await _dry_run_bind_error(
-        base_tool, fixed_kwargs, name=name, description=description, tags=tags, output_schema=output_schema
+        base_tool, fixed_kwargs, name=name, description=description, output_schema=output_schema
     )
     if bind_error is not None:
         return _verdict(bind_error)
@@ -1152,7 +1183,6 @@ async def validate_preset(
     base_tool: str | None = None,
     description: str | None = None,
     fixed_kwargs: dict[str, Any] | None = None,
-    tags: list[str] | None = None,
     extensions_present: bool = False,
     extensions_value: Any = None,
     output_schema_present: bool = False,
@@ -1184,9 +1214,8 @@ async def validate_preset(
         return await _validate_create(
             name,
             base_tool,
-            description or "",
+            description,
             fixed_kwargs or {},
-            tags or [],
             extensions,
             output_schema,
         )
@@ -1198,18 +1227,20 @@ async def validate_preset(
     if instance.app.preset_manager.is_quarantined(name):
         return _verdict(f"preset {name!r} is conflicted and is delete-only")
 
-    # base_tool + description carry forward and are not version fields; a provided
-    # value that differs is a loud verdict, never ignored.
+    # base_tool carries forward and is not a version field; a provided value that
+    # differs is a loud verdict, never ignored.
     if base_tool is not None and base_tool != active.base_tool:
         return _verdict("base_tool differs from the preset's active base tool; a version cannot change the base tool")
-    if description is not None and description != active.description:
-        return _verdict("description is not a version field; it carries forward from the preset")
+    # ``description`` IS a version field: None carries forward, an explicit string
+    # sets it, and the resulting value must be non-empty (mirrors the store view).
+    new_description = active.description if description is None else description
+    if not new_description.strip():
+        return _verdict("a preset description must not be empty")
     edit_extensions = read_edit_extensions(extensions_present, extensions_value)
     new_extensions = active.extensions if edit_extensions is None else edit_extensions
     new_output_schema = read_output_schema(output_schema_value) if output_schema_present else active.output_schema
 
     new_fixed_kwargs = active.fixed_kwargs if fixed_kwargs is None else fixed_kwargs
-    new_tags = active.tags if tags is None else tags
     # An authored-agent (``fixed_kwargs``) edit runs the full authoring validation
     # over the carried-forward base tool, exactly as save-version does — only when
     # fixed_kwargs was provided.
@@ -1221,8 +1252,7 @@ async def validate_preset(
         active.base_tool,
         new_fixed_kwargs,
         name=name,
-        description=active.description,
-        tags=new_tags,
+        description=new_description,
         output_schema=new_output_schema,
         extensions=new_extensions,
     )

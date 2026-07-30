@@ -116,13 +116,6 @@ def _optional_dict(body: dict[str, Any], field: str) -> dict[str, Any]:
     return value
 
 
-def _optional_str_list(body: dict[str, Any], field: str) -> list[str]:
-    value = body.get(field, [])
-    if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
-        raise BadRequestError(f"{field!r} must be a list of strings")
-    return value
-
-
 # -- HTTP-edge extractors (validate the body; produce the op's flat kwargs) ----
 
 
@@ -131,9 +124,8 @@ async def _extract_create(request: Request) -> dict[str, Any]:
     return {
         "name": _require_str(body, "name"),
         "base_tool": _require_str(body, "base_tool"),
-        "description": _optional_str(body, "description"),
+        "description": _require_str(body, "description"),
         "fixed_kwargs": _optional_dict(body, "fixed_kwargs"),
-        "tags": _optional_str_list(body, "tags"),
         "extensions": read_create_extensions("extensions" in body, body.get("extensions")),
         "output_schema": read_output_schema(body.get("output_schema")),
     }
@@ -141,14 +133,13 @@ async def _extract_create(request: Request) -> dict[str, Any]:
 
 async def _extract_save_version(request: Request) -> dict[str, Any]:
     body = await _json_object(request)
-    if not any(field in body for field in ("fixed_kwargs", "tags", "extensions", "output_schema")):
-        raise BadRequestError("body must provide at least one of 'fixed_kwargs', 'tags', 'extensions', 'output_schema'")
+    if not any(field in body for field in ("fixed_kwargs", "extensions", "output_schema", "description")):
+        raise BadRequestError(
+            "body must provide at least one of 'fixed_kwargs', 'extensions', 'output_schema', 'description'"
+        )
     fixed_kwargs = body.get("fixed_kwargs")
     if fixed_kwargs is not None and not isinstance(fixed_kwargs, dict):
         raise BadRequestError("'fixed_kwargs' must be a JSON object")
-    tags = body.get("tags")
-    if tags is not None and (not isinstance(tags, list) or not all(isinstance(t, str) for t in tags)):
-        raise BadRequestError("'tags' must be a list of strings")
     extensions = read_edit_extensions("extensions" in body, body.get("extensions"))
     # ``output_schema`` carry-forward is distinct: PRESENT (even as ``null``) is a
     # deliberate value (a ``null`` CLEARS the field); ABSENT carries the active value
@@ -156,12 +147,20 @@ async def _extract_save_version(request: Request) -> dict[str, Any]:
     # store's carry-forward sentinel in the operation.
     output_schema_provided = "output_schema" in body
     output_schema = read_output_schema(body.get("output_schema")) if output_schema_provided else None
+    # ``description`` follows the None-carry sentinel: absent → carry forward (``None``);
+    # present → set it (the resulting value is validated non-empty in the store view, so
+    # an explicit ``""`` is rejected there). It must be a string when present.
+    description = None
+    if "description" in body:
+        description = body["description"]
+        if not isinstance(description, str):
+            raise BadRequestError("'description' must be a string")
     return {
         "fixed_kwargs": fixed_kwargs,
-        "tags": tags,
         "extensions": extensions,
         "output_schema": output_schema,
         "output_schema_provided": output_schema_provided,
+        "description": description,
     }
 
 
@@ -184,13 +183,11 @@ async def _extract_validate(request: Request) -> dict[str, Any]:
     base_tool_present = "base_tool" in body and body.get("base_tool") is not None
     description_present = "description" in body and body.get("description") is not None
     fixed_kwargs_present = "fixed_kwargs" in body and body.get("fixed_kwargs") is not None
-    tags_present = "tags" in body and body.get("tags") is not None
     return {
         "name": name,
         "base_tool": _require_str(body, "base_tool") if base_tool_present else None,
         "description": _optional_str(body, "description") if description_present else None,
         "fixed_kwargs": _optional_dict(body, "fixed_kwargs") if fixed_kwargs_present else None,
-        "tags": _optional_str_list(body, "tags") if tags_present else None,
         "extensions_present": "extensions" in body,
         "extensions_value": body.get("extensions"),
         "output_schema_present": "output_schema" in body,

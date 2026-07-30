@@ -67,14 +67,15 @@ def create_preset(
     ctx: typer.Context,
     name: Annotated[str, typer.Argument(help="Preset name.")],
     base_tool: Annotated[str, typer.Option("--base-tool", help="The registered non-preset tool the preset wraps.")],
+    description: Annotated[
+        str, typer.Option("--description", help="The preset's LLM-facing description (required, non-empty).")
+    ],
     kwargs: Annotated[str | None, typer.Option("--kwargs", help="Baked fixed kwargs as a JSON object.")] = None,
-    description: Annotated[str, typer.Option("--description", help="Human description.")] = "",
-    tags: Annotated[list[str] | None, typer.Option("--tag", help="A tag (repeatable).")] = None,
     extensions: Annotated[str | None, typer.Option("--extensions", help=_EXTENSIONS_HELP)] = None,
 ) -> None:
     """Create a versioned preset (or an authored agent, when the base tool is an agent).
 
-    Example: ``tai presets create greet --base-tool echo --kwargs '{"prefix":"hi"}'``
+    Example: ``tai presets create greet --base-tool echo --description 'Greet a user' --kwargs '{"prefix":"hi"}'``
     """
     ctx_obj = app_context(ctx)
     body: dict = {
@@ -82,7 +83,6 @@ def create_preset(
         "base_tool": base_tool,
         "description": description,
         "fixed_kwargs": parse_json_object(kwargs, param_hint="--kwargs") if kwargs is not None else {},
-        "tags": list(tags or []),
     }
     if extensions is not None:
         body["extensions"] = parse_extension_combos(extensions, param_hint="--extensions")
@@ -142,33 +142,27 @@ def save_version(
     kwargs: Annotated[
         str | None, typer.Option("--kwargs", help="New fixed kwargs (JSON object); omit to carry forward.")
     ] = None,
-    tags: Annotated[
-        list[str] | None, typer.Option("--tag", help="A tag (repeatable); replaces the tag set when given.")
+    description: Annotated[
+        str | None,
+        typer.Option("--description", help="New description (non-empty); omit to carry the active one forward."),
     ] = None,
-    clear_tags: Annotated[
-        bool, typer.Option("--clear-tags", help="Clear all tags (send an explicit empty tag list).")
-    ] = False,
     extensions: Annotated[str | None, typer.Option("--extensions", help=_EXTENSIONS_HELP_CLEARABLE)] = None,
 ) -> None:
-    """Save a new preset version. Omitted fields carry forward; ``--clear-tags`` and
-    ``--extensions '[]'`` send the explicit clear sentinel.
+    """Save a new preset version. Omitted fields carry forward; ``--extensions '[]'``
+    sends the explicit clear sentinel.
 
-    Example: ``tai presets save-version my_preset --kwargs '{"n":2}' --clear-tags``
+    Example: ``tai presets save-version my_preset --kwargs '{"n":2}'``
     """
     ctx_obj = app_context(ctx)
-    if clear_tags and tags:
-        raise typer.BadParameter("pass either --tag or --clear-tags, not both", param_hint="--clear-tags")
     body: dict = {}
     if kwargs is not None:
         body["fixed_kwargs"] = parse_json_object(kwargs, param_hint="--kwargs")
-    if clear_tags:
-        body["tags"] = []
-    elif tags:
-        body["tags"] = list(tags)
+    if description is not None:
+        body["description"] = description
     if extensions is not None:
         body["extensions"] = parse_extension_combos(extensions, param_hint="--extensions")
     if not body:
-        raise typer.BadParameter("provide at least one of --kwargs, --tag/--clear-tags, or --extensions")
+        raise typer.BadParameter("provide at least one of --kwargs, --description, or --extensions")
     with ctx_obj.client() as client:
         data = client.post(f"/api/presets/{name}/versions", json=body)
     emit_result(ctx_obj, data)
@@ -230,14 +224,15 @@ def validate_preset(
         str | None, typer.Option("--base-tool", help="The base tool (required for a new preset).")
     ] = None,
     kwargs: Annotated[str | None, typer.Option("--kwargs", help="Baked fixed kwargs as a JSON object.")] = None,
-    description: Annotated[str | None, typer.Option("--description", help="Human description.")] = None,
-    tags: Annotated[list[str] | None, typer.Option("--tag", help="A tag (repeatable).")] = None,
+    description: Annotated[
+        str | None, typer.Option("--description", help="The preset's LLM-facing description.")
+    ] = None,
     extensions: Annotated[str | None, typer.Option("--extensions", help=_EXTENSIONS_HELP)] = None,
 ) -> None:
     """Dry-run a preset draft — report whether it would be accepted as a create (a
     new name) or a new version (an existing name), without writing anything.
 
-    Example: ``tai presets validate greet --base-tool echo --kwargs '{"prefix":"hi"}'``
+    Example: ``tai presets validate greet --base-tool echo --description 'Greet' --kwargs '{"prefix":"hi"}'``
     """
     ctx_obj = app_context(ctx)
     body: dict = {"name": name}
@@ -247,8 +242,6 @@ def validate_preset(
         body["fixed_kwargs"] = parse_json_object(kwargs, param_hint="--kwargs")
     if description is not None:
         body["description"] = description
-    if tags:
-        body["tags"] = list(tags)
     if extensions is not None:
         body["extensions"] = parse_extension_combos(extensions, param_hint="--extensions")
     with ctx_obj.client() as client:

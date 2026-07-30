@@ -208,6 +208,8 @@ def test_presets_create_body(monkeypatch: pytest.MonkeyPatch) -> None:
         assert body["name"] == "greet"
         assert body["base_tool"] == "echo"
         assert body["fixed_kwargs"] == {"prefix": "hi"}
+        # ``description`` is required on every create and rides the body verbatim.
+        assert body["description"] == "Greet a user"
         # Every create is versioned; the body carries no ``versioned`` key.
         assert "versioned" not in body
         return data_response({"name": "greet", "persisted": True})
@@ -215,9 +217,27 @@ def test_presets_create_body(monkeypatch: pytest.MonkeyPatch) -> None:
     result = run_cli(
         monkeypatch,
         handler,
-        ["presets", "create", "greet", "--base-tool", "echo", "--kwargs", '{"prefix":"hi"}'],
+        [
+            "presets",
+            "create",
+            "greet",
+            "--base-tool",
+            "echo",
+            "--description",
+            "Greet a user",
+            "--kwargs",
+            '{"prefix":"hi"}',
+        ],
     )
     assert result.exit_code == 0, result.output
+
+
+def test_presets_create_requires_description(monkeypatch: pytest.MonkeyPatch) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:  # pragma: no cover - never reached
+        return data_response({})
+
+    result = run_cli(monkeypatch, handler, ["presets", "create", "greet", "--base-tool", "echo"])
+    assert result.exit_code != 0
 
 
 def test_presets_save_version_requires_a_field(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -229,12 +249,12 @@ def test_presets_save_version_requires_a_field(monkeypatch: pytest.MonkeyPatch) 
     assert "at least one" in result.output
 
 
-def test_presets_save_version_clear_tags(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_presets_save_version_sets_description(monkeypatch: pytest.MonkeyPatch) -> None:
     def handler(request: httpx.Request) -> httpx.Response:
-        assert json.loads(request.content) == {"tags": []}
+        assert json.loads(request.content) == {"description": "Updated"}
         return data_response({"version": 2})
 
-    result = run_cli(monkeypatch, handler, ["presets", "save-version", "greet", "--clear-tags"])
+    result = run_cli(monkeypatch, handler, ["presets", "save-version", "greet", "--description", "Updated"])
     assert result.exit_code == 0, result.output
 
 

@@ -95,7 +95,7 @@ class AgentBinding:
         """Drop every registered agent (start/reload re-imports their modules)."""
         self._agents = {}
 
-    def agent(self, name: str) -> Callable[[type[_AgentT]], type[_AgentT]]:
+    def agent(self, name: str, tags: set[str] | None = None) -> Callable[[type[_AgentT]], type[_AgentT]]:
         """Register an :class:`Agent` subclass under ``name`` and synthesize its
         JSON ``run`` tool.
 
@@ -104,6 +104,11 @@ class AgentBinding:
         stores it for in-process ``get_agent(name).astream(...)``, and
         auto-registers a ``run`` tool whose signature == the agent's ``ToolInput``
         and whose body drives ``run`` to its final value.
+
+        ``tags`` are the run tool's native tags. An agent registers as a prebuilt
+        ``FunctionTool`` and the bind path takes that object as-is (kwargs are NOT
+        forwarded for a prebuilt tool), so the tags must ride on the constructed
+        object — set here, at the only effective site.
 
         Enforces the ``preset_bakeable_fields`` invariant at registration: every
         declared name must be a real ``ToolInput`` field. A stray name could never
@@ -139,7 +144,7 @@ class AgentBinding:
 
             instance: Agent = agent_cls()
             self._agents[name] = instance
-            self._register_agent_tool(name, agent_cls.__module__)
+            self._register_agent_tool(name, agent_cls.__module__, tags)
             return agent_cls
 
         return decorator
@@ -159,7 +164,7 @@ class AgentBinding:
         """
         return dict(self._agents)
 
-    def _register_agent_tool(self, name: str, module: str) -> None:
+    def _register_agent_tool(self, name: str, module: str, tags: set[str] | None = None) -> None:
         """Build + bind the JSON ``run`` tool for a registered agent.
 
         The tool advertises the agent's ``ToolInput`` schema (live ``tools=`` is
@@ -217,6 +222,10 @@ class AgentBinding:
             # wraps the return as ``{"result": <value>}`` and the client unwraps it
             # back (a string stays a string, a dict stays a dict).
             output_schema=_AGENT_RESULT_SCHEMA,
+            # Native tags declared at ``@app.agents.agent(...)``. The prebuilt tool is
+            # registered as-is (bind drops kwargs for a prebuilt object), so this
+            # constructor is the ONLY effective place tags can be set.
+            tags=tags or set(),
         )
         # Bind through the shared extension-capable path: the base registers as this
         # prebuilt ``FunctionTool`` (advertised schema exact by construction) and one

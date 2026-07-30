@@ -226,7 +226,17 @@ def test_presets_create_parses_extension_combos(monkeypatch: pytest.MonkeyPatch)
     result = run_cli(
         monkeypatch,
         handler,
-        ["presets", "create", "greet", "--base-tool", "echo", "--extensions", '[["chain","batch"],["chain"]]'],
+        [
+            "presets",
+            "create",
+            "greet",
+            "--base-tool",
+            "echo",
+            "--description",
+            "Greet a user",
+            "--extensions",
+            '[["chain","batch"],["chain"]]',
+        ],
     )
     assert result.exit_code == 0, result.output
 
@@ -250,6 +260,8 @@ def test_presets_create_carries_element_config_losslessly(monkeypatch: pytest.Mo
             "greet",
             "--base-tool",
             "echo",
+            "--description",
+            "Greet a user",
             "--extensions",
             '[["chain",{"name":"output_schema","config":{"schema":{"type":"object"}}}]]',
         ],
@@ -262,7 +274,9 @@ def test_presets_create_rejects_malformed_extensions_json(monkeypatch: pytest.Mo
         return data_response({})
 
     result = run_cli(
-        monkeypatch, handler, ["presets", "create", "greet", "--base-tool", "echo", "--extensions", "not json"]
+        monkeypatch,
+        handler,
+        ["presets", "create", "greet", "--base-tool", "echo", "--description", "d", "--extensions", "not json"],
     )
     assert result.exit_code != 0
     assert "valid JSON" in result.output
@@ -274,7 +288,9 @@ def test_presets_create_rejects_flat_combo_list(monkeypatch: pytest.MonkeyPatch)
 
     # A flat array of names is not a list OF COMBOS — each combo must itself be an array.
     result = run_cli(
-        monkeypatch, handler, ["presets", "create", "greet", "--base-tool", "echo", "--extensions", '["chain"]']
+        monkeypatch,
+        handler,
+        ["presets", "create", "greet", "--base-tool", "echo", "--description", "d", "--extensions", '["chain"]'],
     )
     assert result.exit_code != 0
     assert "non-empty JSON array" in result.output
@@ -288,7 +304,9 @@ def test_presets_create_rejects_empty_inner_combo(monkeypatch: pytest.MonkeyPatc
         return data_response({})
 
     result = run_cli(
-        monkeypatch, handler, ["presets", "create", "greet", "--base-tool", "echo", "--extensions", "[[]]"]
+        monkeypatch,
+        handler,
+        ["presets", "create", "greet", "--base-tool", "echo", "--description", "d", "--extensions", "[[]]"],
     )
     assert result.exit_code != 0
     assert "non-empty JSON array" in result.output
@@ -301,7 +319,11 @@ def test_presets_create_rejects_non_list_extensions(monkeypatch: pytest.MonkeyPa
     def handler(request: httpx.Request) -> httpx.Response:  # pragma: no cover - never reached
         return data_response({})
 
-    result = run_cli(monkeypatch, handler, ["presets", "create", "greet", "--base-tool", "echo", "--extensions", "{}"])
+    result = run_cli(
+        monkeypatch,
+        handler,
+        ["presets", "create", "greet", "--base-tool", "echo", "--description", "d", "--extensions", "{}"],
+    )
     assert result.exit_code != 0
     assert "array of extension combos" in result.output
 
@@ -313,7 +335,17 @@ def test_presets_create_rejects_config_free_object_element(monkeypatch: pytest.M
     result = run_cli(
         monkeypatch,
         handler,
-        ["presets", "create", "greet", "--base-tool", "echo", "--extensions", '[[{"name":"output_schema"}]]'],
+        [
+            "presets",
+            "create",
+            "greet",
+            "--base-tool",
+            "echo",
+            "--description",
+            "d",
+            "--extensions",
+            '[[{"name":"output_schema"}]]',
+        ],
     )
     assert result.exit_code != 0
     assert "'config' mapping" in result.output
@@ -326,7 +358,9 @@ def test_presets_create_rejects_empty_string_element(monkeypatch: pytest.MonkeyP
         return data_response({})
 
     result = run_cli(
-        monkeypatch, handler, ["presets", "create", "greet", "--base-tool", "echo", "--extensions", '[[""]]']
+        monkeypatch,
+        handler,
+        ["presets", "create", "greet", "--base-tool", "echo", "--description", "d", "--extensions", '[[""]]'],
     )
     assert result.exit_code != 0
     assert "an extension name must be a non-empty string" in result.output
@@ -341,7 +375,17 @@ def test_presets_create_rejects_non_string_name(monkeypatch: pytest.MonkeyPatch)
     result = run_cli(
         monkeypatch,
         handler,
-        ["presets", "create", "greet", "--base-tool", "echo", "--extensions", '[[{"name":5,"config":{}}]]'],
+        [
+            "presets",
+            "create",
+            "greet",
+            "--base-tool",
+            "echo",
+            "--description",
+            "d",
+            "--extensions",
+            '[[{"name":5,"config":{}}]]',
+        ],
     )
     assert result.exit_code != 0
     assert "extension element must have" in result.output
@@ -356,7 +400,17 @@ def test_presets_create_rejects_object_with_extra_keys(monkeypatch: pytest.Monke
     result = run_cli(
         monkeypatch,
         handler,
-        ["presets", "create", "greet", "--base-tool", "echo", "--extensions", '[[{"name":"chain","config":{},"x":1}]]'],
+        [
+            "presets",
+            "create",
+            "greet",
+            "--base-tool",
+            "echo",
+            "--description",
+            "d",
+            "--extensions",
+            '[[{"name":"chain","config":{},"x":1}]]',
+        ],
     )
     assert result.exit_code != 0
     assert "unexpected" in result.output
@@ -369,7 +423,9 @@ def test_presets_create_rejects_non_element(monkeypatch: pytest.MonkeyPatch) -> 
         return data_response({})
 
     result = run_cli(
-        monkeypatch, handler, ["presets", "create", "greet", "--base-tool", "echo", "--extensions", "[[5]]"]
+        monkeypatch,
+        handler,
+        ["presets", "create", "greet", "--base-tool", "echo", "--description", "d", "--extensions", "[[5]]"],
     )
     assert result.exit_code != 0
     assert "combo element must be an extension" in result.output
@@ -419,23 +475,24 @@ def test_presets_save_version_sends_kwargs_and_extensions(monkeypatch: pytest.Mo
     assert result.exit_code == 0, result.output
 
 
-def test_presets_save_version_replaces_tag_set(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_presets_save_version_sends_description(monkeypatch: pytest.MonkeyPatch) -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         assert request.url.path == "/api/presets/greet/versions"
-        assert json.loads(request.content) == {"tags": ["a", "b"]}
+        # ``--description`` sets the version's description; omitted fields carry forward.
+        assert json.loads(request.content) == {"description": "updated"}
         return data_response({"version": 5})
 
-    result = run_cli(monkeypatch, handler, ["presets", "save-version", "greet", "--tag", "a", "--tag", "b"])
+    result = run_cli(monkeypatch, handler, ["presets", "save-version", "greet", "--description", "updated"])
     assert result.exit_code == 0, result.output
 
 
-def test_presets_save_version_rejects_tag_and_clear_together(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_presets_save_version_requires_at_least_one_field(monkeypatch: pytest.MonkeyPatch) -> None:
     def handler(request: httpx.Request) -> httpx.Response:  # pragma: no cover - never reached
         return data_response({})
 
-    result = run_cli(monkeypatch, handler, ["presets", "save-version", "greet", "--tag", "x", "--clear-tags"])
+    result = run_cli(monkeypatch, handler, ["presets", "save-version", "greet"])
     assert result.exit_code != 0
-    assert "not both" in result.output
+    assert "at least one" in result.output
 
 
 def test_presets_rollback_posts_version(monkeypatch: pytest.MonkeyPatch) -> None:

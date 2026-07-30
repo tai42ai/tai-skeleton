@@ -3,18 +3,21 @@
 A thin typed wrapper over the generic
 :class:`~tai42_contract.versioning.VersionedStore` with ``kind="preset"`` and body
 :class:`~tai42_contract.presets.PresetBody` (``{base_tool, description,
-fixed_kwargs, extensions, tags}``). It holds NO SQL of its own — all persistence
+fixed_kwargs, extensions}``). It holds NO SQL of its own — all persistence
 is the generic store. Its jobs are:
 
 * **body validation/reshaping** — an empty INNER extension combo (``[[]]`` or any
   ``[]`` member) is REJECTED loudly; the empty OUTER list ``[]`` is a valid value
-  (no extensions on create, an explicit clear on a version save);
+  (no extensions on create, an explicit clear on a version save). The resulting
+  ``description`` is validated non-empty on every version save (explicit or
+  carried), so a legacy body with an empty description heals loudly at its next
+  save instead of persisting an empty tool docstring;
 * **carry-forward on a version save** — a version body is always the FULL
-  :class:`PresetBody`, so ``base_tool`` and ``description`` are ALWAYS carried
-  forward from the active version, and each of ``fixed_kwargs``, ``tags``,
-  ``extensions`` is carried forward wherever its argument was not provided
-  (``None``); an explicitly provided value — including a clearing ``[]`` — wins.
-  The new body never DROPS a field;
+  :class:`PresetBody`, so ``base_tool`` is ALWAYS carried forward from the active
+  version; ``description`` carries forward on ``None`` and is set by an explicit
+  non-empty string; and each of ``fixed_kwargs``, ``extensions`` is carried forward
+  wherever its argument was not provided (``None``); an explicitly provided value —
+  including a clearing ``[]`` — wins. The new body never DROPS a field;
 * **error mapping** — the generic store's errors become the preset error types
   (:class:`PresetNotFoundError` / :class:`PresetExistsError` /
   :class:`PresetVersionNotFoundError`), plus :class:`PresetNameConflictError` when
@@ -76,7 +79,6 @@ class PresetStoreView(PresetStore):
         self,
         spec: PresetSpec,
         extensions: Sequence[Sequence[ExtensionElement]],
-        tags: list[str],
         output_schema: dict[str, Any] | None = None,
     ) -> DocumentRecord:
         _validate_extensions(extensions)
@@ -87,7 +89,6 @@ class PresetStoreView(PresetStore):
             description=spec.description,
             fixed_kwargs=spec.fixed_kwargs,
             extensions=[list(combo) for combo in extensions],
-            tags=tags,
             output_schema=output_schema,
         )
         try:
@@ -99,20 +100,26 @@ class PresetStoreView(PresetStore):
         self,
         name: str,
         fixed_kwargs: dict[str, Any] | None = None,
-        tags: list[str] | None = None,
         extensions: Sequence[Sequence[ExtensionElement]] | None = None,
         output_schema: dict[str, Any] | CarryForward | None = CARRY_FORWARD,
+        description: str | None = None,
     ) -> DocumentVersion:
         active = await self._active_body(name)
         new_extensions = active.extensions if extensions is None else extensions
         _validate_extensions(new_extensions)
         new_output_schema = active.output_schema if isinstance(output_schema, CarryForward) else output_schema
+        # ``description`` is editable per version: None carries the active value
+        # forward, an explicit string sets it. The RESULTING description is validated
+        # non-empty either way, so an explicit "" is rejected and a carry-forward from
+        # a legacy empty body heals loudly rather than persisting an empty docstring.
+        new_description = active.description if description is None else description
+        if not new_description.strip():
+            raise ValueError("preset description must not be empty; supply a description")
         new_body = PresetBody(
             base_tool=active.base_tool,
-            description=active.description,
+            description=new_description,
             fixed_kwargs=active.fixed_kwargs if fixed_kwargs is None else fixed_kwargs,
             extensions=[list(combo) for combo in new_extensions],
-            tags=active.tags if tags is None else tags,
             output_schema=new_output_schema,
         )
         try:

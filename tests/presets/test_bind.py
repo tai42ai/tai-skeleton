@@ -3,9 +3,8 @@
 Pins the typed-schema rebuild — the remaining arguments keep the base tool's real
 schema, each baked ``fixed_kwargs`` key is HIDDEN and FIXED (a caller that passes
 it is rejected, never overriding the baked constant), and the preset's
-``description`` + categorization ``tags`` are set on the transformed tool. The
-kernel is the single point every preset builds through, so these guarantees
-reach every preset.
+``description`` is set on the transformed tool. The kernel is the single point
+every preset builds through, so these guarantees reach every preset.
 """
 
 from __future__ import annotations
@@ -79,7 +78,6 @@ async def test_bind_hides_baked_key_and_keeps_typed_schema():
         {"units": "imperial"},
         name="paris_weather",
         description="Weather in Paris",
-        tags=["geo"],
     )
     assert tool.name == "paris_weather"
     schema = tool.to_mcp_tool().inputSchema
@@ -90,14 +88,11 @@ async def test_bind_hides_baked_key_and_keeps_typed_schema():
     assert props["city"]["type"] == "string"
 
 
-async def test_bind_sets_description_and_native_tags():
-    tool = await preset_bind(_app(_base_tool()), "weather", {}, name="p", description="Desc", tags=["a", "b"])
+async def test_bind_sets_description():
+    # The preset's ``description`` is applied to the transformed tool; a preset
+    # carries NO native tags (grouping is the tool_meta overlay's job).
+    tool = await preset_bind(_app(_base_tool()), "weather", {}, name="p", description="Desc")
     assert tool.description == "Desc"
-    assert tool.tags == {"a", "b"}
-    # The native tags ride on the serialized wire tool's _meta.fastmcp.tags.
-    meta = tool.to_mcp_tool().meta
-    assert meta is not None
-    assert set(meta["fastmcp"]["tags"]) == {"a", "b"}
 
 
 async def test_baked_kwarg_is_fixed_and_rejected_when_passed():

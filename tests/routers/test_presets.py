@@ -33,7 +33,6 @@ from tai42_skeleton.exceptions.exceptions import TaiValidationError
 from tai42_skeleton.manifest import Manifest
 from tai42_skeleton.operations import presets as preset_ops
 from tai42_skeleton.routers import presets as router
-from tai42_skeleton.routers import tools as tools_router
 from tai42_skeleton.tools.binding import UnknownToolError
 from tests.versioning.conftest import FakeVersioningPg
 
@@ -142,7 +141,9 @@ def _reset_preset_registry():
 
 
 def _create_body(name: str, base_tool: str = "weather", **over: Any) -> dict[str, Any]:
-    body = {"name": name, "base_tool": base_tool}
+    # ``description`` is required non-empty on every create, so the helper seeds a
+    # default one; a test that exercises the description gate overrides it.
+    body: dict[str, Any] = {"name": name, "base_tool": base_tool, "description": "d"}
     body.update(over)
     return body
 
@@ -158,13 +159,12 @@ async def _create_versioned(name: str, base_tool: str = "weather", **over: Any) 
 def test_list_returns_store_backed_rows(pg, emit):
     async def run():
         async with instance.app.app_context(_manifest()):
-            await _create_versioned("ver", fixed_kwargs={"units": "v"}, tags=["cat"])
+            await _create_versioned("ver", fixed_kwargs={"units": "v"})
 
             rows = _data(await router.list_presets(_request("GET", "/api/presets")))
             assert [r["name"] for r in rows] == ["ver"]
             assert rows[0]["active_version"] == 1
             assert rows[0]["conflicted"] is False
-            assert rows[0]["tags"] == ["cat"]
             # No row carries an ``ephemeral`` key.
             assert "ephemeral" not in rows[0]
 
@@ -177,7 +177,7 @@ def test_list_surfaces_conflicted_badge(pg, emit):
             # A stored preset whose NAME is a live base tool: seed through the
             # GENERIC store (the view's create-guard would block it), then rehydrate
             # so it lands in the quarantine set.
-            body = PresetBody(base_tool="echo", description="d", fixed_kwargs={}, extensions=[], tags=[])
+            body = PresetBody(base_tool="echo", description="d", fixed_kwargs={}, extensions=[])
             await instance.app.versioning.store.create("preset", "weather", body.model_dump())
             await instance.app.preset_manager.rehydrate()
 
@@ -198,7 +198,7 @@ def test_create_persists_registers_emits(pg, emit):
                 _request(
                     "POST",
                     "/api/presets",
-                    body=_create_body("wv", fixed_kwargs={"units": "imperial"}, description="d", tags=["c"]),
+                    body=_create_body("wv", fixed_kwargs={"units": "imperial"}, description="d"),
                 )
             )
             data = _data(resp)
@@ -331,7 +331,7 @@ def test_create_quarantined_name_409(pg, emit):
     async def run():
         async with instance.app.app_context(_manifest()):
             await instance.app.presets.store.create_preset(
-                _spec("orphan", base_tool="gone_tool"), extensions=[], tags=[]
+                _spec("orphan", base_tool="gone_tool"), extensions=[]
             )
             await instance.app.preset_manager.rehydrate()
             assert instance.app.preset_manager.is_quarantined("orphan")
@@ -411,27 +411,12 @@ def test_create_over_stale_requested_unbound_name_seeds_extensions(pg, emit):
     asyncio.run(run())
 
 
-def test_created_preset_tags_appear_in_tools_tags_map(pg, emit):
-    async def run():
-        async with instance.app.app_context(_manifest()):
-            await _create_versioned("wv", base_tool="weather", tags=["geo", "eu"])
-            # The additive GET /api/tools/tags surfaces the native tags a preset
-            # body projects onto its bound tool, sorted for a stable order.
-            resp = await tools_router.tool_tags(_request("GET", "/api/tools/tags"))
-            entries = json.loads(bytes(resp.body))["data"]
-            wv = next(e for e in entries if e["name"] == "wv")
-            assert wv["tags"] == ["eu", "geo"]
-
-    asyncio.run(run())
-
-
 def test_get_preset_and_404(pg, emit):
     async def run():
         async with instance.app.app_context(_manifest()):
-            await _create_versioned("wv", fixed_kwargs={"units": "v"}, tags=["c"])
+            await _create_versioned("wv", fixed_kwargs={"units": "v"})
             data = _data(await router.get_preset(_request("GET", "/api/presets/wv", name="wv")))
             assert data["fixed_kwargs"] == {"units": "v"}
-            assert data["tags"] == ["c"]
             assert data["extensions"] == []
             # An absent name is a 404.
             assert (await router.get_preset(_request("GET", "/api/presets/nope", name="nope"))).status_code == 404
@@ -485,7 +470,7 @@ def test_save_version_absent_404(pg, emit):
     async def run():
         async with instance.app.app_context(_manifest()):
             resp = await router.save_version(
-                _request("POST", "/api/presets/nope/versions", name="nope", body={"tags": ["x"]})
+                _request("POST", "/api/presets/nope/versions", name="nope", body={"fixed_kwargs": {"units": "x"}})
             )
             assert resp.status_code == 404
 
@@ -580,7 +565,9 @@ def test_save_version_residual_reload_failure_repoints_active_no_emit(pg, emit, 
             monkeypatch.setattr(instance.app.preset_manager, "reload", _boom)
 
             with pytest.raises(TaiValidationError):
-                await router.save_version(_request("POST", "/api/presets/wv/versions", name="wv", body={"tags": ["x"]}))
+                await router.save_version(
+                    _request("POST", "/api/presets/wv/versions", name="wv", body={"description": "v2"})
+                )
             # active_version re-pointed back to 1 (the appended v2 stays as history).
             record = await instance.app.presets.store.get_preset("wv")
             assert record.active_version == 1
@@ -623,7 +610,7 @@ def test_delete_absent_404(pg, emit):
 def test_delete_conflicted_store_side_only_no_emit(pg, emit):
     async def run():
         async with instance.app.app_context(_manifest()):
-            body = PresetBody(base_tool="echo", description="d", fixed_kwargs={}, extensions=[], tags=[])
+            body = PresetBody(base_tool="echo", description="d", fixed_kwargs={}, extensions=[])
             await instance.app.versioning.store.create("preset", "weather", body.model_dump())
             await instance.app.preset_manager.rehydrate()
             assert instance.app.preset_manager.is_quarantined("weather")
@@ -645,7 +632,7 @@ def test_conflicted_write_locked_then_clean_delete_recreate(pg, emit):
     async def run():
         async with instance.app.app_context(_manifest()):
             await instance.app.presets.store.create_preset(
-                _spec("orphan", base_tool="gone_tool"), extensions=[], tags=[]
+                _spec("orphan", base_tool="gone_tool"), extensions=[]
             )
             await instance.app.preset_manager.rehydrate()
             assert instance.app.preset_manager.is_quarantined("orphan")
@@ -654,7 +641,7 @@ def test_conflicted_write_locked_then_clean_delete_recreate(pg, emit):
             # Write-locked while conflicted.
             assert (
                 await router.save_version(
-                    _request("POST", "/api/presets/orphan/versions", name="orphan", body={"tags": ["x"]})
+                    _request("POST", "/api/presets/orphan/versions", name="orphan", body={"fixed_kwargs": {}})
                 )
             ).status_code == 409
             assert (
@@ -719,13 +706,15 @@ def test_emit_baked_value_only_change_emits_nothing(pg, emit):
     asyncio.run(run())
 
 
-def test_emit_tags_only_change_emits(pg, emit):
+def test_emit_description_only_change_emits(pg, emit):
     async def run():
         async with instance.app.app_context(_manifest()):
-            await _create_versioned("wv", fixed_kwargs={"units": "v"}, tags=["a"])
+            await _create_versioned("wv", fixed_kwargs={"units": "v"}, description="original")
             emit.clear()
+            # ``description`` is the bound tool's docstring, so a description-only save
+            # changes the serialized wire tool — the guard must fire the emit.
             resp = await router.save_version(
-                _request("POST", "/api/presets/wv/versions", name="wv", body={"tags": ["b"]})
+                _request("POST", "/api/presets/wv/versions", name="wv", body={"description": "changed"})
             )
             assert resp.status_code == 200
             assert emit == ["tool"]
@@ -763,11 +752,11 @@ def test_save_version_omitting_extensions_carries_them_forward(pg, emit):
         async with instance.app.app_context(_manifest()):
             await _create_versioned("wv", base_tool="echo", fixed_kwargs={}, extensions=[["exta"]])
             assert await instance.app.tools.run_tool("wv_exta", {"text": "hi"}) == "hi|a"
-            # A save-version that OMITS `extensions` (here a tags-only edit) must carry the
-            # active version's extensions FORWARD (absent → None sentinel), NOT clear them.
-            # The branch tool survives.
+            # A save-version that OMITS `extensions` (here a description-only edit) must
+            # carry the active version's extensions FORWARD (absent → None sentinel), NOT
+            # clear them. The branch tool survives.
             resp = await router.save_version(
-                _request("POST", "/api/presets/wv/versions", name="wv", body={"tags": ["beta"]})
+                _request("POST", "/api/presets/wv/versions", name="wv", body={"description": "beta"})
             )
             assert resp.status_code == 200
             assert "wv_exta" in set(await instance.app.tools.get_tools())
@@ -805,10 +794,12 @@ def test_save_version_clearing_extensions_tears_branch_and_emits(pg, emit):
 def test_emit_noop_save_emits_nothing(pg, emit):
     async def run():
         async with instance.app.app_context(_manifest()):
-            await _create_versioned("wv", fixed_kwargs={"units": "v"}, tags=["a"])
+            await _create_versioned("wv", fixed_kwargs={"units": "v"}, description="same")
             emit.clear()
+            # A save that re-sends the SAME description leaves the serialized wire tool
+            # byte-identical and the extensions unchanged, so the guard emits nothing.
             resp = await router.save_version(
-                _request("POST", "/api/presets/wv/versions", name="wv", body={"tags": ["a"]})
+                _request("POST", "/api/presets/wv/versions", name="wv", body={"description": "same"})
             )  # identical
             assert resp.status_code == 200
             assert emit == []
@@ -867,17 +858,72 @@ def test_emit_rehydrate_fires_no_per_preset_emit(pg, emit):
     asyncio.run(run())
 
 
-# -- tags round-trip through the route ---------------------------------------
+# -- description as a version field ------------------------------------------
 
 
-def test_tags_round_trip_through_save_version(pg, emit):
+def test_save_version_omitting_description_carries_it_forward(pg, emit):
     async def run():
         async with instance.app.app_context(_manifest()):
-            await _create_versioned("wv", fixed_kwargs={"units": "v"}, tags=["release"])
-            await router.save_version(_request("POST", "/api/presets/wv/versions", name="wv", body={"tags": ["beta"]}))
-            assert (await instance.app.tools.get_tool("wv")).tags == {"beta"}
-            v1 = _data(await router.get_version(_request("GET", "/api/presets/wv/versions/1", name="wv", version="1")))
-            assert v1["body"]["tags"] == ["release"]
+            await _create_versioned("wv", fixed_kwargs={"units": "v1"}, description="original")
+            # A save that omits ``description`` carries the active one forward onto the
+            # new version body.
+            await router.save_version(
+                _request("POST", "/api/presets/wv/versions", name="wv", body={"fixed_kwargs": {"units": "v2"}})
+            )
+            v2 = _data(await router.get_version(_request("GET", "/api/presets/wv/versions/2", name="wv", version="2")))
+            assert v2["body"]["description"] == "original"
+
+    asyncio.run(run())
+
+
+def test_save_version_explicit_description_sets_it(pg, emit):
+    async def run():
+        async with instance.app.app_context(_manifest()):
+            await _create_versioned("wv", fixed_kwargs={"units": "v"}, description="original")
+            resp = await router.save_version(
+                _request("POST", "/api/presets/wv/versions", name="wv", body={"description": "updated"})
+            )
+            assert resp.status_code == 200
+            # Visible on the new active record view and the new version body.
+            detail = _data(await router.get_preset(_request("GET", "/api/presets/wv", name="wv")))
+            assert detail["description"] == "updated"
+            v2 = _data(await router.get_version(_request("GET", "/api/presets/wv/versions/2", name="wv", version="2")))
+            assert v2["body"]["description"] == "updated"
+
+    asyncio.run(run())
+
+
+def test_save_version_explicit_empty_description_400(pg, emit):
+    async def run():
+        async with instance.app.app_context(_manifest()):
+            await _create_versioned("wv", fixed_kwargs={"units": "v"}, description="original")
+            # An explicit empty description is rejected — the resulting description is
+            # validated non-empty on every save.
+            resp = await router.save_version(
+                _request("POST", "/api/presets/wv/versions", name="wv", body={"description": ""})
+            )
+            assert resp.status_code == 400
+            # Nothing committed — the store still has only v1.
+            versions = _data(await router.list_versions(_request("GET", "/api/presets/wv/versions", name="wv")))
+            assert [v["version"] for v in versions] == [1]
+
+    asyncio.run(run())
+
+
+def test_rollback_restores_target_version_description(pg, emit):
+    async def run():
+        async with instance.app.app_context(_manifest()):
+            await _create_versioned("wv", fixed_kwargs={"units": "v"}, description="original")  # v1
+            await router.save_version(
+                _request("POST", "/api/presets/wv/versions", name="wv", body={"description": "updated"})
+            )  # v2
+            resp = await router.rollback_preset(
+                _request("POST", "/api/presets/wv/rollback", name="wv", body={"version": 1})
+            )
+            assert resp.status_code == 200
+            # Rollback restores the target version's description onto the active record.
+            detail = _data(await router.get_preset(_request("GET", "/api/presets/wv", name="wv")))
+            assert detail["description"] == "original"
 
     asyncio.run(run())
 
@@ -944,21 +990,53 @@ def test_create_missing_name_400(pg, emit):
 def test_create_bad_field_types_400(pg, emit):
     async def run():
         async with instance.app.app_context(_manifest()):
-            base = {"name": "x", "base_tool": "echo"}
-            resp = await router.create_preset(_request("POST", "/api/presets", body={**base, "description": 1}))
+            base = {"name": "x", "base_tool": "echo", "description": "d"}
+            resp = await router.create_preset(
+                _request("POST", "/api/presets", body={**base, "description": 1})
+            )
             assert resp.status_code == 400
             assert "description" in _err(resp)
             resp = await router.create_preset(_request("POST", "/api/presets", body={**base, "fixed_kwargs": 1}))
             assert resp.status_code == 400
             assert "fixed_kwargs" in _err(resp)
-            resp = await router.create_preset(_request("POST", "/api/presets", body={**base, "tags": [1]}))
-            assert resp.status_code == 400
-            assert "tags" in _err(resp)
             resp = await router.create_preset(_request("POST", "/api/presets", body={**base, "extensions": "nope"}))
             assert resp.status_code == 400
             assert "extensions" in _err(resp)
             # every rejected body was refused BEFORE any store write
             assert _non_role_documents(pg) == []
+
+    asyncio.run(run())
+
+
+def test_create_missing_description_400_nothing_written(pg, emit):
+    async def run():
+        async with instance.app.app_context(_manifest()):
+            # ``description`` is required on create — a body that omits it is a 400 at
+            # the HTTP edge, and nothing is written.
+            resp = await router.create_preset(
+                _request("POST", "/api/presets", body={"name": "x", "base_tool": "echo"})
+            )
+            assert resp.status_code == 400
+            assert "description" in _err(resp)
+            assert _non_role_documents(pg) == []
+            assert emit == []
+
+    asyncio.run(run())
+
+
+def test_create_blank_or_whitespace_description_400(pg, emit):
+    async def run():
+        async with instance.app.app_context(_manifest()):
+            # An explicit empty description is refused at the HTTP edge (non-empty
+            # string required); a whitespace-only one passes the edge but fails the
+            # op's non-empty gate. Both are a 400 that writes nothing.
+            for bad in ("", "   "):
+                resp = await router.create_preset(
+                    _request("POST", "/api/presets", body=_create_body("x", base_tool="echo", description=bad))
+                )
+                assert resp.status_code == 400, repr(bad)
+            assert _non_role_documents(pg) == []
+            assert emit == []
 
     asyncio.run(run())
 
@@ -969,7 +1047,7 @@ def test_create_over_unrehydrated_store_row_409(pg, emit):
             # A store row that was seeded but NEVER registered/rehydrated slips past
             # the manager's quarantine/collision/duplicate pre-checks, so the store's
             # own duplicate guard is the one that fires — a 409, nothing new persisted.
-            body = PresetBody(base_tool="echo", description="d", fixed_kwargs={}, extensions=[], tags=[])
+            body = PresetBody(base_tool="echo", description="d", fixed_kwargs={}, extensions=[])
             await instance.app.versioning.store.create("preset", "seeded", body.model_dump())
             before = [dict(d) for d in _non_role_documents(pg)]
             resp = await router.create_preset(
@@ -1013,11 +1091,6 @@ def test_save_version_bad_field_types_400(pg, emit):
             assert resp.status_code == 400
             assert "fixed_kwargs" in _err(resp)
             resp = await router.save_version(
-                _request("POST", "/api/presets/wv/versions", name="wv", body={"tags": [1]})
-            )
-            assert resp.status_code == 400
-            assert "tags" in _err(resp)
-            resp = await router.save_version(
                 _request("POST", "/api/presets/wv/versions", name="wv", body={"extensions": "nope"})
             )
             assert resp.status_code == 400
@@ -1054,7 +1127,7 @@ def test_rollback_residual_reload_failure_repoints_active_no_emit(pg, emit, monk
     async def run():
         async with instance.app.app_context(_manifest()):
             await _create_versioned("wv", base_tool="echo", fixed_kwargs={})
-            await instance.app.presets.store.save_version("wv", tags=["v2"])
+            await instance.app.presets.store.save_version("wv", description="v2")
             await instance.app.preset_manager.reload("wv")  # active = v2, live
             emit.clear()
 
@@ -1084,7 +1157,7 @@ def test_rollback_to_unbindable_target_400_nothing_committed(pg, emit):
     async def run():
         async with instance.app.app_context(_manifest()):
             await _create_versioned("wv", base_tool="echo", fixed_kwargs={})
-            await instance.app.presets.store.save_version("wv", tags=["v2"])
+            await instance.app.presets.store.save_version("wv", description="v2")
             await instance.app.preset_manager.reload("wv")  # active = v2, live
             emit.clear()
 
@@ -1274,9 +1347,9 @@ def test_rename_moves_row_rebinds_and_emits_once(pg, emit):
     async def run():
         async with instance.app.app_context(_manifest()):
             await _create_versioned(
-                "old", base_tool="echo", fixed_kwargs={}, extensions=[["exta"]], tags=["cat"], description="d"
+                "old", base_tool="echo", fixed_kwargs={}, extensions=[["exta"]], description="d"
             )
-            await instance.app.presets.store.save_version("old", tags=["cat2"])  # v2 → history to preserve
+            await instance.app.presets.store.save_version("old", description="d2")  # v2 → history to preserve
             await instance.app.preset_manager.reload("old")
             assert await instance.app.tools.run_tool("old_exta", {"text": "hi"}) == "hi|a"
             emit.clear()
@@ -1293,13 +1366,14 @@ def test_rename_moves_row_rebinds_and_emits_once(pg, emit):
             assert [v["version"] for v in versions] == [1, 2]
 
             # Old base + branch gone; new base + branch bound with the identical baked
-            # spec (kwargs, extensions/branches, tags, description, output_schema).
+            # spec (kwargs, extensions/branches, description, output_schema) — the active
+            # description is the v2 one.
             tools = set(await instance.app.tools.get_tools())
             assert not ({"old", "old_exta"} & tools)
             assert {"new", "new_exta"} <= tools
             assert await instance.app.tools.run_tool("new_exta", {"text": "hi"}) == "hi|a"
             spec = instance.app.preset_manager.get_spec("new")
-            assert (spec.base_tool, spec.description, spec.tags) == ("echo", "d", ["cat2"])
+            assert (spec.base_tool, spec.description) == ("echo", "d2")
             assert spec.extensions == [["exta"]]
             assert spec.output_schema is None
             # A rename changes the listing by definition — exactly one emit.
@@ -1395,7 +1469,7 @@ def test_rename_quarantined_old_409(pg, emit):
     async def run():
         async with instance.app.app_context(_manifest()):
             await instance.app.presets.store.create_preset(
-                _spec("orphan", base_tool="gone_tool"), extensions=[], tags=[]
+                _spec("orphan", base_tool="gone_tool"), extensions=[]
             )
             await instance.app.preset_manager.rehydrate()
             assert instance.app.preset_manager.is_quarantined("orphan")
@@ -1413,7 +1487,7 @@ def test_rename_onto_quarantined_new_409(pg, emit):
         async with instance.app.app_context(_manifest()):
             await _create_versioned("old", fixed_kwargs={"units": "v"})
             await instance.app.presets.store.create_preset(
-                _spec("orphan", base_tool="gone_tool"), extensions=[], tags=[]
+                _spec("orphan", base_tool="gone_tool"), extensions=[]
             )
             await instance.app.preset_manager.rehydrate()
             assert instance.app.preset_manager.is_quarantined("orphan")
@@ -1452,14 +1526,13 @@ def test_rename_blocked_by_referencing_presets_409_lists_all_sorted(pg, emit):
             # store (the referee scan reads active bodies, not the live registry);
             # neutral names pin the SORTED, fully-listed referee message.
             direct = PresetBody(
-                base_tool="echo", description="d", fixed_kwargs={"tool_names": ["target"]}, extensions=[], tags=[]
+                base_tool="echo", description="d", fixed_kwargs={"tool_names": ["target"]}, extensions=[]
             )
             nested = PresetBody(
                 base_tool="echo",
                 description="d",
                 fixed_kwargs={"subagents": [{"tool_names": ["target"]}]},
                 extensions=[],
-                tags=[],
             )
             await instance.app.versioning.store.create("preset", "z_ref", direct.model_dump())
             await instance.app.versioning.store.create("preset", "a_ref", nested.model_dump())
@@ -1645,7 +1718,7 @@ def test_delete_fans_out_remove_tool(pg, emit, backend):
 def test_delete_conflicted_fans_out_remove_tool(pg, emit, backend):
     async def run():
         async with instance.app.app_context(_manifest()):
-            body = PresetBody(base_tool="echo", description="d", fixed_kwargs={}, extensions=[], tags=[])
+            body = PresetBody(base_tool="echo", description="d", fixed_kwargs={}, extensions=[])
             await instance.app.versioning.store.create("preset", "weather", body.model_dump())
             await instance.app.preset_manager.rehydrate()
             assert instance.app.preset_manager.is_quarantined("weather")
@@ -1798,7 +1871,7 @@ def test_preset_tool_reloader_remove_tears_down(pg, emit):
 def test_preset_tool_reloader_remove_drops_quarantine(pg, emit):
     async def run():
         async with instance.app.app_context(_manifest()):
-            body = PresetBody(base_tool="echo", description="d", fixed_kwargs={}, extensions=[], tags=[])
+            body = PresetBody(base_tool="echo", description="d", fixed_kwargs={}, extensions=[])
             await instance.app.versioning.store.create("preset", "weather", body.model_dump())
             await instance.app.preset_manager.rehydrate()
             assert instance.app.preset_manager.is_quarantined("weather")
@@ -1816,7 +1889,7 @@ def test_preset_tool_reloader_remove_conflicted_spares_foreign_tool(pg, emit):
             # because the name is occupied). A conflicted-delete fan-out for that name
             # must ONLY drop the quarantine entry — tearing the name down would
             # destroy the foreign tool that owns it.
-            body = PresetBody(base_tool="echo", description="d", fixed_kwargs={}, extensions=[], tags=[])
+            body = PresetBody(base_tool="echo", description="d", fixed_kwargs={}, extensions=[])
             await instance.app.versioning.store.create("preset", "weather", body.model_dump())
             await instance.app.preset_manager.rehydrate()
             assert instance.app.preset_manager.is_quarantined("weather")
@@ -1858,7 +1931,7 @@ def test_conflicted_reason_present_in_list_and_detail(pg, emit):
     async def run():
         async with instance.app.app_context(_manifest()):
             # A stored preset whose name is a live base tool quarantines on rehydrate.
-            body = PresetBody(base_tool="echo", description="d", fixed_kwargs={}, extensions=[], tags=[])
+            body = PresetBody(base_tool="echo", description="d", fixed_kwargs={}, extensions=[])
             await instance.app.versioning.store.create("preset", "weather", body.model_dump())
             await instance.app.preset_manager.rehydrate()
 
@@ -1904,7 +1977,7 @@ def test_referees_lists_referencing_presets(pg, emit):
             # Seeded through the GENERIC store (the referee scan reads active bodies,
             # not the live registry).
             composer = PresetBody(
-                base_tool="echo", description="d", fixed_kwargs={"tool_names": ["leaf"]}, extensions=[], tags=[]
+                base_tool="echo", description="d", fixed_kwargs={"tool_names": ["leaf"]}, extensions=[]
             )
             await instance.app.versioning.store.create("preset", "composer", composer.model_dump())
             data = _data(await router.preset_referees(_request("GET", "/api/presets/leaf/referees", name="leaf")))
@@ -2051,13 +2124,27 @@ def test_validate_version_provided_differing_base_tool(pg, emit):
     asyncio.run(run())
 
 
-def test_validate_version_provided_differing_description(pg, emit):
+def test_validate_version_differing_description_ok(pg, emit):
     async def run():
         async with instance.app.app_context(_manifest()):
             await _create_versioned("ver", fixed_kwargs={"units": "v"}, description="original")
+            # ``description`` IS a settable version field now — a differing non-empty
+            # value is a valid version draft, not a refusal.
             data = _data(await _validate({"name": "ver", "description": "changed"}))
+            assert data == {"valid": True, "error": None}
+
+    asyncio.run(run())
+
+
+def test_validate_version_empty_description_invalid(pg, emit):
+    async def run():
+        async with instance.app.app_context(_manifest()):
+            await _create_versioned("ver", fixed_kwargs={"units": "v"}, description="original")
+            # An explicit empty description is an invalid version draft (mirrors the
+            # store view's non-empty gate).
+            data = _data(await _validate({"name": "ver", "description": ""}))
             assert data["valid"] is False
-            assert data["error"] == "description is not a version field; it carries forward from the preset"
+            assert "description must not be empty" in data["error"]
 
     asyncio.run(run())
 
@@ -2080,7 +2167,7 @@ def test_validate_version_quarantined_is_invalid(pg, emit):
             # a transient cause (the name is occupied) that leaves the base tool
             # ``echo`` fully bindable, so the bind chain alone would say valid. The
             # version-mode door must mirror save_version's first gate and reject it.
-            body = PresetBody(base_tool="echo", description="d", fixed_kwargs={}, extensions=[], tags=[])
+            body = PresetBody(base_tool="echo", description="d", fixed_kwargs={}, extensions=[])
             await instance.app.versioning.store.create("preset", "weather", body.model_dump())
             await instance.app.preset_manager.rehydrate()
             assert instance.app.preset_manager.is_quarantined("weather")
@@ -2138,7 +2225,7 @@ def test_set_version_tags_reflected_in_list_no_rebind(pg, emit):
 def test_set_version_tags_clear(pg, emit):
     async def run():
         async with instance.app.app_context(_manifest()):
-            await _create_versioned("ver", fixed_kwargs={"units": "v"}, tags=["a"])
+            await _create_versioned("ver", fixed_kwargs={"units": "v"})
             resp = await router.set_preset_version_tags(
                 _request("PUT", "/api/presets/ver/versions/1/tags", body={"tags": []}, name="ver", version="1")
             )

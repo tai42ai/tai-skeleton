@@ -195,6 +195,7 @@ async def test_sections_lists_core_sections_with_secret_flags(monkeypatch):
         "connector_catalog",
         "connector_connections",
         "versioned_documents",
+        "tool_meta",
     }
     assert by_name["manifest"] is False
     assert by_name["env"] is True
@@ -208,6 +209,9 @@ async def test_sections_lists_core_sections_with_secret_flags(monkeypatch):
     assert by_name["versioned_documents"] is True
     # The connector catalog is a public template — no secrets — so it is not flagged.
     assert by_name["connector_catalog"] is False
+    # The tool-metadata overlay is organizational data (no credentials), so its
+    # section exports default-ON, not secret-gated.
+    assert by_name["tool_meta"] is False
     # The routing rows' export equals the grantable route-list read (each row's
     # callback_secret is excluded and re-minted on import), so it is not flagged.
     assert by_name["conversations"] is False

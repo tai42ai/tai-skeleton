@@ -33,6 +33,8 @@ def test_expected_tables_match_the_ddl() -> None:
         "access_control_policies",
         "access_control_routes",
         "marketplace_installs",
+        "tool_folders",
+        "tool_meta",
     }
 
 

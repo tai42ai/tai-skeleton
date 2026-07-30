@@ -68,3 +68,33 @@ def test_role_audit_append_only_triggers_present() -> None:
     assert "BEFORE UPDATE ON versioned_documents" in ddl
     # Every guard keys strictly on kind='role_audit' — no other kind is affected.
     assert ddl.count("'role_audit'") >= 3
+
+
+def test_tool_meta_overlay_tables_present() -> None:
+    """The tool-metadata overlay ships two plain tables: a folder tree and a
+    per-tool row. Text-level guards so a dropped/renamed table or a lost
+    invariant fails without a live Postgres."""
+    ddl = load_ddl()
+    assert "CREATE TABLE IF NOT EXISTS tool_folders" in ddl
+    assert "CREATE TABLE IF NOT EXISTS tool_meta" in ddl
+
+
+def test_tool_folders_root_name_uniqueness_uses_nulls_not_distinct() -> None:
+    """Root folders have `parent_id IS NULL`; without `NULLS NOT DISTINCT` the
+    default unique would never fire for them, silently allowing duplicate root
+    names. The modifier is REQUIRED on the sibling-name uniqueness constraint."""
+    match = re.search(r"CREATE TABLE IF NOT EXISTS tool_folders\s*\((.*?)\n\);", load_ddl(), re.DOTALL)
+    assert match is not None, "tool_folders table not found in DDL"
+    block = match.group(1)
+    assert re.search(r"UNIQUE\s+NULLS NOT DISTINCT\s*\(\s*parent_id\s*,\s*name\s*\)", block) is not None
+
+
+def test_tool_meta_hidden_is_nullable_tristate() -> None:
+    """`tool_meta.hidden` is a NULLABLE boolean — the tri-state that lets NULL mean
+    "defer to the plugin-declared visibility" while TRUE/FALSE force it. A
+    NOT-NULL column could not express the defer state."""
+    match = re.search(r"CREATE TABLE IF NOT EXISTS tool_meta\s*\((.*?)\n\);", load_ddl(), re.DOTALL)
+    assert match is not None, "tool_meta table not found in DDL"
+    block = match.group(1)
+    hidden_line = next(line for line in block.splitlines() if line.strip().startswith("hidden"))
+    assert "NOT NULL" not in hidden_line

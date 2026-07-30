@@ -107,10 +107,10 @@ async def _deregister_mcp(title: str) -> dict[str, Any]:
 
 async def _register_versioned(name: str, base_tool: str) -> None:
     await instance.app.presets.store.create_preset(
-        PresetSpec(name=name, description="d", base_tool=base_tool, fixed_kwargs={}), extensions=[], tags=[]
+        PresetSpec(name=name, description="d", base_tool=base_tool, fixed_kwargs={}), extensions=[]
     )
     body = await instance.app.presets.store.get_active_body(name)
-    await instance.app.preset_manager.register(name, body.base_tool, body.fixed_kwargs, [], [], body.description)
+    await instance.app.preset_manager.register(name, body.base_tool, body.fixed_kwargs, [], body.description)
 
 
 def test_reload_mcp_reregisters_dependent_preset_over_new_base(pg, monkeypatch):
@@ -119,7 +119,7 @@ def test_reload_mcp_reregisters_dependent_preset_over_new_base(pg, monkeypatch):
         async with instance.app.app_context(_manifest()):
             assert "svc_ping" in await instance.app.tools.get_tools()
             # A preset over the MCP base tool.
-            await instance.app.preset_manager.register("myp", "svc_ping", {}, [], [], "d")
+            await instance.app.preset_manager.register("myp", "svc_ping", {}, [], "d")
             old_parent = (await instance.app.tools.get_tool("myp")).parent_tool  # type: ignore[attr-defined]
 
             await _reload_mcp("svc")
@@ -171,7 +171,7 @@ def test_deregister_store_less_reconcile_opens_no_store(monkeypatch):
         monkeypatch.setattr(instance.app, "_probe_mcp", AsyncMock(return_value=[_FakeMcpTool()]))
         async with instance.app.app_context(_manifest()):
             # A preset over the MCP base tool, bound directly.
-            await instance.app.preset_manager.register("depp", "svc_ping", {}, [], [], "d")
+            await instance.app.preset_manager.register("depp", "svc_ping", {}, [], "d")
 
             await _deregister_mcp("svc")
 
@@ -193,7 +193,7 @@ def test_reload_mcp_refuses_name_owned_by_registered_preset(pg, monkeypatch):
         monkeypatch.setattr(instance.app, "_probe_mcp", AsyncMock(side_effect=TimeoutError("down")))
         async with instance.app.app_context(_manifest()):
             assert "svc_ping" not in await instance.app.tools.get_tools()
-            await instance.app.preset_manager.register("svc_ping", "echo", {}, [], [], "d")
+            await instance.app.preset_manager.register("svc_ping", "echo", {}, [], "d")
 
             instance.app._probe_mcp = AsyncMock(return_value=[_FakeMcpTool()])  # type: ignore[method-assign]
             result = await _reload_mcp("svc")

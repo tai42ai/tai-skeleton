@@ -67,7 +67,7 @@ def test_list_versions_rejected_without_auth(monkeypatch):
 
 def test_save_version_rejected_without_auth(monkeypatch):
     client = boundary_client(monkeypatch, _ROUTES, _STANCES)
-    assert client.post("/api/presets/p/versions", json={"tags": []}).status_code in (401, 403)
+    assert client.post("/api/presets/p/versions", json={"fixed_kwargs": {}}).status_code in (401, 403)
 
 
 def test_get_version_rejected_without_auth(monkeypatch):

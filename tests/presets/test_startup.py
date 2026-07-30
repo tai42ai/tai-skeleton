@@ -42,7 +42,7 @@ async def _seed(name: str, base_tool: str) -> None:
     """Persist a versioned preset directly through the generic store, so it is
     present in the store BEFORE the app boots (the create route's view guard is
     bypassed to also model a name that only became a foreign tool after persist)."""
-    body = PresetBody(base_tool=base_tool, description="d", fixed_kwargs={"units": "v"}, extensions=[], tags=[])
+    body = PresetBody(base_tool=base_tool, description="d", fixed_kwargs={"units": "v"}, extensions=[])
     await app.versioning.store.create("preset", name, body.model_dump())
 
 
@@ -62,7 +62,7 @@ def test_startup_hook_reregisters_versioned_preset(pg: FakeVersioningPg, store_c
 def test_startup_hook_quarantines_foreign_name_without_bricking_boot(pg: FakeVersioningPg, store_configured):
     async def run():
         # A persisted preset whose NAME is occupied by the live base tool "echo".
-        body = PresetBody(base_tool="weather", description="d", fixed_kwargs={}, extensions=[], tags=[])
+        body = PresetBody(base_tool="weather", description="d", fixed_kwargs={}, extensions=[])
         await app.versioning.store.create("preset", "echo", body.model_dump())
 
         # Boot succeeds (no raise) even though this preset can't register.
@@ -106,7 +106,7 @@ def test_startup_hook_preset_owned_base_quarantined_either_order(pg: FakeVersion
         # "chained" precedes "legit" by name (list_presets orders by name), and its
         # base_tool is a preset — quarantined regardless of load order.
         await _seed("legit", "weather")
-        chained = PresetBody(base_tool="legit", description="d", fixed_kwargs={}, extensions=[], tags=[])
+        chained = PresetBody(base_tool="legit", description="d", fixed_kwargs={}, extensions=[])
         await app.versioning.store.create("preset", "chained", chained.model_dump())
 
         async with app.app_context(_manifest()):

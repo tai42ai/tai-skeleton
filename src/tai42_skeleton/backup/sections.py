@@ -566,6 +566,21 @@ async def _import_versioned_documents(payload: dict[str, Any]) -> _SectionReport
     return await import_versioned_documents(payload)
 
 
+# -- tool_meta (the folder tree + per-tool organizational overlay) ------------
+
+
+async def _export_tool_meta() -> dict[str, Any]:
+    from tai42_skeleton.tool_meta.backup import export_tool_meta
+
+    return await export_tool_meta()
+
+
+async def _import_tool_meta(payload: dict[str, Any]) -> _SectionReport:
+    from tai42_skeleton.tool_meta.backup import import_tool_meta
+
+    return await import_tool_meta(payload)
+
+
 # -- registration ------------------------------------------------------------
 
 
@@ -612,3 +627,6 @@ def register_core_sections(registry: Any) -> None:
     registry.register_section(
         "versioned_documents", _export_versioned_documents, _import_versioned_documents, secret=True
     )
+    # The tool-metadata overlay (folders + per-tool rows). Not secret-bearing —
+    # organizational metadata only, no credentials — so it exports default-ON.
+    registry.register_section("tool_meta", _export_tool_meta, _import_tool_meta)

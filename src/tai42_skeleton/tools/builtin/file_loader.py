@@ -15,7 +15,7 @@ from tai42_contract.app import tai42_app
 from tai42_skeleton.template.media import MediaBlock
 
 
-@tai42_app.tools.tool
+@tai42_app.tools.tool(tags={"files"})
 async def file_loader(source: str) -> str | MediaBlock:
     """Load a file from a url or a storage resource id and return its content.
 

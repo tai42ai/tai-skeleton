@@ -197,7 +197,7 @@ def test_a_preset_is_decided_on_the_arguments_it_actually_fires(ac) -> None:
     # ``target`` in before synthesizing the resource path.
     async def run() -> None:
         async with app.app_context(_manifest()):
-            await app.preset_manager.register("probe_deploy", _FENCED_OP, {"target": "deploy"}, [], [], "d")
+            await app.preset_manager.register("probe_deploy", _FENCED_OP, {"target": "deploy"}, [], "d")
 
             assert await _run_as("k-admin", "probe_deploy", {"mark": "m"}) == "fenced:deploy:m"
 

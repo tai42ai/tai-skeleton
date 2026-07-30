@@ -369,3 +369,54 @@ CREATE TABLE IF NOT EXISTS marketplace_installs (
 );
 -- `ref` is the sole point-read path (`WHERE ref = %s`); the installed listing
 -- enumerates the table. Operator-sized (tens of rows), no further indexes.
+
+-- ============================================================
+-- Tool metadata overlay — folders + per-tool organizational row
+-- ============================================================
+-- An UNVERSIONED organizational layer over ANY tool in the namespace (native
+-- plugin tools, presets, flows alike), kept separate from tool behavior.
+-- `tool_folders` is a tree of real folder entities (endless nesting via
+-- `parent_id`); `tool_meta` is a per-tool row keyed by tool name carrying a
+-- display name, a folder placement, user tags, and a tri-state hidden override.
+-- Both are plain single-tenant tables (each user runs their own stack). Rows are
+-- written by the tool_meta store and cascaded by the preset lifecycle; a dangling
+-- overlay row for an uninstalled plugin tool is kept by design (the UI hides it,
+-- and it returns on reinstall).
+CREATE TABLE IF NOT EXISTS tool_folders (
+    id         UUID         NOT NULL DEFAULT gen_random_uuid(),
+    name       TEXT         NOT NULL,
+    parent_id  UUID         REFERENCES tool_folders(id),
+    created_at TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    PRIMARY KEY (id),
+    -- Sibling folder names are unique within a parent. `NULLS NOT DISTINCT` is
+    -- REQUIRED: root folders have `parent_id IS NULL`, and Postgres's default
+    -- NULLS-DISTINCT unique would never fire for them, silently allowing duplicate
+    -- root names (fleet target is postgres:16, which supports the modifier). Cycle
+    -- prevention is enforced in the store (the parent chain is walked on
+    -- move/create), not expressible as a table constraint.
+    CONSTRAINT tool_folders_parent_name_unique UNIQUE NULLS NOT DISTINCT (parent_id, name)
+);
+-- `parent_id` drives child enumeration (`WHERE parent_id = %s`, plus the `IS NULL`
+-- root read) and the FK to the parent folder; the unique constraint indexes
+-- (parent_id, name). Operator-sized (tens of folders), no further indexes.
+
+-- One organizational overlay row per tool, keyed by tool name. `hidden` is
+-- TRI-STATE: NULL = no user opinion (the plugin-declared visibility applies),
+-- TRUE = force hidden, FALSE = force visible (unhide a plugin-hidden tool) — a
+-- NOT-NULL boolean could not express "unhide a plugin-hidden tool". `folder_id`
+-- places the tool in a folder (NULL = unfiled); `tags` is the user's editable
+-- categorization (merged with plugin-native tags by the UI). Hidden is UI
+-- visibility only, never a security boundary — the tool stays callable.
+CREATE TABLE IF NOT EXISTS tool_meta (
+    tool_name    TEXT         NOT NULL,
+    display_name TEXT,
+    folder_id    UUID         REFERENCES tool_folders(id),
+    tags         TEXT[]       NOT NULL DEFAULT '{}',
+    hidden       BOOLEAN,
+    created_at   TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    PRIMARY KEY (tool_name)
+);
+-- `tool_name` is the sole point-read / upsert key (`WHERE tool_name = %s`); the
+-- overlay enumerates the table whole for the list read. `folder_id` is read for
+-- the empty-folder-delete guard (`WHERE folder_id = %s`). Operator-sized, no
+-- further indexes.

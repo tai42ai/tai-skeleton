@@ -45,16 +45,15 @@ def _live_tool_names() -> list[str]:
     return [c.name for c in components.values() if isinstance(c, Tool)]
 
 
-async def _create_versioned(name: str, base_tool: str, fixed_kwargs, extensions, tags, description="d") -> None:
+async def _create_versioned(name: str, base_tool: str, fixed_kwargs, extensions, description="d") -> None:
     """Persist a versioned preset AND register it — the create route's two steps."""
     await app.presets.store.create_preset(
         PresetSpec(name=name, description=description, base_tool=base_tool, fixed_kwargs=fixed_kwargs),
         extensions=extensions,
-        tags=tags,
     )
     body = await app.presets.store.get_active_body(name)
     await app.preset_manager.register(
-        name, body.base_tool, body.fixed_kwargs, body.extensions, body.tags, body.description
+        name, body.base_tool, body.fixed_kwargs, body.extensions, body.description
     )
 
 
@@ -65,7 +64,7 @@ def test_register_binds_runnable_tool_and_rejects_baked_key(pg: FakeVersioningPg
     async def run():
         async with app.app_context(_manifest()):
             mgr = app.preset_manager
-            await mgr.register("paris", "weather", {"units": "imperial"}, [], [], "Paris weather")
+            await mgr.register("paris", "weather", {"units": "imperial"}, [], "Paris weather")
 
             assert "paris" in await app.tools.get_tools()
             # The baked value is served as a fixed constant...
@@ -82,7 +81,7 @@ def test_register_binds_runnable_tool_and_rejects_baked_key(pg: FakeVersioningPg
 def test_versioned_preset_runnable_and_typed_schema(pg: FakeVersioningPg):
     async def run():
         async with app.app_context(_manifest()):
-            await _create_versioned("wv", "weather", {"units": "imperial"}, [], [])
+            await _create_versioned("wv", "weather", {"units": "imperial"}, [])
             assert await app.tools.run_tool("wv", {"city": "x"}) == {"city": "x", "units": "imperial"}
 
             # The baked key is HIDDEN from the exposed schema; the remaining arg
@@ -102,13 +101,13 @@ def test_spec_map_serves_active_baked_kwargs(pg: FakeVersioningPg):
     async def run():
         async with app.app_context(_manifest()):
             mgr = app.preset_manager
-            await mgr.register("eph", "weather", {"units": "eph"}, [], ["t"], "d")
-            await _create_versioned("ver", "weather", {"units": "v1"}, [], ["cat"])
+            await mgr.register("eph", "weather", {"units": "eph"}, [], "d")
+            await _create_versioned("ver", "weather", {"units": "v1"}, [], description="Version one")
 
             # The spec map is the source of truth for baked kwargs.
             assert mgr.baked_kwargs("eph") == {"units": "eph"}
             assert mgr.baked_kwargs("ver") == {"units": "v1"}
-            assert mgr.get_spec("ver").tags == ["cat"]
+            assert mgr.get_spec("ver").description == "Version one"
             assert set(mgr.registered_names()) == {"eph", "ver"}
 
             # The map stays in lockstep with the active version after an edit.
@@ -130,7 +129,7 @@ def test_reload_and_rollback_serve_right_kwargs(pg: FakeVersioningPg):
         async with app.app_context(_manifest()):
             store = app.presets.store
             mgr = app.preset_manager
-            await _create_versioned("wv", "weather", {"units": "v1"}, [], [])
+            await _create_versioned("wv", "weather", {"units": "v1"}, [])
 
             await store.save_version("wv", fixed_kwargs={"units": "v2"})
             await mgr.reload("wv")
@@ -148,7 +147,7 @@ def test_save_version_numbering_is_max_plus_one_post_rollback(pg: FakeVersioning
         async with app.app_context(_manifest()):
             store = app.presets.store
             mgr = app.preset_manager
-            await _create_versioned("wv", "weather", {"units": "v1"}, [], [])
+            await _create_versioned("wv", "weather", {"units": "v1"}, [])
             for units in ("v2", "v3", "v4", "v5"):
                 await store.save_version("wv", fixed_kwargs={"units": units})
             await store.rollback("wv", 2)  # active trails MAX
@@ -171,7 +170,7 @@ def test_wrapper_branch_of_preset_keeps_preset_description(pg: FakeVersioningPg)
             # BRANCH BASE callable's docstring (not the ``Tool`` object's class
             # docstring), so the wrapper is recognized as authoring no new
             # description and the preset's own description survives onto the branch.
-            await _create_versioned("shouty", "echo", {}, [["exta"]], [], description="Preset desc")
+            await _create_versioned("shouty", "echo", {}, [["exta"]], description="Preset desc")
 
             base = await app.tools.get_tool("shouty")
             branch = await app.tools.get_tool("shouty_exta")
@@ -189,7 +188,7 @@ def test_extensions_two_combos_survive_versioning(pg: FakeVersioningPg):
         async with app.app_context(_manifest()):
             store = app.presets.store
             mgr = app.preset_manager
-            await _create_versioned("shouty", "echo", {}, [["exta"], ["extb"]], [])
+            await _create_versioned("shouty", "echo", {}, [["exta"], ["extb"]])
 
             # Bare name runnable + BOTH independent branches + NO stacked branch.
             tools = set(await app.tools.get_tools())
@@ -227,7 +226,7 @@ def test_remove_tears_down_base_and_branches(pg: FakeVersioningPg):
     async def run():
         async with app.app_context(_manifest()):
             mgr = app.preset_manager
-            await _create_versioned("shouty", "echo", {}, [["exta"], ["extb"]], [])
+            await _create_versioned("shouty", "echo", {}, [["exta"], ["extb"]])
             assert {"shouty", "shouty_exta", "shouty_extb"} <= set(await app.tools.get_tools())
 
             await mgr.remove("shouty")
@@ -242,21 +241,21 @@ def test_remove_tears_down_base_and_branches(pg: FakeVersioningPg):
     asyncio.run(run())
 
 
-# -- categorization tags -> native FastMCP tags (re-projected on reload) -----
+# -- body description -> tool description (re-projected on reload) ------------
 
 
-def test_body_tags_project_to_native_tags_and_survive_reload(pg: FakeVersioningPg):
+def test_body_description_projects_to_tool_and_survives_reload(pg: FakeVersioningPg):
     async def run():
         async with app.app_context(_manifest()):
             mgr = app.preset_manager
-            await _create_versioned("wv", "weather", {"units": "v1"}, [], ["geo", "eu"])
-            assert (await app.tools.get_tool("wv")).tags == {"geo", "eu"}
+            await _create_versioned("wv", "weather", {"units": "v1"}, [], description="Weather v1")
+            assert (await app.tools.get_tool("wv")).description == "Weather v1"
 
-            # A simulated reload wipes native tags; rehydrate re-projects them
-            # from the persisted body.
+            # A simulated reload wipes the runtime tool; rehydrate re-projects the
+            # description from the persisted body.
             await mgr.remove("wv")
             await mgr.rehydrate()
-            assert (await app.tools.get_tool("wv")).tags == {"geo", "eu"}
+            assert (await app.tools.get_tool("wv")).description == "Weather v1"
 
     asyncio.run(run())
 
@@ -271,9 +270,8 @@ def test_name_conflict_raises_before_store_write(pg: FakeVersioningPg):
             assert await app.preset_manager.name_conflicts("weather") is True
             with pytest.raises(PresetNameConflictError):
                 await app.presets.store.create_preset(
-                    PresetSpec(name="weather", base_tool="echo", fixed_kwargs={}),
+                    PresetSpec(name="weather", description="d", base_tool="echo", fixed_kwargs={}),
                     extensions=[],
-                    tags=[],
                 )
             assert pg.documents == []  # nothing persisted
 
@@ -288,7 +286,7 @@ def test_register_rejects_invalid_name(pg: FakeVersioningPg):
             # bind (the create route's 400 guard shares this rule).
             for bad in ("a/b", "x" * 65, "bad name"):
                 with pytest.raises(ValueError, match="invalid preset name"):
-                    await app.preset_manager.register(bad, "echo", {}, [], [], "d")
+                    await app.preset_manager.register(bad, "echo", {}, [], "d")
 
     asyncio.run(run())
 
@@ -299,7 +297,7 @@ def test_register_failure_leaves_no_partial_registration(pg: FakeVersioningPg):
             mgr = app.preset_manager
             # An unknown extension makes the branch bind raise inside register.
             with pytest.raises(TaiValidationError):
-                await mgr.register("bad", "echo", {}, [["ghost_ext"]], [], "d")
+                await mgr.register("bad", "echo", {}, [["ghost_ext"]], "d")
             tools = set(await app.tools.get_tools())
             assert "bad" not in tools
             assert not mgr.is_registered("bad")
@@ -317,7 +315,7 @@ def test_edit_path_reload_failure_restores_old_registration(pg: FakeVersioningPg
         async with app.app_context(_manifest()):
             store = app.presets.store
             mgr = app.preset_manager
-            await _create_versioned("wv", "echo", {}, [["exta"]], [])
+            await _create_versioned("wv", "echo", {}, [["exta"]])
             assert await app.tools.run_tool("wv_exta", {"text": "hi"}) == "hi|a"
 
             # A new version whose extensions reference an unknown ext will fail the
@@ -344,8 +342,8 @@ def test_rehydrate_reregisters_only_store_backed_presets(pg: FakeVersioningPg):
             mgr = app.preset_manager
             # A registration with no store row (bound directly, never persisted)
             # alongside a persisted one.
-            await mgr.register("unbacked", "weather", {"units": "e"}, [], [], "d")
-            await _create_versioned("ver", "weather", {"units": "v"}, [], [])
+            await mgr.register("unbacked", "weather", {"units": "e"}, [], "d")
+            await _create_versioned("ver", "weather", {"units": "v"}, [])
 
             # Simulate reload_config wiping every runtime preset, then rehydrate.
             for name in ("unbacked", "ver"):
@@ -370,8 +368,8 @@ def test_rehydrate_skips_record_whose_active_body_is_absent(pg: FakeVersioningPg
             # record whose active body is already gone. Model that read-skew: both
             # records survive in ``list_presets`` while ``absent`` is dropped from
             # the active-body map.
-            await _create_versioned("present", "weather", {"units": "v"}, [], [])
-            await _create_versioned("absent", "weather", {"units": "g"}, [], [])
+            await _create_versioned("present", "weather", {"units": "v"}, [])
+            await _create_versioned("absent", "weather", {"units": "g"}, [])
 
             # Simulate reload_config wiping every runtime preset before rehydrate.
             for name in ("present", "absent"):
@@ -415,7 +413,7 @@ def test_rehydrate_quarantines_foreign_name(pg: FakeVersioningPg):
             # create-time collision guard (rightly) blocks this via the preset
             # view, so seed through the generic store to model a name that only
             # BECAME a base tool after the preset was persisted.
-            body = PresetBody(base_tool="echo", description="d", fixed_kwargs={}, extensions=[], tags=[])
+            body = PresetBody(base_tool="echo", description="d", fixed_kwargs={}, extensions=[])
             await app.versioning.store.create("preset", "weather", body.model_dump())
             await mgr.rehydrate()  # app still boots — no raise
 
@@ -436,7 +434,7 @@ def test_rehydrate_quarantines_missing_base_tool(pg: FakeVersioningPg):
         async with app.app_context(_manifest()):
             mgr = app.preset_manager
             await app.presets.store.create_preset(
-                PresetSpec(name="orphan", base_tool="gone_tool", fixed_kwargs={}), extensions=[], tags=[]
+                PresetSpec(name="orphan", description="d", base_tool="gone_tool", fixed_kwargs={}), extensions=[]
             )
             await mgr.rehydrate()
             assert mgr.is_quarantined("orphan")
@@ -452,9 +450,9 @@ def test_rehydrate_quarantines_preset_owned_base(pg: FakeVersioningPg):
             mgr = app.preset_manager
             # A valid versioned preset, plus another whose base_tool is that preset
             # — a preset may not be another preset's base, in EITHER load order.
-            await _create_versioned("base_preset", "weather", {"units": "v"}, [], [])
+            await _create_versioned("base_preset", "weather", {"units": "v"}, [])
             await app.presets.store.create_preset(
-                PresetSpec(name="chained", base_tool="base_preset", fixed_kwargs={}), extensions=[], tags=[]
+                PresetSpec(name="chained", description="d", base_tool="base_preset", fixed_kwargs={}), extensions=[]
             )
             await mgr.remove("base_preset")  # clear runtime state before the rehydrate
             await mgr.rehydrate()
@@ -470,7 +468,7 @@ def test_rehydrate_idempotent_self_registration_no_conflict(pg: FakeVersioningPg
     async def run():
         async with app.app_context(_manifest()):
             mgr = app.preset_manager
-            await _create_versioned("wv", "weather", {"units": "v"}, [["exta"]], [])
+            await _create_versioned("wv", "weather", {"units": "v"}, [["exta"]])
             # A second rehydrate (as a redundant reload would trigger) rebuilds the
             # same preset cleanly — no conflict, still runnable, exactly one branch.
             await mgr.rehydrate()
@@ -493,7 +491,7 @@ def test_quarantine_reason_readable_and_cleared(pg: FakeVersioningPg):
         async with app.app_context(_manifest()):
             mgr = app.preset_manager
             # A stored preset whose name is a live base tool quarantines on rehydrate.
-            body = PresetBody(base_tool="echo", description="d", fixed_kwargs={}, extensions=[], tags=[])
+            body = PresetBody(base_tool="echo", description="d", fixed_kwargs={}, extensions=[])
             await app.versioning.store.create("preset", "weather", body.model_dump())
             await mgr.rehydrate()
 
@@ -516,7 +514,7 @@ def test_quarantine_reason_bulk_reset_is_coherent(pg: FakeVersioningPg):
         async with app.app_context(_manifest()):
             mgr = app.preset_manager
             await app.presets.store.create_preset(
-                PresetSpec(name="orphan", base_tool="gone_tool", fixed_kwargs={}), extensions=[], tags=[]
+                PresetSpec(name="orphan", description="d", base_tool="gone_tool", fixed_kwargs={}), extensions=[]
             )
             await mgr.rehydrate()
             assert "gone_tool" in (mgr.quarantine_reason("orphan") or "")
@@ -535,7 +533,7 @@ def test_reconcile_quarantines_on_reregister_failure(pg: FakeVersioningPg, monke
     async def run():
         async with app.app_context(_manifest()):
             mgr = app.preset_manager
-            await _create_versioned("wv", "weather", {"units": "v"}, [], [])
+            await _create_versioned("wv", "weather", {"units": "v"}, [])
 
             # The base tool is still live, but re-registration fails (the environment
             # changed after the reload) — the preset is quarantined, never left

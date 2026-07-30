@@ -28,6 +28,7 @@ from tai42_skeleton.app.facets import (
     PresetsFacet,
     StorageFacet,
     SubAppFacet,
+    ToolMetaFacet,
     ToolsFacet,
     VersioningFacet,
     WebhookVerifiersFacet,
@@ -56,6 +57,7 @@ if TYPE_CHECKING:
     from tai42_contract.app import TaiApp
     from tai42_contract.conversations import DeliveryReceipt
     from tai42_contract.presets import PresetStore
+    from tai42_contract.tool_meta import ToolMetaStore
 
     from tai42_skeleton.versioning.store import PostgresVersionedStore
 
@@ -152,6 +154,7 @@ class TaiMCP(TaiMCPLifecycleMixin):
         self._backup_facet = BackupFacet(self)
         self._versioning_facet = VersioningFacet(self)
         self._presets_facet = PresetsFacet(self)
+        self._tool_meta_facet = ToolMetaFacet(self)
 
         # The preset register/reload engine — a process-lifetime singleton (like
         # the tool binding) owning the authoritative spec map + quarantine set, so
@@ -237,6 +240,13 @@ class TaiMCP(TaiMCPLifecycleMixin):
     @property
     def presets(self) -> PresetsFacet:
         return self._presets_facet
+
+    @property
+    def tool_meta(self) -> ToolMetaFacet:
+        """The tool-metadata overlay facet (folders + per-tool rows). Skeleton-only
+        surface, like ``preset_manager`` — reached by the tool_meta routes and the
+        preset lifecycle cascade through this concrete instance."""
+        return self._tool_meta_facet
 
     # -- Raw FastMCP escape hatch (skeleton-only, ungoverned) ----------------
 
@@ -433,6 +443,12 @@ class TaiMCP(TaiMCPLifecycleMixin):
         # with a live non-preset base tool.
         return preset_store(name_conflicts=self._preset_manager.name_conflicts)
 
+    @property
+    def _tool_meta_store(self) -> "ToolMetaStore":
+        from tai42_skeleton.tool_meta import tool_meta_store
+
+        return tool_meta_store()
+
     async def _preset_bind(
         self,
         base_tool: str,
@@ -440,7 +456,6 @@ class TaiMCP(TaiMCPLifecycleMixin):
         *,
         name: str,
         description: str = "",
-        tags: list[str] | None = None,
         output_schema: dict[str, Any] | None = None,
     ) -> "Tool":
         from tai42_skeleton.presets import preset_bind
@@ -453,7 +468,6 @@ class TaiMCP(TaiMCPLifecycleMixin):
             fixed_kwargs,
             name=name,
             description=description,
-            tags=tags,
             output_schema=output_schema,
         )
 

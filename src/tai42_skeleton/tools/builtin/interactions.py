@@ -23,7 +23,7 @@ _ANSWER_SCHEMA: dict[str, Any] = {
 }
 
 
-@tai42_app.tools.tool(output_schema=_ANSWER_SCHEMA)
+@tai42_app.tools.tool(output_schema=_ANSWER_SCHEMA, tags={"interactions"})
 async def ask_user(
     question: str,
     answer_format: str = "text",

@@ -6,7 +6,7 @@ rebuilt. It owns three pieces of process-lifetime state, held in lockstep with
 what is actually bound:
 
 * an **authoritative in-memory spec map** ``name -> PresetBody`` (``base_tool``,
-  ``description``, ``fixed_kwargs``, ``extensions``, ``tags``) — the source of
+  ``description``, ``fixed_kwargs``, ``extensions``) — the source of
   truth for a registered preset's baked kwargs. The kernel bakes the values as
   hidden ``ArgTransform`` defaults with no readable closure, so both the tool
   face and the ephemeral-agent run path read baked kwargs FROM THIS MAP
@@ -150,7 +150,6 @@ class PresetManager:
         base_tool: str,
         fixed_kwargs: dict[str, Any],
         extensions: Sequence[Sequence[ExtensionElement]],
-        tags: list[str],
         description: str = "",
         output_schema: dict[str, Any] | None = None,
     ) -> None:
@@ -164,7 +163,7 @@ class PresetManager:
         if not is_valid_preset_name(name):
             raise ValueError(f"invalid preset name {name!r}: must match {_PRESET_NAME_RE.pattern}")
         async with self._locks[name]:
-            await self._register(name, base_tool, fixed_kwargs, extensions, tags, description, output_schema)
+            await self._register(name, base_tool, fixed_kwargs, extensions, description, output_schema)
 
     async def _register(
         self,
@@ -172,7 +171,6 @@ class PresetManager:
         base_tool: str,
         fixed_kwargs: dict[str, Any],
         extensions: Sequence[Sequence[ExtensionElement]],
-        tags: list[str],
         description: str = "",
         output_schema: dict[str, Any] | None = None,
     ) -> None:
@@ -196,7 +194,7 @@ class PresetManager:
         if name in await self._app.tools.get_tools():
             raise PresetNameConflictError(name)
         tool_obj = await self._app.presets.bind(
-            base_tool, fixed_kwargs, name=name, description=description, tags=tags, output_schema=output_schema
+            base_tool, fixed_kwargs, name=name, description=description, output_schema=output_schema
         )
         try:
             # Clear any stale registry entry for ``name`` first — the seed below is
@@ -222,7 +220,6 @@ class PresetManager:
             description=description,
             fixed_kwargs=fixed_kwargs,
             extensions=[list(combo) for combo in extensions],
-            tags=tags,
             output_schema=output_schema,
         )
 
@@ -235,7 +232,7 @@ class PresetManager:
         Tears the base AND every branch tool down BEFORE re-registering (so a
         reload never re-binds over a live branch), then registers from the whole
         active body (``base_tool``, ``description``, ``fixed_kwargs``,
-        ``extensions``, ``tags``). Never drops the live primitive: the
+        ``extensions``). Never drops the live primitive: the
         currently-live spec is captured before teardown and, if the re-register
         from the new body raises, RESTORED so base + branches survive, then the
         register error is re-raised loudly. The already-committed store bump is
@@ -256,7 +253,6 @@ class PresetManager:
                     body.base_tool,
                     body.fixed_kwargs,
                     body.extensions,
-                    body.tags,
                     body.description,
                     body.output_schema,
                 )
@@ -267,7 +263,6 @@ class PresetManager:
                         captured.base_tool,
                         captured.fixed_kwargs,
                         captured.extensions,
-                        captured.tags,
                         captured.description,
                         captured.output_schema,
                     )
@@ -316,7 +311,6 @@ class PresetManager:
                             body.base_tool,
                             body.fixed_kwargs,
                             body.extensions,
-                            body.tags,
                             body.description,
                             body.output_schema,
                         )
@@ -403,7 +397,7 @@ class PresetManager:
             return
         try:
             await self._register(
-                name, base, body.fixed_kwargs, body.extensions, body.tags, body.description, body.output_schema
+                name, base, body.fixed_kwargs, body.extensions, body.description, body.output_schema
             )
         except Exception:
             reason = "registration failed"

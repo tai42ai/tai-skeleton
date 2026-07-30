@@ -121,7 +121,10 @@ def _reset_preset_registry():
 
 
 async def _create(name: str, base_tool: str, **over: Any):
-    body: dict[str, Any] = {"name": name, "base_tool": base_tool}
+    # ``description`` is required non-empty on create; supply a default so a test
+    # exercising the output_schema surface need not repeat it (an explicit
+    # ``description=`` in ``over`` still wins).
+    body: dict[str, Any] = {"name": name, "base_tool": base_tool, "description": "an output-schema preset"}
     body.update(over)
     return await router.create_preset(_request("POST", "/api/presets", body=body))
 
@@ -264,8 +267,10 @@ def test_output_schema_version_round_trip_and_carry_forward_modes(pg):
         async with instance.app.app_context(_manifest()):
             assert (await _create("v", "weather", output_schema=_OBJ_SCHEMA)).status_code == 200
 
-            # Mode 1 — omitted carries forward (a tags-only save keeps the schema).
-            r1 = await router.save_version(_request("POST", "/api/presets/v/versions", body={"tags": ["x"]}, name="v"))
+            # Mode 1 — omitted carries forward (a description-only save keeps the schema).
+            r1 = await router.save_version(
+                _request("POST", "/api/presets/v/versions", body={"description": "edited"}, name="v")
+            )
             assert r1.status_code == 200, _err(r1)
             got = _data(await router.get_preset(_request("GET", "/api/presets/v", name="v")))
             assert got["output_schema"] == _OBJ_SCHEMA

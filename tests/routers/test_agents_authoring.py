@@ -191,7 +191,10 @@ def _reset_preset_registry():
 
 
 async def _author(name: str, *, base_tool: str = "authorable_agent", **over: Any) -> Response:
-    body = {"name": name, "base_tool": base_tool}
+    # ``description`` is required non-empty on the create/author door; supply a
+    # default so the authoring cases need not repeat it (an explicit ``description=``
+    # in ``over`` still wins).
+    body = {"name": name, "base_tool": base_tool, "description": "an authored agent"}
     body.update(over)
     return await presets_router.create_preset(_json_request("POST", "/api/presets", body=body))
 
@@ -364,7 +367,7 @@ def test_author_unknown_preset_base_reference_400(pg, emit):
         async with instance.app.app_context(_manifest()):
             resp = await _author(
                 "authored",
-                fixed_kwargs={"presets": [{"name": "p", "base_tool": "nope", "fixed_kwargs": {}}]},
+                fixed_kwargs={"presets": [{"name": "p", "base_tool": "nope", "fixed_kwargs": {}, "description": "p"}]},
             )
             assert resp.status_code == 400
             assert "nope" in _err(resp)
@@ -381,13 +384,18 @@ def test_author_preset_typed_base_reference_400(pg, emit):
                 _json_request(
                     "POST",
                     "/api/presets",
-                    body={"name": "basep", "base_tool": "weather", "fixed_kwargs": {"units": "v"}},
+                    body={
+                        "name": "basep",
+                        "base_tool": "weather",
+                        "fixed_kwargs": {"units": "v"},
+                        "description": "base preset",
+                    },
                 )
             )
             assert resp0.status_code == 200, _err(resp0)
             resp = await _author(
                 "authored",
-                fixed_kwargs={"presets": [{"name": "p", "base_tool": "basep", "fixed_kwargs": {}}]},
+                fixed_kwargs={"presets": [{"name": "p", "base_tool": "basep", "fixed_kwargs": {}, "description": "p"}]},
             )
             assert resp.status_code == 400
             assert "itself a preset" in _err(resp)
@@ -425,7 +433,7 @@ def test_author_valid_spec_registers_and_runs_as_tool(pg, emit):
                 fixed_kwargs={
                     "system_prompt": "you are helpful",
                     "tool_names": ["echo", "weather"],
-                    "presets": [{"name": "p", "base_tool": "echo", "fixed_kwargs": {}}],
+                    "presets": [{"name": "p", "base_tool": "echo", "fixed_kwargs": {}, "description": "p"}],
                     "subagents": [{"name": "sub", "tool_names": ["echo"]}],
                 },
             )
@@ -622,7 +630,12 @@ def test_authored_run_over_tool_preset_400(pg, emit):
                 _json_request(
                     "POST",
                     "/api/presets",
-                    body={"name": "toolp", "base_tool": "weather", "fixed_kwargs": {"units": "v"}},
+                    body={
+                        "name": "toolp",
+                        "base_tool": "weather",
+                        "fixed_kwargs": {"units": "v"},
+                        "description": "a tool preset",
+                    },
                 )
             )
             assert resp.status_code == 200, _err(resp)
@@ -764,13 +777,13 @@ def test_locked_agent_save_version_valid_edit_reaches_agent(pg, emit):
     asyncio.run(run())
 
 
-def test_locked_agent_save_version_tags_only_skips_gate(pg, emit, monkeypatch):
+def test_locked_agent_save_version_description_only_skips_gate(pg, emit, monkeypatch):
     async def run():
         async with instance.app.app_context(_manifest()):
             await _author("locked", base_tool="locked_agent", fixed_kwargs={"secret_config": {"a": 1}})
 
-            # A tags-only edit (no ``fixed_kwargs`` in the body) must never invoke the
-            # authoring gate — pin it with a spy over ``_agent_authoring_error``. The
+            # A description-only edit (no ``fixed_kwargs`` in the body) must never invoke
+            # the authoring gate — pin it with a spy over ``_agent_authoring_error``. The
             # gate lives on the operation, so the seam is spied there.
             calls: list[str] = []
             real = preset_ops._agent_authoring_error
@@ -780,7 +793,7 @@ def test_locked_agent_save_version_tags_only_skips_gate(pg, emit, monkeypatch):
                 return await real(base_tool, fixed_kwargs)
 
             monkeypatch.setattr(preset_ops, "_agent_authoring_error", spy)
-            resp = await presets_router.save_version(_save_locked_version({"tags": ["blue"]}))
+            resp = await presets_router.save_version(_save_locked_version({"description": "blue"}))
             assert resp.status_code == 200, _err(resp)
             assert calls == []
 
@@ -823,6 +836,22 @@ def test_author_invalid_preset_spec_reference_400(pg, emit):
             resp = await _author("authored", fixed_kwargs={"presets": [{"name": "p"}]})
             assert resp.status_code == 400
             assert "not a valid preset spec" in _err(resp)
+
+    asyncio.run(run())
+
+
+def test_author_inline_preset_empty_description_400(pg, emit):
+    async def run():
+        async with instance.app.app_context(_manifest()):
+            # An inline ``presets`` entry becomes a bound tool whose docstring IS its
+            # description, fed verbatim to the LLM — an empty one is a behavioral defect
+            # refused loudly at authoring, exactly as the create door refuses it.
+            resp = await _author(
+                "authored",
+                fixed_kwargs={"presets": [{"name": "p", "base_tool": "echo", "fixed_kwargs": {}, "description": ""}]},
+            )
+            assert resp.status_code == 400
+            assert "description must not be empty" in _err(resp)
 
     asyncio.run(run())
 

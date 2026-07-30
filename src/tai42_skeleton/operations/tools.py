@@ -4,7 +4,7 @@ app-management tools (run, reload, and remove a tool).
 Reads:
 
 * ``list_tools`` — the sorted registered tool names.
-* ``tool_tags`` — the per-tool native-``tags`` map.
+* ``tool_tags`` — the per-tool native-``tags`` map plus plugin-declared visibility.
 * ``tool_schema`` — one tool's input/output/description (unknown name → 404).
 * ``tools_schema`` — the same schema view for every tool, keyed by name.
 
@@ -94,13 +94,20 @@ async def list_tools() -> list[str]:
     return sorted(tools.keys())
 
 
-@operation(summary="List each tool's native tags", tags=["tools"])
+@operation(summary="List each tool's native tags and declared visibility", tags=["tools"])
 async def tool_tags() -> list[dict]:
-    """The per-tool native-``tags`` map — one ``{name, tags}`` entry per registered
-    tool, ``tags`` sorted for a stable wire order. Additive to the flat names
+    """The per-tool native-``tags`` map plus the plugin-declared visibility — one
+    ``{name, tags, hidden}`` entry per registered tool, ``tags`` sorted for a stable
+    wire order. ``hidden`` is the tool's OWN declaration, read from the FastMCP
+    ``meta`` under the namespaced ``tai42/hidden`` key (a tool that never declared it
+    is not hidden). The tool_meta overlay's tri-state override is merged on top
+    client-side; this read exposes only the declaration. Additive to the flat names
     contract; a tool with no tags carries an empty list."""
     tools = await tai42_app.tools.get_tools()
-    return [{"name": name, "tags": sorted(tool.tags)} for name, tool in sorted(tools.items())]
+    return [
+        {"name": name, "tags": sorted(tool.tags), "hidden": (tool.meta or {}).get("tai42/hidden") is True}
+        for name, tool in sorted(tools.items())
+    ]
 
 
 @operation(summary="Get one tool's input/output schema", tags=["tools"], errors=[NotFoundError])

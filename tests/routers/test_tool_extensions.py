@@ -393,7 +393,7 @@ def test_post_on_preset_tool_not_provided(cfg):
             # A preset tool is registered by the engine, provided by NO manifest
             # config — its extensions are authored via the presets API, so the
             # manifest route correctly refuses it.
-            await instance.app.preset_manager.register("pre", "shout", {}, [], [], "d")
+            await instance.app.preset_manager.register("pre", "shout", {}, [], "d")
             assert "pre" in await _tools()
             resp = await _post("pre", [["marka"]])
             assert resp.status_code == 400

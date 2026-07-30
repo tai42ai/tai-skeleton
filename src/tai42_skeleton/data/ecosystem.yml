@@ -10,8 +10,8 @@
 # `entries` is a list; each entry is:
 #   name        registration name (the tool/extension/connector/... identifier)
 #   kind        one of: tool | agent | extension | connector | channel |
-#               accounts | identity | backend | storage | monitoring |
-#               webhook-verifier | config
+#               backend | storage | monitoring | webhook-verifier | config |
+#               identity | studio-plugin | router | middleware
 #   group       the category / kind detail (management family, ExtensionKind,
 #               connector category, config mode, ...)
 #   package     the distribution the registration ships in
@@ -313,13 +313,13 @@ entries:
 
   # -- Accounts providers ----------------------------------------------------
   - name: accounts-postgres
-    kind: accounts
+    kind: identity
     group: password
     package: tai42-accounts-postgres
     module: tai42_accounts_postgres
     description: Postgres-backed accounts provider — password login, sessions, invites, and first-run bootstrap.
   - name: accounts-oidc
-    kind: accounts
+    kind: identity
     group: oidc
     package: tai42-accounts-oidc
     module: tai42_accounts_oidc

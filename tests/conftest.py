@@ -37,7 +37,9 @@ import pytest
 from tai42_kit.settings import reset_all_settings
 
 import tai42_skeleton.connectors.store.catalog_store as catalog_store
+import tai42_skeleton.tool_meta.store as tool_meta_store
 from tests._fakes.interactions_redis import FakeRedis
+from tests.tool_meta.conftest import FakeToolMetaPg, make_pg_ctx
 
 
 @pytest.fixture
@@ -96,6 +98,18 @@ def _offline_connector_catalog(monkeypatch: pytest.MonkeyPatch) -> None:
         yield _FakePool()
 
     monkeypatch.setattr(catalog_store, "client_ctx", fake_client_ctx)
+
+
+@pytest.fixture(autouse=True)
+def _offline_tool_meta_store(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The preset create/delete/rename ops each touch the tool-metadata overlay store
+    (a stale-row clear on create, a delete on delete, a re-key on rename) through the
+    store's own pooled ``client_ctx``, so an offline test that drives a preset op would
+    otherwise open a real Postgres for the overlay and hang on the connection timeout.
+    Fake the store's seam with the stateful in-memory ``FakeToolMetaPg`` so the real
+    overlay-store code runs against it and returns instantly. The tool-meta store's own
+    suite re-patches this seam with its own fresh fake to assert the overlay behavior."""
+    monkeypatch.setattr(tool_meta_store, "client_ctx", make_pg_ctx(FakeToolMetaPg()))
 
 
 class _ProbeRedis:

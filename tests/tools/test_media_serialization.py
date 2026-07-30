@@ -108,7 +108,7 @@ def test_preset_over_media_tool_preserves_media():
     async def go() -> Any:
         await _clear_server()
         async with _running():
-            await instance.app.preset_manager.register("img_preset", "make_image", {}, [], [], "d")
+            await instance.app.preset_manager.register("img_preset", "make_image", {}, [], "d")
             return await instance.app.tools.run_tool("img_preset", {})
 
     result = asyncio.run(go())
