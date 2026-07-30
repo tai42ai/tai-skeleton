@@ -33,6 +33,7 @@ from tai42_skeleton.app.kind_status import collect_kind_status, warn_if_noop_mon
 from tai42_skeleton.app.reload_gate import reload_gate
 from tai42_skeleton.app.route_defaults import DEFAULT_API_ROUTERS, STUDIO_SPA_ROUTER
 from tai42_skeleton.connectors.providers.registry import reset_registry
+from tai42_skeleton.exceptions.exceptions import TaiValidationError
 from tai42_skeleton.extensions import ExtensionRegistry
 from tai42_skeleton.manifest import Manifest
 from tai42_skeleton.monitoring import get_monitoring
@@ -732,9 +733,18 @@ class TaiMCPLifecycleMixin(ABC):
         # environment shadows the prefix for anything present in both; a no-op when
         # no prefix is configured. Imported here (not at module scope) to keep the
         # app import chain free of the marketplace package.
+        from tai42_skeleton.marketplace.compat import distribution_map
         from tai42_skeleton.marketplace.prefix import activate_prefix
+        from tai42_skeleton.plugins.quarantine import reset_quarantine
 
         activate_prefix()
+
+        # This pass owns the plugin-quarantine generation: reset here, then every
+        # additive-module import below (and the Studio-plugin registry rebuild
+        # handler that runs after start()) repopulates it. One package→dist
+        # snapshot serves every compat verdict of the pass.
+        reset_quarantine()
+        dist_map = distribution_map()
 
         # Repopulate the operation registry that start() cleared at its top. A leaf
         # module declares its operations with @operation at IMPORT, and that
@@ -758,22 +768,25 @@ class TaiMCPLifecycleMixin(ABC):
         reregister_operations()
 
         for module in self._manifest.lifecycle_modules or []:
-            import_or_reload_package(module)
+            self._import_additive_plugin(module, "lifecycle", dist_map)
+
+        # Identity/accounts providers register only on lifecycle-module import, so
+        # their registries are settled here — abort now if a configured provider
+        # quarantined instead of quarantine-and-continuing into an unauthable boot.
+        self._abort_if_auth_provider_quarantined()
 
         # Import-only verifier plugins: each import runs the module's
-        # ``tai42_app.webhook_verifiers.register(...)`` side-effect. Imported like
-        # the lifecycle modules (loud on failure) — the registry was reset at the
-        # top of start(), so every (re)load re-registers cleanly.
+        # ``tai42_app.webhook_verifiers.register(...)`` side-effect — the registry
+        # was reset at the top of start(), so every (re)load re-registers cleanly.
         for module in self._manifest.webhook_verifier_modules or []:
-            import_or_reload_package(module)
+            self._import_additive_plugin(module, "webhook_verifier", dist_map)
 
         # Import-only channel plugins: each import runs the module's
         # ``tai42_app.channels.register(...)`` side-effect and binds the plugin's
-        # inbound HTTP route. Imported like the verifier modules (loud on
-        # failure) — the registry was reset at the top of start(), so every
-        # (re)load re-registers cleanly.
+        # inbound HTTP route. Imported like the verifier modules — the registry
+        # was reset at the top of start(), so every (re)load re-registers cleanly.
         for module in self._manifest.channel_modules or []:
-            import_or_reload_package(module)
+            self._import_additive_plugin(module, "channel", dist_map)
 
         # Import the composed effective router set (defaults + extras + a single
         # last catch-all, per default_routers). Each import runs the module's
@@ -783,27 +796,50 @@ class TaiMCPLifecycleMixin(ABC):
         # not reach the already-built served app until the next process start — a
         # newly-installed plugin router activates on restart.
         for module in self._effective_router_modules():
-            import_or_reload_package(module)
+            self._import_additive_plugin(module, "router", dist_map)
 
         for module in self._manifest.middlewares_modules or []:
-            import_or_reload_package(module)
+            self._import_additive_plugin(module, "middleware", dist_map)
 
-        import_or_reload_package(self._manifest.backend_module)
-        import_or_reload_package(self._manifest.storage_module)
-        import_or_reload_package(self._manifest.monitoring_module)
+        # The scalar slots ABORT boot on incompat/import failure instead of
+        # quarantining: the server cannot run without its backend/storage/
+        # monitoring, so a skipped slot would be a silently crippled server.
+        self._import_core_plugin(self._manifest.backend_module, "backend_module", dist_map)
+        self._import_core_plugin(self._manifest.storage_module, "storage_module", dist_map)
+        self._import_core_plugin(self._manifest.monitoring_module, "monitoring_module", dist_map)
 
+        quarantined_extension_modules: set[str] = set()
         for extension in self._manifest.extensions_modules or []:
-            import_or_reload_package(extension)
-        self._extension_registry.validation()
+            if not self._import_additive_plugin(extension, "extensions", dist_map):
+                quarantined_extension_modules.add(extension)
+        try:
+            self._extension_registry.validation()
+        except TaiValidationError:
+            # A quarantined extensions module cannot say WHICH extension names it
+            # would have registered, so its missing extensions are indistinguishable
+            # from the quarantine's own footprint — attributed to it loudly here
+            # instead of aborting the boot the quarantine just saved. With no
+            # quarantined extensions module the failure is genuine manifest
+            # misconfiguration and stays a loud abort.
+            if not quarantined_extension_modules:
+                raise
+            logger.error(
+                "extension validation failed with quarantined extensions module(s) %s; "
+                "continuing — tools using their extensions fail at bind/call time",
+                sorted(quarantined_extension_modules),
+                exc_info=True,
+            )
 
+        quarantined_tool_modules: set[str] = set()
         for cfg in self._manifest.tools:
-            import_or_reload_package(cfg.module)
+            if not self._import_additive_plugin(cfg.module, "tools", dist_map):
+                quarantined_tool_modules.add(cfg.module)
 
         # Importing an agents-module fires its @tai42_app.agents.agent decorator, which
         # registers the agent + auto-generates its run tool. Done after tools so
         # an agent tool can reference a base tool already loaded above.
         for cfg in self._manifest.agents:
-            import_or_reload_package(cfg.module)
+            self._import_additive_plugin(cfg.module, "agents", dist_map)
 
         if self._manifest.mcp:
             successes, failures = self._run_blocking(self._load_mcps)
@@ -822,7 +858,124 @@ class TaiMCPLifecycleMixin(ABC):
         # wraps -> preset rebakes.
         project_operations(self, self._manifest.api_tools)
 
-        self._tool_registry.validation(ignore=self._missing_tools_ignore())
+        # A quarantined tools module's included tool names are legitimately absent
+        # (the module never imported), so they join the failed-MCP ignore set —
+        # otherwise the validation would abort the very boot the quarantine saved.
+        ignore = set(self._missing_tools_ignore())
+        for module in quarantined_tool_modules:
+            ignore |= self._manifest.include_module_tools_map.get(module, frozenset())
+        self._tool_registry.validation(ignore=frozenset(ignore))
+
+    def _import_additive_plugin(self, module: str, kind: str, dist_map: dict[str, list[str]]) -> bool:
+        """Import one ADDITIVE manifest module under the plugin-compat gate.
+
+        An incompatible module is never imported (importing it is exactly what
+        crash-loops or misbehaves), and ANY exception its import raises — not
+        only ImportError; contract drift surfaces as AttributeError/TypeError
+        just as readily — quarantines the module instead of aborting boot. Both
+        paths record a quarantine entry (one loud log line each) and return
+        ``False`` so the caller can account for the module's absent
+        contributions; ``True`` means the module imported. An unknown verdict
+        (no dist mapping / no declared range) proceeds with a logged note,
+        never a silent pass. Imports are function-local to keep the app import
+        chain free of the marketplace package.
+        """
+        from tai42_skeleton.marketplace.compat import module_compat
+        from tai42_skeleton.plugins.quarantine import quarantine_plugin
+
+        verdict = module_compat(module, dist_map)
+        if verdict.status == "incompatible":
+            quarantine_plugin(module, f"{kind} module not loaded: {verdict.reason}")
+            return False
+        if verdict.status == "unknown":
+            logger.info("plugin compat unknown for %s module %s: %s", kind, module, verdict.reason)
+        try:
+            import_or_reload_package(module)
+        except Exception as exc:
+            logger.exception("%s module %s failed to import; quarantining it", kind, module)
+            quarantine_plugin(module, f"{kind} module failed to import: {exc}")
+            return False
+        return True
+
+    def _import_core_plugin(self, module: str | None, slot: str, dist_map: dict[str, list[str]]) -> None:
+        """Import one SCALAR-slot module (backend/storage/monitoring), aborting
+        boot with the typed :class:`CorePluginBootError` on incompat or ANY
+        import failure — the server cannot run without its scalar slots, so a
+        quarantine-and-continue would be a silently crippled server. ``None``
+        (slot unset) is a no-op. The error names the plugin, the versions in
+        play (via the compat reason), and the remedy."""
+        if not module:
+            return
+        from tai42_skeleton.marketplace.compat import CorePluginBootError, module_compat
+
+        verdict = module_compat(module, dist_map)
+        if verdict.status == "incompatible":
+            raise CorePluginBootError(
+                f"{slot} plugin {module!r} cannot boot: {verdict.reason}; the server cannot run without its {slot}"
+            )
+        if verdict.status == "unknown":
+            logger.info("plugin compat unknown for %s %s: %s", slot, module, verdict.reason)
+        try:
+            import_or_reload_package(module)
+        except Exception as exc:
+            raise CorePluginBootError(
+                f"{slot} plugin {module!r} failed to import: {exc}; the server cannot run without its {slot} — "
+                "fix or update the plugin, or point the manifest at a working one"
+            ) from exc
+
+    def _abort_if_auth_provider_quarantined(self) -> None:
+        """Abort boot when a configured auth provider quarantined — the auth-slot
+        twin of the scalar-slot abort.
+
+        Identity/accounts providers are ADDITIVE, so a broken one quarantines rather
+        than aborting; but a quarantined auth provider leaves the server BOOTED yet
+        unauthable, and the quarantine's own report (marketplace listing / Studio)
+        sits behind the very auth that is gone — so the additive loud-failure premise
+        collapses for the one kind whose failure hides its own report. An accounts
+        provider registers into the identity registry too, so every configured
+        provider resolves through ``auth_providers``.
+
+        The gate fires when BOTH hold this boot: a configured provider did not
+        register AND some lifecycle module quarantined. It CANNOT prove the
+        quarantine caused the missing provider — an operator typo in a provider
+        name plus an unrelated quarantine trips the same predicate — so the error
+        enumerates the two facts SEPARATELY (the unresolved provider names; the
+        quarantined lifecycle modules with reasons) with no causal claim, and a
+        remedy covering both. With the gate off, no unresolved provider, or no
+        lifecycle quarantine, boot is untouched; a misconfigured provider name
+        with nothing quarantined is left to the identity-provider startup probe."""
+        if self._manifest is None:
+            raise RuntimeError("TaiMCP is not started — call start()/app_context first.")
+        from tai42_contract.access_control.registry import get_identity_provider_factory
+
+        from tai42_skeleton.access_control.settings import access_control_settings
+        from tai42_skeleton.marketplace.compat import CorePluginBootError
+        from tai42_skeleton.plugins.quarantine import quarantined_plugins
+
+        settings = access_control_settings()
+        if not settings.enable:
+            return
+
+        def _registered(name: str) -> bool:
+            try:
+                get_identity_provider_factory(name)
+                return True
+            except KeyError:
+                return False
+
+        unresolved = [name for name in settings.auth_providers if not _registered(name)]
+        lifecycle_modules = set(self._manifest.lifecycle_modules or [])
+        quarantined = {
+            module: reason for module, reason in quarantined_plugins().items() if module in lifecycle_modules
+        }
+        if unresolved and quarantined:
+            detail = "; ".join(f"{module} ({reason})" for module, reason in sorted(quarantined.items()))
+            raise CorePluginBootError(
+                f"access control is enabled but configured auth provider(s) {sorted(unresolved)} did not register, "
+                f"and lifecycle module(s) quarantined this boot: {detail}; the server would boot unauthable with any "
+                "quarantine surfaced only behind the missing auth — fix the provider name(s) if misspelled, and/or "
+                "resolve the quarantined plugin(s), or point the manifest at a working provider"
+            )
 
     def _registry_names_sync(self) -> dict[str, set[str]]:
         """Snapshot the live server's tool / prompt / resource names off-loop —

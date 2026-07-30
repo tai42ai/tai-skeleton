@@ -142,13 +142,15 @@ async def test_viewer_jq_matrix(path, method, allowed):
 
 # These privileged mutations carry ``action=fenced``, so the per-tag decision denies
 # them to every non-admin (editor + viewer) regardless of any granted level, while an
-# admin (allow_all) governing policy skips the pass and reaches them. This is exactly the
-# pre-M20 admin-only mutation set (marketplace/backup/run-tool/tool+config+fleet reload/
+# admin (allow_all) governing policy skips the pass and reaches them: the admin-only
+# mutation set (all four marketplace mutators, upgrade-all fenced no weaker than the
+# per-plugin install it batches/backup/run-tool/tool+config+fleet reload/
 # manifest-replace/failed-MCP re-probe/per-server deregister/env write).
 _PRIVILEGED_MUTATIONS = [
     ("/api/marketplace/install", "POST"),
     ("/api/marketplace/uninstall", "POST"),
     ("/api/marketplace/update", "POST"),
+    ("/api/marketplace/upgrade-all", "POST"),
     ("/api/backup/import", "POST"),
     ("/api/backup/export", "POST"),
     ("/api/run-tool", "POST"),

@@ -36,6 +36,7 @@ from tai42_skeleton.middleware.body_limit import BodyLimitMiddleware
 from tai42_skeleton.middleware.rate_limit import RateLimitMiddleware
 from tai42_skeleton.monitoring import registry as monitoring_registry
 from tai42_skeleton.operations import OperationError
+from tai42_skeleton.plugins.quarantine import quarantined_plugins
 from tai42_skeleton.tools.binding import ToolBinding, UnknownToolError
 
 if TYPE_CHECKING:
@@ -616,7 +617,8 @@ def test_toolkit_binds_adapted_tools():
 
 def test_extension_returning_same_name_is_rejected():
     # An extension must rename the tool to create a branch; returning the same
-    # name raises during binding (which happens at module-import time in start()).
+    # name raises during binding (which happens at module-import time in start()),
+    # quarantining the tools module — an additive plugin never aborts boot.
     manifest = Manifest.model_validate(
         {
             "extensions_modules": ["tests.app._fixtures.ext_samename"],
@@ -633,10 +635,11 @@ def test_extension_returning_same_name_is_rejected():
 
     async def run():
         async with app.app_context(manifest):
-            pass
+            reason = quarantined_plugins()["tests.app._fixtures.tools_b"]
+            assert "same name" in reason
+            assert "shout" not in await app.tools.get_tools()
 
-    with pytest.raises(ValueError, match="same name"):
-        asyncio.run(run())
+    asyncio.run(run())
 
 
 def test_agent_not_in_include_is_not_registered():

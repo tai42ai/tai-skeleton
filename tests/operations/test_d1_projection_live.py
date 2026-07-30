@@ -130,8 +130,8 @@ def test_d1_projected_surface_is_the_expected_op_count():
             tier1 = sorted(op.name for op in ops if is_tier1(op))
             tier2 = sorted(op.name for op in ops if is_tier2(op) and not is_tier1(op))
 
-            # The arithmetic: 140 total - 36 tier-2 default-excluded - 4 tier-1 hardcode-blocked = 100.
-            assert total == 140, total
+            # The arithmetic: 141 total - 37 tier-2 default-excluded - 4 tier-1 hardcode-blocked = 100.
+            assert total == 141, total
             # Tier-1 (never projectable): the three meta-executors, each running a
             # caller-named tool, plus ``get_me`` (``caller_context=True``).
             assert tier1 == ["create_schedule", "get_me", "run_tool", "submit_run"], tier1
@@ -139,10 +139,10 @@ def test_d1_projected_surface_is_the_expected_op_count():
             # create_claim_link) + the five role-management ops (create/edit/delete/
             # versions/rollback under /api/auth/roles*) + logout + exchange_claim_token
             # (authority_changing — a public credential door that must never project) +
-            # import_backup + update_manifest + the three marketplace mutators + the two
+            # import_backup + update_manifest + the four marketplace mutators + the two
             # plus the trigger-link mutators, register_hook, the two topic-verifier ops
             # (binding a lock REPLACES it, reaching the same state as unbinding) and
-            # create_conversation_route — all authority_changing — 36 in all. ``get_me``
+            # create_conversation_route — all authority_changing — 37 in all. ``get_me``
             # is tier-1 hardcode-blocked, not tier-2.
             assert set(tier2) == {
                 "add_scope_url",
@@ -170,6 +170,7 @@ def test_d1_projected_surface_is_the_expected_op_count():
                 "marketplace_install",
                 "marketplace_uninstall",
                 "marketplace_update",
+                "marketplace_upgrade_all",
                 "pin_public_route",
                 "register_hook",
                 "remove_scope_url",

@@ -3,7 +3,9 @@
 Every case drives the REAL ``ToolBinding.bind_tool_func`` path through
 ``app.app_context`` with a fixture manifest: the kind rules
 (``preserves_schema`` / ``declares_schema``) are enforced when a tool module is
-imported at start. Fixtures live in :mod:`tests.app._fixtures.ext_kinds` and
+imported at start — a violation quarantines the tools module (an additive
+plugin never aborts boot), so each rejection case asserts the quarantine
+reason. Fixtures live in :mod:`tests.app._fixtures.ext_kinds` and
 extend the base tool ``shout(text: str)`` in
 :mod:`tests.app._fixtures.tools_b`.
 """
@@ -15,8 +17,10 @@ import asyncio
 import pytest
 
 from tai42_skeleton.app.instance import app
-from tai42_skeleton.exceptions.exceptions import TaiValidationError
 from tai42_skeleton.manifest import Manifest
+from tai42_skeleton.plugins.quarantine import quarantined_plugins
+
+_TOOLS_B = "tests.app._fixtures.tools_b"
 
 
 @pytest.fixture(autouse=True)
@@ -73,10 +77,11 @@ def test_wrapper_preserving_schema_binds_and_runs():
 def test_wrapper_changing_schema_rejected():
     async def run():
         async with app.app_context(_manifest("shout", "renamep")):
-            pass
+            reason = quarantined_plugins()[_TOOLS_B]
+            assert "'renamep' changed the schema of tool 'shout'" in reason
+            assert "shout" not in await app.tools.get_tools()
 
-    with pytest.raises(TaiValidationError, match=r"'renamep' changed the schema of tool 'shout'"):
-        asyncio.run(run())
+    asyncio.run(run())
 
 
 def test_wrapper_after_transformer_baseline_is_layer_input():
@@ -124,10 +129,9 @@ def test_wrapper_reserved_only_param_empties_required():
 def test_wrapper_reserved_name_colliding_with_input_rejected():
     async def run():
         async with app.app_context(_manifest("shout", "collidewrap")):
-            pass
+            assert "reserved param 'text' that already exists" in quarantined_plugins()[_TOOLS_B]
 
-    with pytest.raises(TaiValidationError, match=r"reserved param 'text' that already exists"):
-        asyncio.run(run())
+    asyncio.run(run())
 
 
 def test_wrapper_reserved_does_not_mask_real_drift():
@@ -135,10 +139,9 @@ def test_wrapper_reserved_does_not_mask_real_drift():
     # subtraction must not hide.
     async def run():
         async with app.app_context(_manifest("shout", "driftreserved")):
-            pass
+            assert "'driftreserved' changed the schema of tool 'shout'" in quarantined_plugins()[_TOOLS_B]
 
-    with pytest.raises(TaiValidationError, match=r"'driftreserved' changed the schema of tool 'shout'"):
-        asyncio.run(run())
+    asyncio.run(run())
 
 
 # --- transformer: declares_schema -------------------------------------------
@@ -155,10 +158,9 @@ def test_transformer_concrete_signature_binds():
 def test_transformer_bare_signature_rejected():
     async def run():
         async with app.app_context(_manifest("shout", "baretf")):
-            pass
+            assert "'baretf' presents a bare (*args, **kwargs)" in quarantined_plugins()[_TOOLS_B]
 
-    with pytest.raises(TaiValidationError, match=r"'baretf' presents a bare \(\*args, \*\*kwargs\)"):
-        asyncio.run(run())
+    asyncio.run(run())
 
 
 def test_transformer_ignores_reserved_params():
@@ -193,10 +195,9 @@ def test_stacking_order_pinned():
 def test_two_backends_on_one_tool_rejected():
     async def run():
         async with app.app_context(_manifest("shout", "backendx", "backendy")):
-            pass
+            assert "Only one 'backend' extension is allowed" in quarantined_plugins()[_TOOLS_B]
 
-    with pytest.raises(TaiValidationError, match=r"Only one 'backend' extension is allowed"):
-        asyncio.run(run())
+    asyncio.run(run())
 
 
 def test_single_backend_altering_schema_binds_clean():

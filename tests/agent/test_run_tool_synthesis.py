@@ -24,6 +24,7 @@ from pydantic.json_schema import PydanticJsonSchemaWarning
 from tai42_skeleton.agent.thread_reservation import ReservedThreadNamespaceError
 from tai42_skeleton.app.instance import app
 from tai42_skeleton.manifest import Manifest
+from tai42_skeleton.plugins.quarantine import quarantined_plugins
 from tai42_skeleton.tools.binding import _derive_input_schema
 
 
@@ -207,7 +208,9 @@ def test_nested_models_survive_as_defs_on_a_branch():
 def test_agent_registration_rejects_stray_preset_bakeable_field():
     # A ``preset_bakeable_fields`` entry that is not a real ``ToolInput`` field could
     # never pass the preset route's unknown-field check, so registration rejects it
-    # loudly (naming the stray field) rather than let the declaration lie dormant.
+    # loudly (naming the stray field). The rejection quarantines the agents module
+    # (an additive plugin never aborts boot): the agent stays unregistered and the
+    # stray field is named in the quarantine reason.
     manifest = Manifest.model_validate(
         {
             "agents": [
@@ -221,9 +224,9 @@ def test_agent_registration_rejects_stray_preset_bakeable_field():
     )
 
     async def run() -> None:
-        with pytest.raises(RuntimeError, match="ghost_field"):
-            async with app.app_context(manifest):
-                pass
+        async with app.app_context(manifest):
+            assert "ghost_field" in quarantined_plugins()["tests.agent._bad_bakeable_fixtures"]
+            assert "bad_bakeable_agent" not in await app.tools.get_tools()
 
     asyncio.run(run())
 

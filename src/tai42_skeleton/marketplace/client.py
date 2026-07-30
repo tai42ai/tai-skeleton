@@ -24,6 +24,7 @@ import httpx
 from tai42_kit.clients import client_ctx
 from tai42_kit.clients.impl.http import HttpxClient
 
+from tai42_skeleton.marketplace.compat import running_contract_version
 from tai42_skeleton.marketplace.errors import (
     ListingNotFoundError,
     RegistryResponseError,
@@ -90,6 +91,12 @@ class RegistryClient:
         (given, or latest published), returns the artifact pointer + stored
         PluginSpec + matching advisories, and counts the download.
 
+        The installed ``tai42-contract`` version ALWAYS rides along as the
+        ``contract`` query param, so a registry that filters on it pins the
+        latest COMPATIBLE version instead of a latest this core cannot run —
+        the installer's own contract check remains the local backstop either
+        way.
+
         This call passes no ref to ``_request``, so a registry refusal reaches
         here as a :class:`RegistryResponseError` and is remapped: a 409 (the
         registry's refusal of a killed/unpublished version) →
@@ -101,7 +108,12 @@ class RegistryClient:
         if version is not None:
             body["version"] = version
         try:
-            data = await self._request("POST", f"/api/v1/plugins/{_seg(namespace)}/{_seg(name)}/resolve", json=body)
+            data = await self._request(
+                "POST",
+                f"/api/v1/plugins/{_seg(namespace)}/{_seg(name)}/resolve",
+                params={"contract": running_contract_version()},
+                json=body,
+            )
         except RegistryResponseError as exc:
             if exc.status == 409:
                 raise VersionRefusedError(str(exc)) from exc

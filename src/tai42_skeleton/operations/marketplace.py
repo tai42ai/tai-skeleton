@@ -1,9 +1,10 @@
 """Marketplace operations — search, browse, and manage installed plugins.
 
-Eight operations back the ``/api/marketplace/*`` surface: five reads (search the
+Nine operations back the ``/api/marketplace/*`` surface: five reads (search the
 registry, one listing's detail with its versions, the category vocabulary, the
-installed inventory with update availability, and the advisory snapshot) and
-three environment-mutating flows (install, uninstall, update) driven by
+installed inventory with per-row compat/update availability plus the boot's
+plugin-quarantine entries, and the advisory snapshot) and four
+environment-mutating flows (install, uninstall, update, upgrade-all) driven by
 :class:`~tai42_skeleton.marketplace.installer.Installer`.
 
 The internal :class:`~tai42_skeleton.marketplace.errors.MarketplaceError` family is
@@ -32,9 +33,9 @@ reload-gate 503 — a separate concern the adapter honors from ``reload_gated``
 metadata — DOES carry ``Retry-After: 5``, since that response is built by the
 reload gate itself, not the error path.)
 
-install/uninstall/update mutate the running environment by running arbitrary
-third-party code, so each is ``destructive`` and ``authority_changing`` (off the
-default MCP tool surface — tier 2 — includable only by an explicit
+install/uninstall/update/upgrade-all mutate the running environment by running
+arbitrary third-party code, so each is ``destructive`` and ``authority_changing``
+(off the default MCP tool surface — tier 2 — includable only by an explicit
 ``api_tools.include``) and ``reload_gated`` (the flow ends in a manifest reload,
 so the adapter answers a retriable 503 while a reload is in flight).
 """
@@ -44,11 +45,17 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from packaging.version import InvalidVersion, Version
 from pydantic import BaseModel
 
 from tai42_skeleton.marketplace import advisories
 from tai42_skeleton.marketplace.client import RegistryClient
+from tai42_skeleton.marketplace.compat import (
+    CompatVerdict,
+    UpdateTargets,
+    dist_compat,
+    running_contract_version,
+    update_targets,
+)
 from tai42_skeleton.marketplace.errors import (
     ArtifactIntegrityError,
     ContractIncompatibleError,
@@ -77,6 +84,7 @@ from tai42_skeleton.operations import (
     UpstreamError,
     operation,
 )
+from tai42_skeleton.plugins.quarantine import quarantined_plugins
 
 logger = logging.getLogger(__name__)
 
@@ -238,63 +246,67 @@ async def marketplace_categories() -> list[str]:
         raise _to_operation_error(exc) from exc
 
 
-@operation(summary="List installed marketplace plugins", tags=["marketplace"], errors=[UpstreamError])
-async def marketplace_installed() -> list[dict[str, Any]]:
-    """The installed inventory from the local attribution store, each row enriched
-    with update availability from one registry pass.
+@operation(summary="List installed marketplace plugins", tags=["marketplace"], errors=[UpstreamError, OperationFailed])
+async def marketplace_installed() -> dict[str, Any]:
+    """The installed inventory + the boot-quarantined plugins, in one body:
+    ``{"installed": [...], "quarantined": [{"name", "reason"}, ...]}``.
 
-    For each row the registry's latest-published-version object gives ``latest``
-    (its version string, or ``null`` when the listing has no published version)
-    and ``update_available`` (``latest`` newer than the installed version). A
-    per-row not-found — the upstream listing vanished or was suspended — is row
-    STATE, not a route failure: that row answers ``latest: null``,
-    ``update_available: false``, ``missing_upstream: true``, so one dead listing
-    never fails the whole inventory. A transport/garbled-upstream failure still
-    surfaces as a 502 — serving rows without update availability would be a silent
-    degrade of the spec'd shape.
+    Each installed row carries the update picture computed from the registry's
+    version rows against the RUNNING contract: ``latest`` (newest published
+    version, or ``null`` with none), ``update_available`` (a newer COMPATIBLE
+    version exists — an incompatible newer version never advertises as an
+    update), ``incompatible_newer`` (the newest such blocked version, so "an
+    update exists but needs a newer core" is visible, or ``null``), and
+    ``compat`` — the live ``{status, reason}`` verdict of the row's installed
+    distribution against the running contract. A per-row not-found — the
+    upstream listing vanished or was suspended — is row STATE, not a route
+    failure: that row answers ``latest: null``, ``update_available: false``,
+    ``missing_upstream: true``, so one dead listing never fails the whole
+    inventory. A transport/garbled-upstream failure still surfaces as a 502,
+    and a garbled LOCAL row (an unparsable stored version) as a 500 — serving
+    rows without their update picture would be a silent degrade of the spec'd
+    shape.
+
+    ``quarantined`` mirrors the boot pass's plugin-quarantine registry — the
+    plugins this worker SKIPPED (incompatible or import-broken) with the
+    human-readable reason each.
     """
     registry = RegistryClient()
+    contract = running_contract_version()
     rows: list[dict[str, Any]] = []
     for record in await MarketplaceInstallStore().list_installed():
         ns, _, name = record.ref.partition("/")
-        latest: str | None = None
         missing_upstream = False
+        targets: UpdateTargets | None = None
         try:
-            listing = await registry.plugin(ns, name)
+            versions = await registry.versions(ns, name)
+            targets = update_targets(versions, installed_version=record.version, contract_version=contract)
         except ListingNotFoundError:
             missing_upstream = True
         except MarketplaceError as exc:
             raise _to_operation_error(exc) from exc
+        package = record.spec.get("package")
+        if isinstance(package, str):
+            compat = dist_compat(package)
         else:
-            latest_version = listing.get("latest")
-            if isinstance(latest_version, dict):
-                latest = latest_version.get("version")
-        try:
-            update_available = latest is not None and Version(latest) > Version(record.version)
-        except (InvalidVersion, TypeError, AttributeError) as exc:
-            # ``record.version`` is already validated, so only a registry-supplied
-            # ``latest`` can fail here — either non-PEP440 (InvalidVersion) or a
-            # non-string type served in the ``version`` field (Version() raises
-            # TypeError/AttributeError, neither an InvalidVersion). The listing
-            # payload rides through ``registry.plugin()`` unvalidated (opaque
-            # display data), so THIS extraction is where untrusted Any meets typed
-            # code and the broadened catch is the typed guard: garbled upstream
-            # data, a 502, never a this-server 500.
-            raise _to_operation_error(
-                RegistryResponseError(f"registry served an unusable latest version {latest!r} for {record.ref}: {exc}")
-            ) from exc
+            # A row whose stored spec names no package distribution cannot be
+            # verdicted — surfaced as unknown, never a silent "compatible".
+            compat = CompatVerdict("unknown", f"the stored spec for {record.ref} names no package distribution")
         rows.append(
             {
                 "ref": record.ref,
                 "version": record.version,
                 "source": record.source,
                 "installed_at": record.installed_at.isoformat(),
-                "latest": latest,
-                "update_available": update_available,
+                "latest": targets.latest if targets is not None else None,
+                "update_available": targets.update_available if targets is not None else False,
+                "incompatible_newer": targets.incompatible_newer if targets is not None else None,
                 "missing_upstream": missing_upstream,
+                "compat": compat.as_payload(),
             }
         )
-    return rows
+    quarantined = [{"name": name, "reason": reason} for name, reason in sorted(quarantined_plugins().items())]
+    return {"installed": rows, "quarantined": quarantined}
 
 
 @operation(summary="Get advisories for installed plugins", tags=["marketplace"], errors=[UpstreamError])
@@ -360,5 +372,28 @@ async def marketplace_update(ref: str, version: str | None = None) -> dict[str, 
     :meth:`Installer.update`)."""
     try:
         return await Installer().update(ref, version)
+    except MarketplaceError as exc:
+        raise _to_operation_error(exc) from exc
+
+
+@operation(
+    summary="Upgrade all installed marketplace plugins",
+    tags=["marketplace"],
+    destructive=True,
+    reload_gated=True,
+    authority_changing=True,
+    errors=[UnavailableError],
+)
+async def marketplace_upgrade_all() -> dict[str, Any]:
+    """Move every installed plugin onto its latest COMPATIBLE version in one
+    lock-held batch, answering ``{"results": [{ref, outcome, detail}, ...]}``.
+
+    Per-ref failures (including a ref with NO compatible version) are report
+    entries, never a batch abort — the ONE operation-level failure is the
+    fleet marketplace lock being held elsewhere (the retriable 503). See
+    :meth:`Installer.upgrade_all` for the outcome vocabulary.
+    """
+    try:
+        return {"results": await Installer().upgrade_all()}
     except MarketplaceError as exc:
         raise _to_operation_error(exc) from exc

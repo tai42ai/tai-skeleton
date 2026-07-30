@@ -24,6 +24,7 @@ from starlette.requests import Request
 from tai42_skeleton.app import instance
 from tai42_skeleton.app.reload_gate import reload_gate
 from tai42_skeleton.manifest import Manifest
+from tai42_skeleton.plugins.quarantine import quarantined_plugins
 from tai42_skeleton.routers import tool_extensions as router
 from tests._fakes.bus import FakeBus
 
@@ -363,13 +364,13 @@ def test_post_consolidation_guard_409_nothing_written(cfg):
 
 def test_two_configs_binding_one_tool_name_collide_at_boot(cfg):
     # Two tools configs each providing a tool named ``shout`` is a genuine name
-    # collision. Under the server's ``on_duplicate="error"`` the second bind fails
-    # loudly at boot rather than silently last-write-win — caught earlier and more
-    # visibly than the extension-apply route's later owning-config guard.
+    # collision. Under the server's ``on_duplicate="error"`` the SECOND bind fails
+    # loudly at boot — quarantining that config's module (never a silent
+    # last-write-win), while the first config's tool keeps serving.
     async def run():
-        with pytest.raises(ValueError, match="already exists"):
-            async with _running(cfg, _dup()):
-                pass
+        async with _running(cfg, _dup()):
+            assert "already exists" in quarantined_plugins()[_DUP]
+            assert "shout" in await instance.app.tools.get_tools()
 
     asyncio.run(run())
 

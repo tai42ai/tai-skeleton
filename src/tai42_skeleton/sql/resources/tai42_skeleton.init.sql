@@ -364,11 +364,25 @@ CREATE TABLE IF NOT EXISTS marketplace_installs (
     artifact_ref   TEXT,
     sha256         TEXT,
     spec           JSONB        NOT NULL,
+    -- The tai42-contract and tai42-skeleton versions RUNNING when this row was
+    -- written (install or update). Diagnostics only — the live compat verdict
+    -- reads the installed dist's own metadata, so these stamps going stale after
+    -- a core upgrade is expected and is exactly what they exist to show.
+    contract_version TEXT,
+    skeleton_version TEXT,
     installed_at   TIMESTAMPTZ  NOT NULL DEFAULT now(),
     PRIMARY KEY (ref)
 );
 -- `ref` is the sole point-read path (`WHERE ref = %s`); the installed listing
 -- enumerates the table. Operator-sized (tens of rows), no further indexes.
+
+-- The IF-NOT-EXISTS create above adds columns only when it first creates the
+-- table; on a database where `marketplace_installs` already exists it is a no-op,
+-- so columns introduced after that table's first deploy must be added explicitly.
+-- `ADD COLUMN IF NOT EXISTS` keeps this one script idempotent — it backfills the
+-- column where absent and skips it where present, no migration framework.
+ALTER TABLE marketplace_installs ADD COLUMN IF NOT EXISTS contract_version TEXT;
+ALTER TABLE marketplace_installs ADD COLUMN IF NOT EXISTS skeleton_version TEXT;
 
 -- ============================================================
 -- Tool metadata overlay — folders + per-tool organizational row

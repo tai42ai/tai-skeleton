@@ -1,20 +1,24 @@
 """The marketplace HTTP surface — ``/api/marketplace/*`` (all AUTHED).
 
-Eight thin adapters over the operations in
+Nine thin adapters over the operations in
 ``tai42_skeleton.operations.marketplace``:
 
 * ``GET  /api/marketplace/search``                 — proxy the registry search (multi-value ``tags``).
 * ``GET  /api/marketplace/plugins/{ns}/{name}``    — one listing's detail composed with its versions.
 * ``GET  /api/marketplace/categories``             — the controlled category vocabulary.
-* ``GET  /api/marketplace/installed``              — the installed inventory + update availability.
+* ``GET  /api/marketplace/installed``              — the installed inventory (per-row compat + update
+  availability) and the boot's plugin-quarantine entries.
 * ``POST /api/marketplace/install``                — install a plugin by ref.
 * ``POST /api/marketplace/uninstall``              — uninstall a plugin by ref.
 * ``POST /api/marketplace/update``                 — update a plugin to a newer/named version.
+* ``POST /api/marketplace/upgrade-all``            — upgrade every installed plugin to its latest
+  compatible version (a per-ref report, never a batch abort).
 * ``GET  /api/marketplace/advisories``             — the cached advisory snapshot for installed plugins.
 
 Success bodies are ``{"data": ...}``; failures are ``{"error": "<message>"}``.
 
-Security model: install/uninstall/update mutate the running environment by design
+Security model: install/uninstall/update/upgrade-all mutate the running
+environment by design
 (they run arbitrary third-party code) and are scope-guardable through the existing
 scopes mechanism like any other route; the operations also carry
 ``authority_changing`` so they are off the default projected MCP tool surface. The
@@ -53,6 +57,7 @@ from tai42_skeleton.operations.marketplace import marketplace_plugin_detail as _
 from tai42_skeleton.operations.marketplace import marketplace_search as _marketplace_search_op
 from tai42_skeleton.operations.marketplace import marketplace_uninstall as _marketplace_uninstall_op
 from tai42_skeleton.operations.marketplace import marketplace_update as _marketplace_update_op
+from tai42_skeleton.operations.marketplace import marketplace_upgrade_all as _marketplace_upgrade_all_op
 
 # The single-valued search facets forwarded to the registry; ``tags`` is handled
 # separately as a multi-value param. Unknown query params are ignored (they never
@@ -134,6 +139,16 @@ marketplace_update = register_operation_route(
     operation_metadata_of(_marketplace_update_op),
     path="/api/marketplace/update",
     method="POST",
+    action="fenced",
+)
+
+marketplace_upgrade_all = register_operation_route(
+    tai42_app,
+    operation_metadata_of(_marketplace_upgrade_all_op),
+    path="/api/marketplace/upgrade-all",
+    method="POST",
+    # Fenced like install/uninstall/update: the batch mutation must never be
+    # weaker-gated than the single-plugin install it repeats per ref.
     action="fenced",
 )
 

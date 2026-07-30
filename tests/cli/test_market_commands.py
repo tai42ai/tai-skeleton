@@ -91,12 +91,47 @@ def test_categories_issues_the_get(monkeypatch) -> None:
 
 def test_installed_json_passthrough(monkeypatch) -> None:
     handler, captured = _capture()
-    rows = [{"ref": "tai42/toolbox", "version": "1.0.0", "latest": "2.0.0", "update_available": True}]
-    captured["_payload"] = rows
+    payload = {
+        "installed": [
+            {
+                "ref": "tai42/toolbox",
+                "version": "1.0.0",
+                "latest": "2.0.0",
+                "update_available": True,
+                "incompatible_newer": None,
+                "compat": {"status": "compatible", "reason": None},
+            }
+        ],
+        "quarantined": [{"name": "acme_plugin", "reason": "tools module failed to import: boom"}],
+    }
+    captured["_payload"] = payload
     result = run_cli(monkeypatch, handler, ["plugins", "installed"], json_output=True)
     assert result.exit_code == 0, result.output
     assert captured["path"] == "/api/marketplace/installed"
-    assert json.loads(result.output) == rows
+    assert json.loads(result.output) == payload
+
+
+def test_installed_table_shows_compat_status_and_quarantine(monkeypatch) -> None:
+    handler, captured = _capture()
+    captured["_payload"] = {
+        "installed": [
+            {
+                "ref": "tai42/toolbox",
+                "version": "1.0.0",
+                "latest": None,
+                "update_available": False,
+                "incompatible_newer": "2.0.0",
+                "compat": {"status": "incompatible", "reason": "needs a newer core"},
+            }
+        ],
+        "quarantined": [{"name": "acme_plugin", "reason": "tools module failed to import: boom"}],
+    }
+    result = run_cli(monkeypatch, handler, ["plugins", "installed"])
+    assert result.exit_code == 0, result.output
+    # The compat STATUS lands in its own table column, and a quarantined plugin
+    # is printed after the table — never invisible in the default view.
+    assert "incompatible" in result.output
+    assert "quarantined: acme_plugin — tools module failed to import: boom" in result.output
 
 
 # -- install / uninstall / update bodies -------------------------------------
@@ -128,6 +163,33 @@ def test_update_posts_ref_without_version_when_omitted(monkeypatch) -> None:
     assert result.exit_code == 0, result.output
     assert captured["path"] == "/api/marketplace/update"
     assert captured["body"] == {"ref": "tai42/toolbox"}
+
+
+# -- upgrade --all -------------------------------------------------------------
+
+
+def test_upgrade_all_posts_and_renders_the_report(monkeypatch) -> None:
+    handler, captured = _capture()
+    captured["_payload"] = {
+        "results": [
+            {"ref": "tai42/a", "outcome": "upgraded", "detail": "1.0.0 -> 1.2.0"},
+            {"ref": "tai42/b", "outcome": "no-compatible-version", "detail": "no published version supports 0.3.0"},
+        ]
+    }
+    result = run_cli(monkeypatch, handler, ["plugins", "upgrade", "--all"])
+    assert result.exit_code == 0, result.output
+    assert captured["method"] == "POST"
+    assert captured["path"] == "/api/marketplace/upgrade-all"
+    assert "upgraded" in result.output
+    assert "no-compatible-version" in result.output
+
+
+def test_upgrade_without_all_is_a_usage_error(monkeypatch) -> None:
+    handler, captured = _capture()
+    result = run_cli(monkeypatch, handler, ["plugins", "upgrade"])
+    assert result.exit_code != 0
+    assert "--all" in result.output
+    assert "path" not in captured  # refused before any request
 
 
 # -- error surfacing ---------------------------------------------------------

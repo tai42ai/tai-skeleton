@@ -58,6 +58,8 @@ class FakeRegistry:
         self.resolved: dict[str, Any] | None = None
         self.resolve_error: Exception | None = None
         self.resolve_calls: list[tuple[str, str, str | None]] = []
+        # ref -> version rows (or an Exception to raise) for the upgrade-all probe.
+        self.versions_map: dict[str, Any] = {}
 
     async def resolve(self, ns: str, name: str, version: str | None = None) -> dict[str, Any]:
         self._events.append("registry:resolve")
@@ -66,6 +68,13 @@ class FakeRegistry:
             raise self.resolve_error
         assert self.resolved is not None
         return self.resolved
+
+    async def versions(self, ns: str, name: str) -> list[dict[str, Any]]:
+        self._events.append("registry:versions")
+        result = self.versions_map[f"{ns}/{name}"]
+        if isinstance(result, Exception):
+            raise result
+        return result
 
 
 class FakePip:
@@ -94,9 +103,24 @@ class FakeStore:
         self._events.append("store:get")
         return self.rows.get(ref)
 
-    async def record(self, ref, version, source, repository_url, tag, artifact_ref, sha256, spec) -> None:
+    async def record(
+        self,
+        ref,
+        version,
+        source,
+        repository_url,
+        tag,
+        artifact_ref,
+        sha256,
+        spec,
+        *,
+        contract_version,
+        skeleton_version,
+    ) -> None:
         self._events.append("store:record")
-        self.record_calls.append((ref, version, source, repository_url, tag, artifact_ref, sha256, spec))
+        self.record_calls.append(
+            (ref, version, source, repository_url, tag, artifact_ref, sha256, spec, contract_version, skeleton_version)
+        )
         if self.record_error is not None:
             raise self.record_error
         self.rows[ref] = InstallRecord(
@@ -108,6 +132,8 @@ class FakeStore:
             artifact_ref=artifact_ref,
             sha256=sha256,
             spec=spec,
+            contract_version=contract_version,
+            skeleton_version=skeleton_version,
             installed_at=datetime.now(UTC),
         )
 
@@ -1519,3 +1545,86 @@ async def test_update_prefix_env_shadow_refused_before_removal(monkeypatch: pyte
     assert remover.calls == []
     _assert_no_pip(h)
     assert h.svc.writes == []
+
+
+# -- upgrade-all --------------------------------------------------------------
+
+
+def _published_row(version: str, contract_range: str = ">=0.1,<1.0") -> dict[str, Any]:
+    return {"version": version, "status": "published", "contract_range": contract_range}
+
+
+async def test_upgrade_all_reports_every_outcome(monkeypatch: pytest.MonkeyPatch) -> None:
+    # One batch, four refs, one of each outcome — and the report is COMPLETE:
+    # the failed ref never truncates the entries after it.
+    monkeypatch.setattr(installer_module.importlib.metadata, "version", lambda name: "0.1.0")
+    up = make_spec(name="up", package="pkg-up", provides=_tool_provides("pkg.up"))
+    current = make_spec(name="current", package="pkg-current", provides=_tool_provides("pkg.current"))
+    stuck = make_spec(name="stuck", package="pkg-stuck", provides=_tool_provides("pkg.stuck"))
+    broken = make_spec(name="broken", package="pkg-broken", provides=_tool_provides("pkg.broken"))
+    h = Harness()
+    for spec in (up, current, stuck, broken):
+        h.store.preload(spec, version="1.0.0")
+    h.registry.versions_map = {
+        "tai42/up": [_published_row("1.2.0"), _published_row("1.0.0")],
+        "tai42/current": [_published_row("1.0.0"), _published_row("9.0.0", contract_range=">=9,<10")],
+        "tai42/stuck": [_published_row("2.0.0", contract_range=">=9,<10")],
+        "tai42/broken": RegistryResponseError("registry served garbage", status=None),
+    }
+    # The one genuinely-upgrading ref drives the ordinary update flow, which
+    # re-resolves its picked pin.
+    h.registry.resolved = make_resolved(make_spec(name="up", package="pkg-up"), version="1.2.0")
+
+    report = await h.installer().upgrade_all()
+
+    by_ref = {entry["ref"]: entry for entry in report}
+    assert [e["ref"] for e in report] == ["tai42/up", "tai42/current", "tai42/stuck", "tai42/broken"]
+    assert by_ref["tai42/up"]["outcome"] == "upgraded"
+    assert by_ref["tai42/up"]["detail"] == "1.0.0 -> 1.2.0"
+    assert by_ref["tai42/current"]["outcome"] == "up-to-date"
+    # The newer-but-incompatible version is NAMED, never silently omitted.
+    assert "9.0.0" in by_ref["tai42/current"]["detail"]
+    assert by_ref["tai42/stuck"]["outcome"] == "no-compatible-version"
+    assert "2.0.0" in by_ref["tai42/stuck"]["detail"]
+    assert by_ref["tai42/broken"]["outcome"] == "failed"
+    assert "registry served garbage" in by_ref["tai42/broken"]["detail"]
+    # The update flow resolved the PICKED pin explicitly (latest compatible).
+    assert h.registry.resolve_calls == [("tai42", "up", "1.2.0")]
+    # The upgraded ref's attribution row was re-stamped with the running cores.
+    assert h.store.record_calls[-1][0] == "tai42/up"
+    assert h.store.record_calls[-1][8:] == ("0.1.0", "0.1.0")
+
+
+async def test_upgrade_all_holds_one_lock_across_the_batch(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(installer_module.importlib.metadata, "version", lambda name: "0.1.0")
+    a = make_spec(name="a", package="pkg-a")
+    b = make_spec(name="b", package="pkg-b")
+    h = Harness()
+    h.store.preload(a, version="1.0.0")
+    h.store.preload(b, version="1.0.0")
+    h.registry.versions_map = {
+        "tai42/a": [_published_row("1.0.0")],
+        "tai42/b": [_published_row("1.0.0")],
+    }
+
+    report = await h.installer().upgrade_all()
+
+    assert [entry["outcome"] for entry in report] == ["up-to-date", "up-to-date"]
+    # ONE acquire/release pair wraps the whole batch — never per ref.
+    assert h.events.count("lock:acquire") == 1
+    assert h.events.count("lock:release") == 1
+    assert h.events[0] == "lock:acquire"
+    assert h.events[-1] == "lock:release"
+
+
+async def test_upgrade_all_lock_held_elsewhere_refuses_before_any_read() -> None:
+    h = Harness()
+    h.fleet.held = True
+    with pytest.raises(OperationInProgressError):
+        await h.installer().upgrade_all()
+    assert h.events == []  # no store/registry call behind a refused lock
+
+
+async def test_upgrade_all_empty_store_is_an_empty_report() -> None:
+    h = Harness()
+    assert await h.installer().upgrade_all() == []

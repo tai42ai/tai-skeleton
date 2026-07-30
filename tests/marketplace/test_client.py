@@ -201,6 +201,19 @@ async def test_resolve_omits_the_version_key_when_none(wire) -> None:
     assert fake.calls[0]["json"] == {}
 
 
+async def test_resolve_always_sends_the_running_contract_param(wire, monkeypatch) -> None:
+    # Every resolve names the installed tai42-contract as the ``contract`` query
+    # param so a contract-aware registry pins the latest COMPATIBLE version. The
+    # value is pinned here, keeping the test independent of the environment's
+    # installed contract and of any server-side behavior.
+    monkeypatch.setattr(client_module, "running_contract_version", lambda: "0.3.0")
+    fake = wire(lambda m, u, p, j: _ok({"version": "1.0.0"}))
+    await RegistryClient(_BASE).resolve("tai42", "toolbox")
+    call = fake.calls[0]
+    assert call["params"] == {"contract": "0.3.0"}
+    assert call["request"].url.query == b"contract=0.3.0"
+
+
 async def test_resolve_409_remaps_to_version_refused(wire) -> None:
     wire(lambda m, u, p, j: _err(409, "version is killed"))
     with pytest.raises(VersionRefusedError, match="killed"):

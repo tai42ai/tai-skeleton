@@ -38,6 +38,7 @@ from tai42_skeleton.monitoring import (
     init_monitoring,
     reset_monitoring,
 )
+from tai42_skeleton.plugins.quarantine import quarantined_plugins
 
 _BUILTIN_MODULE = "tai42_skeleton.extensions.builtin.monitor"
 
@@ -209,9 +210,10 @@ def test_monitor_is_config_agnostic_and_rejects_config():
     )
 
     async def run() -> None:
-        with pytest.raises(ValueError, match="does not accept config"):
-            async with app.app_context(manifest):
-                await app.tools.get_tools()
+        async with app.app_context(manifest):
+            reason = quarantined_plugins()["tests.extensions._fixtures.tools_external"]
+            assert "does not accept config" in reason
+            assert "make_signature" not in await app.tools.get_tools()
 
     asyncio.run(run())
 

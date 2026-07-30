@@ -96,6 +96,7 @@ from tai42_kit.clients.impl.postgres import PostgresClient
 from tai42_skeleton.app.boot_rules import BackendNeedsBusError
 from tai42_skeleton.config.service import ApplyResult, ConfigService
 from tai42_skeleton.marketplace.client import RegistryClient
+from tai42_skeleton.marketplace.compat import running_contract_version, update_targets
 from tai42_skeleton.marketplace.errors import (
     ContractIncompatibleError,
     EnvironmentShadowError,
@@ -446,10 +447,20 @@ class Installer:
 
             apply_result = await self._apply_composed(mutator)
             manifest_persisted = True
-            # Step 5 — attribution write.
+            # Step 5 — attribution write, stamped with the core versions doing it.
             repo_url, tag, artifact_ref, sha256 = _pin_provenance(resolved, source)
+            contract_version, skeleton_version = _core_version_stamps()
             await self._store.record(
-                ref, pinned_version, source, repo_url, tag, artifact_ref, sha256, spec.model_dump(mode="json")
+                ref,
+                pinned_version,
+                source,
+                repo_url,
+                tag,
+                artifact_ref,
+                sha256,
+                spec.model_dump(mode="json"),
+                contract_version=contract_version,
+                skeleton_version=skeleton_version,
             )
         except Exception as step_error:
             # The pipeline aborts a failed mutation with nothing persisted, so the
@@ -656,10 +667,20 @@ class Installer:
 
             apply_result = await self._apply_composed(mutator)
             manifest_persisted = True
-            # Step 6 — attribution upsert.
+            # Step 6 — attribution upsert, stamped with the core versions doing it.
             repo_url, tag, artifact_ref, sha256 = _pin_provenance(resolved, source)
+            contract_version, skeleton_version = _core_version_stamps()
             await self._store.record(
-                ref, pinned_version, source, repo_url, tag, artifact_ref, sha256, new_spec.model_dump(mode="json")
+                ref,
+                pinned_version,
+                source,
+                repo_url,
+                tag,
+                artifact_ref,
+                sha256,
+                new_spec.model_dump(mode="json"),
+                contract_version=contract_version,
+                skeleton_version=skeleton_version,
             )
         except Exception as step_error:
             persisted = manifest_persisted or isinstance(step_error, FleetBroadcastError)
@@ -709,6 +730,73 @@ class Installer:
                 await self._svc().apply_replace(saved_manifest)
         except Exception as unwind_error:
             raise InstallUnwindError(step_error, unwind_error) from step_error
+
+    # -- upgrade-all --------------------------------------------------------
+
+    async def upgrade_all(self) -> list[dict[str, Any]]:
+        """Upgrade every installed plugin to its latest COMPATIBLE version and
+        return a complete per-ref report.
+
+        Runs the whole batch under ONE hold of the per-worker + fleet locks —
+        never interleaving with another marketplace operation — and each ref
+        gets exactly one report entry ``{ref, outcome, detail}``:
+
+        * ``upgraded`` — a newer compatible version existed and the ordinary
+          update flow (same pre-flights, same unwind) moved onto it;
+        * ``up-to-date`` — the installed version already IS the latest
+          compatible one (a newer-but-incompatible version is named in the
+          detail, never silently omitted);
+        * ``no-compatible-version`` — no published version supports the running
+          contract at all (a loud failure entry: the plugin runs only by grace
+          of its quarantine/compat status, and nothing here can fix it);
+        * ``failed`` — the probe or the update flow raised; the error is logged
+          with its traceback and its message becomes the detail.
+
+        A per-ref failure NEVER aborts the batch — the report is complete by
+        construction, which is the whole point of a fleet-wide upgrade pass.
+        """
+        async with self._guard():
+            return await self._upgrade_all_locked()
+
+    async def _upgrade_all_locked(self) -> list[dict[str, Any]]:
+        contract = running_contract_version()
+        report: list[dict[str, Any]] = []
+        for row in await self._store.list_installed():
+            report.append(await self._upgrade_one(row, contract))
+        return report
+
+    async def _upgrade_one(self, row: InstallRecord, contract: str) -> dict[str, Any]:
+        """One ref's upgrade attempt → its report entry. The target is picked
+        from the registry's version rows (published + contract-compatible, the
+        same computation the installed listing's ``update_available`` serves,
+        so this upgrades exactly what that listing advertises); the move itself
+        is the ordinary update flow against the picked pin."""
+        ns, name = _parse_ref(row.ref)
+        try:
+            versions = await self._registry.versions(ns, name)
+            targets = update_targets(versions, installed_version=row.version, contract_version=contract)
+            blocked = (
+                f" ({targets.incompatible_newer} exists but does not support tai42-contract {contract})"
+                if targets.incompatible_newer is not None
+                else ""
+            )
+            if targets.latest_compatible is None:
+                detail = f"no published version supports tai42-contract {contract}{blocked}"
+                logger.error("upgrade-all: %s has no compatible version — %s", row.ref, detail)
+                return {"ref": row.ref, "outcome": "no-compatible-version", "detail": detail}
+            if not targets.update_available:
+                return {
+                    "ref": row.ref,
+                    "outcome": "up-to-date",
+                    "detail": f"{row.version} is the latest compatible version{blocked}",
+                }
+            result = await self._update_locked(row.ref, targets.latest_compatible)
+            return {"ref": row.ref, "outcome": "upgraded", "detail": f"{row.version} -> {result['version']}"}
+        except Exception as exc:
+            # The explicit per-ref recovery path: logged with the traceback and
+            # reported, so one broken ref never hides the rest of the batch.
+            logger.exception("upgrade-all: upgrading %s failed", row.ref)
+            return {"ref": row.ref, "outcome": "failed", "detail": str(exc)}
 
     # -- shared resolve handling -------------------------------------------
 
@@ -768,11 +856,17 @@ class Installer:
             raise RegistryResponseError(
                 f"registry served an unusable contract_range {contract_range!r}: {exc}", status=None
             ) from exc
-        installed = importlib.metadata.version("tai42-contract")
+        installed = running_contract_version()
         if not specifier.contains(installed, prereleases=True):
             raise ContractIncompatibleError(
                 f"plugin requires tai42-contract {contract_range}, but {installed} is installed"
             )
+
+
+def _core_version_stamps() -> tuple[str, str]:
+    """The ``(tai42-contract, tai42-skeleton)`` versions running right now — the
+    diagnostics stamp every attribution write carries."""
+    return running_contract_version(), importlib.metadata.version("tai42-skeleton")
 
 
 def _parse_ref(ref: str) -> tuple[str, str]:

@@ -7,12 +7,19 @@ catalog refresh), so a reload that changes ``manifest.studio_plugins`` reflects
 without a process restart. Data is read at call time from the live manifest and
 the ``plugins_settings`` dist path — never captured at import time.
 
-Every failure here is LOUD: a listed package missing its ``studio/`` dist or
-``studio-manifest.json``, a manifest that violates the charset allow-lists, an
-integrity filename that escapes the plugin's ``studio/`` root, or a required
-shared-vendor asset missing from the deployed SPA — each raises, never a silent
-skip. A silent skip would drop a plugin's UI or ship an unpinned asset while the
-startup reported success.
+Failure surface, split by blast radius:
+
+* A PER-PLUGIN fault — the package is contract-incompatible with the running
+  ``tai42-contract``, missing its ``studio/`` dist or ``studio-manifest.json``,
+  violates the charset allow-lists, escapes its ``studio/`` root, or fails an
+  integrity hash — QUARANTINES that plugin: one loud log line, a quarantine
+  entry the marketplace listing and readiness count surface, and exclusion from
+  the built registry. One broken plugin never takes the whole boot down (an
+  empty registry is valid), and never a silent skip either.
+* A DEPLOYMENT fault — a required shared-vendor asset missing from the SPA
+  dist — still raises :class:`StudioPluginError` and fails the boot: without
+  the vendor assets NO plugin (nor the shell) can load, so continuing would
+  ship an unresolvable import map.
 """
 
 from __future__ import annotations
@@ -330,13 +337,36 @@ def _vendor_integrity(dist_path: str | None) -> dict[str, str]:
 
 
 def build_registry(studio_plugins: list[str], dist_path: str | None) -> StudioPluginRegistry:
-    """Validate every listed plugin and hash the vendor assets. Loud on any
-    failure — never returns a partial registry."""
+    """Build the registry from the listed plugins, quarantining per-plugin
+    faults and hashing the vendor assets.
+
+    A plugin that is contract-incompatible is never loaded (quarantined on the
+    verdict alone); a plugin whose load raises — missing dist, bad manifest,
+    hash mismatch, traversal — is quarantined with the failure as its reason.
+    Both are excluded from the registry and logged loudly; the surviving
+    plugins (possibly none) form the registry. A duplicate listing is a
+    manifest hygiene fault, not a plugin fault: the package loads once and the
+    duplication is logged. Only the vendor-asset check may raise — a missing
+    vendor asset breaks every plugin and the shell, so it stays a boot failure.
+    """
+    from tai42_skeleton.marketplace.compat import module_compat
+    from tai42_skeleton.plugins.quarantine import quarantine_plugin
+
     plugins: dict[str, InstalledStudioPlugin] = {}
-    for package in studio_plugins:
-        if package in plugins:
-            raise StudioPluginError(f"studio plugin {package!r} is listed more than once in ``studio_plugins``")
-        plugins[package] = _load_plugin(package)
+    for package in dict.fromkeys(studio_plugins):
+        if studio_plugins.count(package) > 1:
+            logger.error("studio plugin %r is listed more than once in ``studio_plugins``; loading it once", package)
+        verdict = module_compat(package)
+        if verdict.status == "incompatible":
+            quarantine_plugin(package, f"studio plugin not loaded: {verdict.reason}")
+            continue
+        if verdict.status == "unknown":
+            logger.info("plugin compat unknown for studio plugin %s: %s", package, verdict.reason)
+        try:
+            plugins[package] = _load_plugin(package)
+        except Exception as exc:
+            logger.exception("studio plugin %r failed to load; quarantining it", package)
+            quarantine_plugin(package, f"studio plugin failed to load: {exc}")
     return StudioPluginRegistry(
         plugins=plugins,
         vendor_integrity_by_url=_vendor_integrity(dist_path),

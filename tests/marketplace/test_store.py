@@ -4,8 +4,9 @@ A ``FakeMarketplacePg`` models the single ``marketplace_installs`` table and
 interprets the store's exact SQL by normalized prefix, monkeypatched in over the
 pooled ``client_ctx``. It covers the upsert-on-conflict, get hit/miss, delete
 True/False, list ordering, and the ``spec`` / ``repository_url`` / ``tag`` /
-``artifact_ref`` / ``sha256`` round-trips (github carries the pin columns, pypi
-keeps them NULL).
+``artifact_ref`` / ``sha256`` / ``contract_version`` / ``skeleton_version``
+round-trips (github carries the pin columns, pypi keeps them NULL; every write
+carries the core-version stamps).
 """
 
 from __future__ import annotations
@@ -45,7 +46,7 @@ class _FakeCursor:
         self._all = []
         self.rowcount = 0
         if norm.startswith("INSERT INTO marketplace_installs"):
-            ref, version, source, repository_url, tag, artifact_ref, sha256, spec = params
+            ref, version, source, repository_url, tag, artifact_ref, sha256, spec, contract_v, skeleton_v = params
             pg.rows[ref] = {
                 "ref": ref,
                 "version": version,
@@ -55,6 +56,8 @@ class _FakeCursor:
                 "artifact_ref": artifact_ref,
                 "sha256": sha256,
                 "spec": _unwrap(spec),
+                "contract_version": contract_v,
+                "skeleton_version": skeleton_v,
                 "installed_at": pg.next_time(),
             }
         elif norm.startswith("SELECT"):
@@ -123,6 +126,8 @@ class FakeMarketplacePg:
             row["artifact_ref"],
             row["sha256"],
             row["spec"],
+            row["contract_version"],
+            row["skeleton_version"],
             row["installed_at"],
         )
 
@@ -149,9 +154,15 @@ def store() -> MarketplaceInstallStore:
     return MarketplaceInstallStore()
 
 
+def _record(store, ref: str, version: str, spec: dict | None = None, **overrides):
+    """One pypi record call with the stamp kwargs every write now carries."""
+    kwargs = {"contract_version": "0.3.0", "skeleton_version": "0.3.1", **overrides}
+    return store.record(ref, version, "pypi", None, None, None, None, spec if spec is not None else {}, **kwargs)
+
+
 async def test_record_and_get_round_trip_pypi(pg, store) -> None:
     spec = {"namespace": "tai42", "name": "toolbox", "nested": {"a": [1, 2]}}
-    await store.record("tai42/toolbox", "1.0.0", "pypi", None, None, None, None, spec)
+    await _record(store, "tai42/toolbox", "1.0.0", spec)
     rec = await store.get("tai42/toolbox")
     assert rec is not None
     assert (rec.ref, rec.version, rec.source) == ("tai42/toolbox", "1.0.0", "pypi")
@@ -161,6 +172,9 @@ async def test_record_and_get_round_trip_pypi(pg, store) -> None:
     assert rec.artifact_ref is None
     assert rec.sha256 is None
     assert rec.spec == spec  # JSON round-trips untouched
+    # The core-version stamps round-trip — diagnostics columns, written on every record.
+    assert rec.contract_version == "0.3.0"
+    assert rec.skeleton_version == "0.3.1"
 
 
 async def test_record_github_round_trips_pin_and_verified_columns(pg, store) -> None:
@@ -173,6 +187,8 @@ async def test_record_github_round_trips_pin_and_verified_columns(pg, store) -> 
         "https://codeload.github.com/tai42ai/gh/tar.gz/refs/tags/v2.0.0",
         "a" * 64,
         {"k": 1},
+        contract_version="0.3.0",
+        skeleton_version="0.3.1",
     )
     rec = await store.get("tai42/gh")
     assert rec is not None
@@ -184,12 +200,15 @@ async def test_record_github_round_trips_pin_and_verified_columns(pg, store) -> 
 
 
 async def test_record_upserts_on_conflict(pg, store) -> None:
-    await store.record("tai42/toolbox", "1.0.0", "pypi", None, None, None, None, {"v": 1})
-    await store.record("tai42/toolbox", "2.0.0", "pypi", None, None, None, None, {"v": 2})
+    await _record(store, "tai42/toolbox", "1.0.0", {"v": 1})
+    await _record(store, "tai42/toolbox", "2.0.0", {"v": 2}, contract_version="0.4.0", skeleton_version="0.4.2")
     rec = await store.get("tai42/toolbox")
     assert rec is not None
     assert rec.version == "2.0.0"
     assert rec.spec == {"v": 2}
+    # The upsert re-stamps the core versions that performed the update.
+    assert rec.contract_version == "0.4.0"
+    assert rec.skeleton_version == "0.4.2"
     assert len(pg.rows) == 1  # replaced, not duplicated
 
 
@@ -198,13 +217,13 @@ async def test_get_miss_returns_none(pg, store) -> None:
 
 
 async def test_delete_returns_true_then_false(pg, store) -> None:
-    await store.record("tai42/toolbox", "1.0.0", "pypi", None, None, None, None, {})
+    await _record(store, "tai42/toolbox", "1.0.0")
     assert await store.delete("tai42/toolbox") is True
     assert await store.delete("tai42/toolbox") is False
 
 
 async def test_list_installed_is_ordered_by_ref(pg, store) -> None:
-    await store.record("tai42/zeta", "1.0.0", "pypi", None, None, None, None, {})
-    await store.record("tai42/alpha", "1.0.0", "pypi", None, None, None, None, {})
+    await _record(store, "tai42/zeta", "1.0.0")
+    await _record(store, "tai42/alpha", "1.0.0")
     rows = await store.list_installed()
     assert [r.ref for r in rows] == ["tai42/alpha", "tai42/zeta"]

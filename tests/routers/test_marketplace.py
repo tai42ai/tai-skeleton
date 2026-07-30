@@ -24,6 +24,7 @@ import tai42_skeleton.operations.marketplace as mkt_ops
 import tai42_skeleton.routers.marketplace as router
 from tai42_skeleton.app.reload_gate import reload_gate
 from tai42_skeleton.marketplace.advisories import AdvisoryState
+from tai42_skeleton.marketplace.compat import CompatVerdict
 from tai42_skeleton.marketplace.errors import (
     ArtifactIntegrityError,
     ContractIncompatibleError,
@@ -42,6 +43,7 @@ from tai42_skeleton.marketplace.errors import (
     VersionRefusedError,
 )
 from tai42_skeleton.marketplace.store import InstallRecord
+from tai42_skeleton.plugins.quarantine import quarantine_plugin, reset_quarantine
 
 
 def _get(path: str = "/", query: bytes = b"", **path_params: str) -> Request:
@@ -95,7 +97,10 @@ class _FakeRegistry:
         return result
 
     async def versions(self, ns, name):
-        return self._b.get("versions", [])
+        result = self._b["versions"](ns, name) if callable(self._b.get("versions")) else self._b.get("versions", [])
+        if isinstance(result, Exception):
+            raise result
+        return result
 
     async def categories(self):
         return self._b.get("categories", [])
@@ -123,6 +128,9 @@ def _use_installer(monkeypatch: pytest.MonkeyPatch, *, install: Callable[[str, s
 
         async def update(self, ref, version=None):
             return await install(ref, version)
+
+        async def upgrade_all(self):
+            return await install("--all--", None)
 
     monkeypatch.setattr(mkt_ops, "Installer", lambda *a, **k: _Installer())
 
@@ -185,26 +193,63 @@ async def test_categories_proxies_the_vocabulary(monkeypatch: pytest.MonkeyPatch
 # -- installed ---------------------------------------------------------------
 
 
+def _published(version: str, contract_range: str | None = ">=0.3,<0.4") -> dict[str, Any]:
+    return {"version": version, "status": "published", "contract_range": contract_range}
+
+
+@pytest.fixture(autouse=True)
+def _pin_contract(monkeypatch: pytest.MonkeyPatch):
+    # The installed listing computes against the RUNNING contract; pin it so the
+    # tests are independent of the environment's tai42-contract version. The
+    # process-global quarantine registry is reset around each test too — boot
+    # passes other tests run would otherwise leak entries into ``quarantined``.
+    monkeypatch.setattr(mkt_ops, "running_contract_version", lambda: "0.3.0")
+    reset_quarantine()
+    yield
+    reset_quarantine()
+
+
 async def test_installed_happy_computes_update_availability(monkeypatch: pytest.MonkeyPatch) -> None:
     _use_store(monkeypatch, [_record("tai42/toolbox", "1.0.0")])
-    _use_registry(monkeypatch, _FakeRegistry(plugin={"latest": {"version": "2.0.0"}}))
+    _use_registry(monkeypatch, _FakeRegistry(versions=[_published("2.0.0"), _published("1.0.0")]))
     resp = await router.marketplace_installed(_get())
-    row = _data(resp)["data"][0]
+    body = _data(resp)["data"]
+    row = body["installed"][0]
     assert row["latest"] == "2.0.0"
     assert row["update_available"] is True
+    assert row["incompatible_newer"] is None
     assert row["missing_upstream"] is False
+    # A row whose stored spec names no package cannot be verdicted — surfaced
+    # as unknown, never a silent "compatible".
+    assert row["compat"]["status"] == "unknown"
+    assert body["quarantined"] == []
+
+
+async def test_installed_incompatible_newer_never_advertises_as_update(monkeypatch: pytest.MonkeyPatch) -> None:
+    # 2.0.0 needs a different contract: it must NOT drive update_available, but
+    # it must be named in incompatible_newer — visible, never silently dropped.
+    _use_store(monkeypatch, [_record("tai42/toolbox", "1.0.0")])
+    _use_registry(
+        monkeypatch,
+        _FakeRegistry(versions=[_published("2.0.0", ">=0.4,<0.5"), _published("1.5.0"), _published("1.0.0")]),
+    )
+    resp = await router.marketplace_installed(_get())
+    row = _data(resp)["data"]["installed"][0]
+    assert row["latest"] == "2.0.0"
+    assert row["update_available"] is True  # 1.5.0 is the compatible target
+    assert row["incompatible_newer"] == "2.0.0"
 
 
 async def test_installed_row_with_vanished_upstream_is_marked(monkeypatch: pytest.MonkeyPatch) -> None:
-    def _plugin(ns, name):
+    def _versions(ns, name):
         if name == "gone":
             return ListingNotFoundError("marketplace listing not found: tai42/gone")
-        return {"latest": {"version": "2.0.0"}}
+        return [_published("2.0.0")]
 
     _use_store(monkeypatch, [_record("tai42/gone", "1.0.0"), _record("tai42/live", "1.0.0")])
-    _use_registry(monkeypatch, _FakeRegistry(plugin=_plugin))
+    _use_registry(monkeypatch, _FakeRegistry(versions=_versions))
     resp = await router.marketplace_installed(_get())
-    rows = {r["ref"]: r for r in _data(resp)["data"]}
+    rows = {r["ref"]: r for r in _data(resp)["data"]["installed"]}
     assert rows["tai42/gone"]["missing_upstream"] is True
     assert rows["tai42/gone"]["latest"] is None
     assert rows["tai42/live"]["latest"] == "2.0.0"  # other rows intact
@@ -212,9 +257,9 @@ async def test_installed_row_with_vanished_upstream_is_marked(monkeypatch: pytes
 
 async def test_installed_zero_published_versions_is_not_a_500(monkeypatch: pytest.MonkeyPatch) -> None:
     _use_store(monkeypatch, [_record("tai42/toolbox", "1.0.0")])
-    _use_registry(monkeypatch, _FakeRegistry(plugin={"latest": None}))
+    _use_registry(monkeypatch, _FakeRegistry(versions=[{"version": "2.0.0", "status": "yanked"}]))
     resp = await router.marketplace_installed(_get())
-    row = _data(resp)["data"][0]
+    row = _data(resp)["data"]["installed"][0]
     assert row["latest"] is None
     assert row["update_available"] is False
     assert row["missing_upstream"] is False  # the listing is there, just unpublished
@@ -222,31 +267,86 @@ async def test_installed_zero_published_versions_is_not_a_500(monkeypatch: pytes
 
 async def test_installed_transport_failure_still_502(monkeypatch: pytest.MonkeyPatch) -> None:
     _use_store(monkeypatch, [_record("tai42/toolbox", "1.0.0")])
-    _use_registry(monkeypatch, _FakeRegistry(plugin=RegistryUnreachableError("down")))
+    _use_registry(monkeypatch, _FakeRegistry(versions=RegistryUnreachableError("down")))
     resp = await router.marketplace_installed(_get())
     assert resp.status_code == 502
 
 
-async def test_installed_non_pep440_latest_is_502(monkeypatch: pytest.MonkeyPatch) -> None:
-    # A registry-supplied ``latest`` that is not a PEP 440 version is garbled
+async def test_installed_non_pep440_published_version_is_502(monkeypatch: pytest.MonkeyPatch) -> None:
+    # A registry-supplied published version that is not PEP 440 is garbled
     # upstream data — a 502, never a raw this-server 500 from the version compare.
     _use_store(monkeypatch, [_record("tai42/toolbox", "1.0.0")])
-    _use_registry(monkeypatch, _FakeRegistry(plugin={"latest": {"version": "not-a-version"}}))
+    _use_registry(monkeypatch, _FakeRegistry(versions=[_published("not-a-version")]))
     resp = await router.marketplace_installed(_get())
     assert resp.status_code == 502
     assert "error" in _data(resp)
 
 
-async def test_installed_non_string_latest_is_502(monkeypatch: pytest.MonkeyPatch) -> None:
-    # A registry-supplied ``latest.version`` that is not even a string (an int
-    # here) makes ``Version()`` raise TypeError — NOT InvalidVersion — so the
-    # compare would otherwise escape as a raw this-server 500. Garbled upstream
-    # data is a 502.
+async def test_installed_non_string_published_version_is_502(monkeypatch: pytest.MonkeyPatch) -> None:
+    # A ``version`` that is not even a string (an int here) makes ``Version()``
+    # raise TypeError — NOT InvalidVersion — so the compare would otherwise
+    # escape as a raw this-server 500. Garbled upstream data is a 502.
     _use_store(monkeypatch, [_record("tai42/toolbox", "1.0.0")])
-    _use_registry(monkeypatch, _FakeRegistry(plugin={"latest": {"version": 123}}))
+    _use_registry(monkeypatch, _FakeRegistry(versions=[_published(123)]))  # pyright: ignore[reportArgumentType]
     resp = await router.marketplace_installed(_get())
     assert resp.status_code == 502
     assert "error" in _data(resp)
+
+
+async def test_installed_malformed_contract_range_is_502(monkeypatch: pytest.MonkeyPatch) -> None:
+    _use_store(monkeypatch, [_record("tai42/toolbox", "1.0.0")])
+    _use_registry(monkeypatch, _FakeRegistry(versions=[_published("2.0.0", "not a specifier !!")]))
+    resp = await router.marketplace_installed(_get())
+    assert resp.status_code == 502
+    assert "error" in _data(resp)
+
+
+async def test_installed_garbled_local_version_is_500(monkeypatch: pytest.MonkeyPatch) -> None:
+    # An unparsable STORED version is corrupt local state — a 500, never blamed
+    # on the registry as a 502.
+    _use_store(monkeypatch, [_record("tai42/toolbox", "not-a-version")])
+    _use_registry(monkeypatch, _FakeRegistry(versions=[_published("2.0.0")]))
+    resp = await router.marketplace_installed(_get())
+    assert resp.status_code == 500
+    assert "error" in _data(resp)
+
+
+async def test_installed_serves_per_row_compat_verdict(monkeypatch: pytest.MonkeyPatch) -> None:
+    record = InstallRecord(
+        ref="tai42/toolbox",
+        version="1.0.0",
+        source="pypi",
+        spec={"package": "acme-toolbox"},
+        installed_at=datetime(2026, 1, 1, tzinfo=UTC),
+    )
+    _use_store(monkeypatch, [record])
+    _use_registry(monkeypatch, _FakeRegistry(versions=[_published("1.0.0")]))
+    seen: list[str] = []
+
+    def _dist_compat(dist_name: str):
+        seen.append(dist_name)
+        return CompatVerdict("incompatible", "acme-toolbox requires tai42-contract <0.3, but 0.3.0 is running")
+
+    monkeypatch.setattr(mkt_ops, "dist_compat", _dist_compat)
+    resp = await router.marketplace_installed(_get())
+    row = _data(resp)["data"]["installed"][0]
+    assert seen == ["acme-toolbox"]  # verdicted by the stored spec's package dist
+    assert row["compat"]["status"] == "incompatible"
+    assert "requires tai42-contract" in row["compat"]["reason"]
+
+
+async def test_installed_surfaces_the_boot_quarantine(monkeypatch: pytest.MonkeyPatch) -> None:
+    _use_store(monkeypatch, [])
+    _use_registry(monkeypatch, _FakeRegistry())
+    reset_quarantine()
+    try:
+        quarantine_plugin("acme_plugin", "tools module failed to import: boom")
+        resp = await router.marketplace_installed(_get())
+    finally:
+        reset_quarantine()
+    body = _data(resp)["data"]
+    assert body["installed"] == []
+    assert body["quarantined"] == [{"name": "acme_plugin", "reason": "tools module failed to import: boom"}]
 
 
 # -- advisories --------------------------------------------------------------
@@ -379,3 +479,42 @@ async def test_uninstall_and_update_wrap_data(monkeypatch: pytest.MonkeyPatch) -
     r2 = await router.marketplace_update(_post({"ref": "tai42/toolbox", "version": "2.0.0"}))
     assert _data(r1)["data"]["ok"] is True
     assert _data(r2)["data"]["ok"] is True
+
+
+# -- upgrade-all --------------------------------------------------------------
+
+
+async def test_upgrade_all_wraps_the_per_ref_report(monkeypatch: pytest.MonkeyPatch) -> None:
+    report = [
+        {"ref": "tai42/a", "outcome": "upgraded", "detail": "1.0.0 -> 1.2.0"},
+        {"ref": "tai42/b", "outcome": "no-compatible-version", "detail": "no published version supports 0.3.0"},
+    ]
+
+    async def _run(ref, version):
+        return report
+
+    _use_installer(monkeypatch, install=_run)
+    resp = await router.marketplace_upgrade_all(_post({}))
+    assert resp.status_code == 200
+    assert _data(resp)["data"] == {"results": report}
+
+
+async def test_upgrade_all_busy_fleet_lock_is_retriable_503(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def _busy(ref, version):
+        raise OperationInProgressError("another marketplace operation is in progress; retry shortly")
+
+    _use_installer(monkeypatch, install=_busy)
+    resp = await router.marketplace_upgrade_all(_post({}))
+    assert resp.status_code == 503
+    assert "in progress" in _data(resp)["error"]
+
+
+async def test_upgrade_all_reload_gate_locked_is_503_reloading(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def _never(ref, version):  # pragma: no cover - the gate rejects first
+        raise AssertionError("the operation must not run while the gate is locked")
+
+    _use_installer(monkeypatch, install=_never)
+    async with reload_gate.lock:
+        resp = await router.marketplace_upgrade_all(_post({}))
+    assert resp.status_code == 503
+    assert _data(resp)["reloading"] is True

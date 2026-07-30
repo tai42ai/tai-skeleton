@@ -19,6 +19,7 @@ from tai42_skeleton.extensions.builtin.ask_external import ask_external
 from tai42_skeleton.interactions import InteractionStore
 from tai42_skeleton.interactions import helper as helper_module
 from tai42_skeleton.interactions.settings import InteractionsSettings
+from tai42_skeleton.plugins.quarantine import quarantined_plugins
 from tests._helpers import await_add_event
 
 _BUILTIN_MODULE = "tai42_skeleton.extensions.builtin.ask_external"
@@ -239,9 +240,10 @@ def test_config_on_config_agnostic_extension_rejected_at_apply_site():
     )
 
     async def run() -> None:
-        with pytest.raises(ValueError, match="does not accept config"):
-            async with app.app_context(manifest):
-                await app.tools.get_tools()
+        async with app.app_context(manifest):
+            reason = quarantined_plugins()["tests.extensions._fixtures.tools_external"]
+            assert "does not accept config" in reason
+            assert "make_signature" not in await app.tools.get_tools()
 
     asyncio.run(run())
 

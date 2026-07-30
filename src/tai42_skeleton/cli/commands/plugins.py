@@ -1,16 +1,16 @@
 """``tai plugins`` — browse and install marketplace plugins.
 
-Thin wrappers over the eight ``/api/marketplace/*`` routes: the five reads
+Thin wrappers over the nine ``/api/marketplace/*`` routes: the five reads
 (``search``, ``info``, ``categories``, ``installed``, ``advisories``) and the
-three environment-mutating flows (``install``, ``uninstall``, ``update``). Each
-command declares the exact registered route it invokes via ``@covers`` so the
-CLI↔route parity gate proves every marketplace route is reachable from the
-terminal.
+four environment-mutating flows (``install``, ``uninstall``, ``update``,
+``upgrade --all``). Each command declares the exact registered route it invokes
+via ``@covers`` so the CLI↔route parity gate proves every marketplace route is
+reachable from the terminal.
 
-``install``/``uninstall``/``update`` run arbitrary third-party code in the serving
-environment by design; typed :class:`ApiError` results (a 409 collision, a 502
-registry failure, a 503 in-progress) surface through the root group's handler, so
-these commands add no error handling of their own.
+The mutating commands run arbitrary third-party code in the serving environment
+by design; typed :class:`ApiError` results (a 409 collision, a 502 registry
+failure, a 503 in-progress) surface through the root group's handler, so these
+commands add no error handling of their own.
 """
 
 from __future__ import annotations
@@ -126,14 +126,34 @@ def categories(ctx: typer.Context) -> None:
 @app.command("installed")
 @covers(("GET", "/api/marketplace/installed"))
 def installed(ctx: typer.Context) -> None:
-    """List the installed marketplace plugins and their update availability.
+    """List the installed marketplace plugins, their compat verdicts and update
+    availability, and any boot-quarantined plugins.
 
     Example: ``tai plugins installed``
     """
     ctx_obj = app_context(ctx)
     with ctx_obj.client() as client:
         data = client.get("/api/marketplace/installed")
-    emit_records(ctx_obj, data, ["ref", "version", "latest", "update_available", "installed_at"])
+    if not ctx_obj.json_output and isinstance(data, dict):
+        # The table shows the compat STATUS in its own column (the reason is in
+        # the JSON form), and quarantined plugins are printed after the table so
+        # a skipped plugin is never invisible in the default view.
+        rows = [{**row, "compat": row.get("compat", {}).get("status")} for row in data.get("installed", [])]
+        emit_records(
+            ctx_obj,
+            {"installed": rows},
+            ["ref", "version", "latest", "update_available", "incompatible_newer", "compat", "installed_at"],
+            items_key="installed",
+        )
+        for entry in data.get("quarantined", []):
+            typer.echo(f"quarantined: {entry.get('name')} — {entry.get('reason')}")
+        return
+    emit_records(
+        ctx_obj,
+        data,
+        ["ref", "version", "latest", "update_available", "incompatible_newer", "compat", "installed_at"],
+        items_key="installed",
+    )
 
 
 @app.command("install")
@@ -187,6 +207,33 @@ def update(
     with ctx_obj.client() as client:
         data = client.post("/api/marketplace/update", json=body)
     emit_result(ctx_obj, data)
+
+
+@app.command("upgrade")
+@covers(("POST", "/api/marketplace/upgrade-all"))
+def upgrade(
+    ctx: typer.Context,
+    all_plugins: Annotated[
+        bool,
+        typer.Option("--all", help="Upgrade every installed plugin to its latest compatible version."),
+    ] = False,
+) -> None:
+    """Upgrade every installed plugin to its latest compatible version.
+
+    ``--all`` is required: the batch is deliberately explicit, and a single
+    plugin is upgraded with ``tai plugins update REF`` instead.
+
+    Example: ``tai plugins upgrade --all``
+    """
+    if not all_plugins:
+        raise typer.BadParameter(
+            "pass --all to upgrade every installed plugin (a single plugin is 'tai plugins update REF')",
+            param_hint="--all",
+        )
+    ctx_obj = app_context(ctx)
+    with ctx_obj.client() as client:
+        data = client.post("/api/marketplace/upgrade-all", json={})
+    emit_records(ctx_obj, data, ["ref", "outcome", "detail"], items_key="results")
 
 
 @app.command("advisories")

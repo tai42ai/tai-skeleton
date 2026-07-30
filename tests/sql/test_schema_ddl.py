@@ -70,6 +70,25 @@ def test_role_audit_append_only_triggers_present() -> None:
     assert ddl.count("'role_audit'") >= 3
 
 
+def test_marketplace_installs_evolves_added_columns_via_alter() -> None:
+    """`contract_version`/`skeleton_version` sit inside the `CREATE TABLE IF NOT
+    EXISTS marketplace_installs` block — a no-op on any database where the table
+    already exists — so the shipped DDL MUST also add them with idempotent
+    `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` for existing deployments. Text-level
+    guard so dropping either ALTER (which would break the store's SELECT/INSERT on
+    an already-created table) fails without a live Postgres."""
+    ddl = load_ddl()
+    for column in ("contract_version", "skeleton_version"):
+        assert f"ALTER TABLE marketplace_installs ADD COLUMN IF NOT EXISTS {column} TEXT;" in ddl, (
+            f"missing idempotent ADD COLUMN for marketplace_installs.{column}"
+        )
+    # The ALTERs come AFTER the CREATE TABLE so the table exists when they run.
+    create_at = ddl.index("CREATE TABLE IF NOT EXISTS marketplace_installs")
+    for column in ("contract_version", "skeleton_version"):
+        alter_at = ddl.index(f"ALTER TABLE marketplace_installs ADD COLUMN IF NOT EXISTS {column} TEXT;")
+        assert alter_at > create_at, f"ALTER for {column} must follow the CREATE TABLE"
+
+
 def test_tool_meta_overlay_tables_present() -> None:
     """The tool-metadata overlay ships two plain tables: a folder tree and a
     per-tool row. Text-level guards so a dropped/renamed table or a lost

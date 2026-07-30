@@ -13,6 +13,7 @@ import os
 from contextlib import asynccontextmanager
 from typing import cast
 
+import pytest
 from starlette.requests import Request
 from tai42_contract.access_control import registry
 from tai42_contract.access_control.identity import AuthIdentity, IdentityProvider, ReadinessTarget
@@ -21,7 +22,17 @@ from tai42_kit.clients.impl.postgres import PostgresClient
 from tai42_kit.clients.impl.redis import RedisClient
 from tai42_kit.settings import reset_all_settings
 
+from tai42_skeleton.plugins.quarantine import quarantine_plugin, reset_quarantine
 from tai42_skeleton.routers import health
+
+
+@pytest.fixture(autouse=True)
+def _clean_quarantine():
+    # The quarantine registry is process-global and owned by boot passes other
+    # tests run; reset around each test so the count assertions are hermetic.
+    reset_quarantine()
+    yield
+    reset_quarantine()
 
 
 class _RedisBoom(Exception):
@@ -264,5 +275,25 @@ async def test_ready_nothing_wired_returns_200_empty(monkeypatch) -> None:
 
     assert resp.status_code == 200
     body = json.loads(bytes(resp.body))
-    assert body == {"status": "ready", "checks": {}}
+    assert body == {"status": "ready", "checks": {}, "plugin_quarantine": 0}
     assert calls == []
+
+
+async def test_ready_quarantine_count_rides_along_without_flipping_red(monkeypatch) -> None:
+    # A quarantined plugin is DIAGNOSTIC: the worker is serving, so readiness
+    # stays green and only the count changes — rotating the worker would turn
+    # one broken plugin into a fleet outage.
+    calls: list = []
+    monkeypatch.setattr(health, "client_ctx", _make_client_ctx(calls))
+    monkeypatch.setattr(health, "_wired_connections", list)
+    reset_quarantine()
+    try:
+        quarantine_plugin("acme_plugin", "tools module failed to import: boom")
+        resp = await health.readiness_check(_request())
+    finally:
+        reset_quarantine()
+
+    assert resp.status_code == 200
+    body = json.loads(bytes(resp.body))
+    assert body["status"] == "ready"
+    assert body["plugin_quarantine"] == 1
