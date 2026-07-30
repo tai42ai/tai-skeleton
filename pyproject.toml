@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "tai42-skeleton"
-version = "0.3.0"
+version = "0.3.1"
 description = "Open-source implementation of tai42-contract: the extended MCP server hosting tools, agents, extensions, connectors, hooks, and storage for the TAI ecosystem."
 readme = "README.md"
 requires-python = ">=3.13"
