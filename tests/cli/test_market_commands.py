@@ -11,7 +11,7 @@ import json
 
 import httpx
 
-from tests.cli.remote_harness import data_response, error_response, run_cli
+from tests.cli.remote_harness import data_response, error_response, run_cli, strip_ansi
 
 
 def _capture():
@@ -196,7 +196,9 @@ def test_upgrade_without_all_is_a_usage_error(monkeypatch) -> None:
     handler, captured = _capture()
     result = run_cli(monkeypatch, handler, ["plugins", "upgrade"])
     assert result.exit_code != 0
-    assert "--all" in result.output
+    # Rich styles the option token, splitting the dashes under forced colour;
+    # assert on the de-styled visible text.
+    assert "--all" in strip_ansi(result.output)
     assert "path" not in captured  # refused before any request
 
 

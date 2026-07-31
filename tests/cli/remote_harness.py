@@ -9,6 +9,7 @@ errors are all exercised against controlled responses.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable, Iterable
 from typing import Any
 
@@ -20,6 +21,15 @@ from tai42_skeleton.cli.client import ApiClient
 from tai42_skeleton.cli.context import AppContext
 
 Handler = Callable[[httpx.Request], httpx.Response]
+
+# CSI sequences (colour/style) Click's rich formatter emits when the runner
+# forces colour; stripping them lets content assertions read the visible text.
+_ANSI_CSI = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
+
+
+def strip_ansi(text: str) -> str:
+    """Drop ANSI escape sequences so an assertion sees the plain visible text."""
+    return _ANSI_CSI.sub("", text)
 
 
 def data_response(payload: Any, status_code: int = 200) -> httpx.Response:
