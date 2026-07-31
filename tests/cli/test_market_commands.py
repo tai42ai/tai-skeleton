@@ -89,6 +89,14 @@ def test_categories_issues_the_get(monkeypatch) -> None:
     assert captured["path"] == "/api/marketplace/categories"
 
 
+def test_kinds_issues_the_get(monkeypatch) -> None:
+    handler, captured = _capture()
+    captured["_payload"] = ["tool", "agent"]
+    result = run_cli(monkeypatch, handler, ["plugins", "kinds"])
+    assert result.exit_code == 0, result.output
+    assert captured["path"] == "/api/marketplace/kinds"
+
+
 def test_installed_json_passthrough(monkeypatch) -> None:
     handler, captured = _capture()
     payload = {

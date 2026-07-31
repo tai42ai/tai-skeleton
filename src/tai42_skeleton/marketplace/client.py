@@ -71,6 +71,14 @@ class RegistryClient:
         data = await self._request("GET", "/api/v1/categories")
         return _unwrap_list(data, "categories", "categories")
 
+    async def kinds(self) -> list[str]:
+        """The registry's controlled item-kind vocabulary — a bare list of kind
+        names in the contract enum's declaration order, unwrapped from the
+        registry's ``{"kinds": [...]}`` wrapper so the route re-envelopes a plain
+        array."""
+        data = await self._request("GET", "/api/v1/kinds")
+        return _unwrap_list(data, "kinds", "kinds")
+
     async def advisories(self, *, listing: str | None = None, since: str | None = None) -> list[dict[str, Any]]:
         """Advisory rows, unwrapped from the registry's ``{"advisories": [...]}``
         wrapper nested under ``data``, optionally filtered to one listing and/or a
@@ -213,7 +221,7 @@ def _seg(value: str) -> str:
 # AttributeError/TypeError-driven 500 — validated at this trust boundary, it is
 # a typed :class:`RegistryResponseError` (a 502) like every other
 # malformed-response case. Other endpoints (``plugin``/``versions``/
-# ``categories``) pass their payloads through as opaque display data; a
+# ``categories``/``kinds``) pass their payloads through as opaque display data; a
 # consumer that starts PARSING a field from those responses owns the typed
 # guard at its own extraction point.
 _RESOLVE_FIELD_TYPES: dict[str, tuple[type, str]] = {

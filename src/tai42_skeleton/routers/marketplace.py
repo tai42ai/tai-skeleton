@@ -1,11 +1,12 @@
 """The marketplace HTTP surface — ``/api/marketplace/*`` (all AUTHED).
 
-Nine thin adapters over the operations in
+Ten thin adapters over the operations in
 ``tai42_skeleton.operations.marketplace``:
 
 * ``GET  /api/marketplace/search``                 — proxy the registry search (multi-value ``tags``).
 * ``GET  /api/marketplace/plugins/{ns}/{name}``    — one listing's detail composed with its versions.
 * ``GET  /api/marketplace/categories``             — the controlled category vocabulary.
+* ``GET  /api/marketplace/kinds``                  — the controlled item-kind vocabulary.
 * ``GET  /api/marketplace/installed``              — the installed inventory (per-row compat + update
   availability) and the boot's plugin-quarantine entries.
 * ``POST /api/marketplace/install``                — install a plugin by ref.
@@ -53,6 +54,7 @@ from tai42_skeleton.operations.marketplace import marketplace_advisories as _mar
 from tai42_skeleton.operations.marketplace import marketplace_categories as _marketplace_categories_op
 from tai42_skeleton.operations.marketplace import marketplace_install as _marketplace_install_op
 from tai42_skeleton.operations.marketplace import marketplace_installed as _marketplace_installed_op
+from tai42_skeleton.operations.marketplace import marketplace_kinds as _marketplace_kinds_op
 from tai42_skeleton.operations.marketplace import marketplace_plugin_detail as _marketplace_plugin_detail_op
 from tai42_skeleton.operations.marketplace import marketplace_search as _marketplace_search_op
 from tai42_skeleton.operations.marketplace import marketplace_uninstall as _marketplace_uninstall_op
@@ -106,6 +108,14 @@ marketplace_categories = register_operation_route(
     tai42_app,
     operation_metadata_of(_marketplace_categories_op),
     path="/api/marketplace/categories",
+    method="GET",
+    action="read",
+)
+
+marketplace_kinds = register_operation_route(
+    tai42_app,
+    operation_metadata_of(_marketplace_kinds_op),
+    path="/api/marketplace/kinds",
     method="GET",
     action="read",
 )

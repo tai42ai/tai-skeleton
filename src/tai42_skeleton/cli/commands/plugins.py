@@ -1,8 +1,8 @@
 """``tai plugins`` — browse and install marketplace plugins.
 
-Thin wrappers over the nine ``/api/marketplace/*`` routes: the five reads
-(``search``, ``info``, ``categories``, ``installed``, ``advisories``) and the
-four environment-mutating flows (``install``, ``uninstall``, ``update``,
+Thin wrappers over the ten ``/api/marketplace/*`` routes: the six reads
+(``search``, ``info``, ``categories``, ``kinds``, ``installed``, ``advisories``)
+and the four environment-mutating flows (``install``, ``uninstall``, ``update``,
 ``upgrade --all``). Each command declares the exact registered route it invokes
 via ``@covers`` so the CLI↔route parity gate proves every marketplace route is
 reachable from the terminal.
@@ -121,6 +121,19 @@ def categories(ctx: typer.Context) -> None:
     with ctx_obj.client() as client:
         data = client.get("/api/marketplace/categories")
     emit_records(ctx_obj, data, ["category"])
+
+
+@app.command("kinds")
+@covers(("GET", "/api/marketplace/kinds"))
+def kinds(ctx: typer.Context) -> None:
+    """List the marketplace's controlled item-kind vocabulary.
+
+    Example: ``tai plugins kinds``
+    """
+    ctx_obj = app_context(ctx)
+    with ctx_obj.client() as client:
+        data = client.get("/api/marketplace/kinds")
+    emit_records(ctx_obj, data, ["kind"])
 
 
 @app.command("installed")

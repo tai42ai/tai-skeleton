@@ -122,6 +122,19 @@ async def test_categories_missing_wrapper_is_a_response_error(wire) -> None:
         await RegistryClient(_BASE).categories()
 
 
+async def test_kinds_unwraps_the_inner_wrapper(wire) -> None:
+    fake = wire(lambda m, u, p, j: _ok({"kinds": ["tool", "agent"]}))
+    kinds = await RegistryClient(_BASE).kinds()
+    assert kinds == ["tool", "agent"]
+    assert fake.calls[0]["url"].endswith("/api/v1/kinds")
+
+
+async def test_kinds_missing_wrapper_is_a_response_error(wire) -> None:
+    wire(lambda m, u, p, j: _ok(["tool"]))  # bare list, not the {"kinds": ...} wrapper
+    with pytest.raises(RegistryResponseError, match="kinds"):
+        await RegistryClient(_BASE).kinds()
+
+
 # -- error mapping -----------------------------------------------------------
 
 

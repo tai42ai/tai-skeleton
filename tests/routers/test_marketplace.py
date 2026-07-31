@@ -105,6 +105,9 @@ class _FakeRegistry:
     async def categories(self):
         return self._b.get("categories", [])
 
+    async def kinds(self):
+        return self._b.get("kinds", [])
+
 
 def _use_registry(monkeypatch: pytest.MonkeyPatch, registry: _FakeRegistry) -> None:
     monkeypatch.setattr(mkt_ops, "RegistryClient", lambda *a, **k: registry)
@@ -188,6 +191,15 @@ async def test_categories_proxies_the_vocabulary(monkeypatch: pytest.MonkeyPatch
     _use_registry(monkeypatch, _FakeRegistry(categories=["dev", "data"]))
     resp = await router.marketplace_categories(_get())
     assert _data(resp) == {"data": ["dev", "data"]}
+
+
+# -- kinds -------------------------------------------------------------------
+
+
+async def test_kinds_proxies_the_vocabulary(monkeypatch: pytest.MonkeyPatch) -> None:
+    _use_registry(monkeypatch, _FakeRegistry(kinds=["tool", "agent"]))
+    resp = await router.marketplace_kinds(_get())
+    assert _data(resp) == {"data": ["tool", "agent"]}
 
 
 # -- installed ---------------------------------------------------------------

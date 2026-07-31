@@ -1,10 +1,11 @@
 """Marketplace operations — search, browse, and manage installed plugins.
 
-Nine operations back the ``/api/marketplace/*`` surface: five reads (search the
+Ten operations back the ``/api/marketplace/*`` surface: six reads (search the
 registry, one listing's detail with its versions, the category vocabulary, the
-installed inventory with per-row compat/update availability plus the boot's
-plugin-quarantine entries, and the advisory snapshot) and four
-environment-mutating flows (install, uninstall, update, upgrade-all) driven by
+item-kind vocabulary, the installed inventory with per-row compat/update
+availability plus the boot's plugin-quarantine entries, and the advisory
+snapshot) and four environment-mutating flows (install, uninstall, update,
+upgrade-all) driven by
 :class:`~tai42_skeleton.marketplace.installer.Installer`.
 
 The internal :class:`~tai42_skeleton.marketplace.errors.MarketplaceError` family is
@@ -242,6 +243,16 @@ async def marketplace_categories() -> list[str]:
     renders as facet chips."""
     try:
         return await RegistryClient().categories()
+    except MarketplaceError as exc:
+        raise _to_operation_error(exc) from exc
+
+
+@operation(summary="List marketplace item kinds", tags=["marketplace"], errors=[UpstreamError])
+async def marketplace_kinds() -> list[str]:
+    """The registry's controlled item-kind vocabulary — a plain array Studio
+    renders as facet chips."""
+    try:
+        return await RegistryClient().kinds()
     except MarketplaceError as exc:
         raise _to_operation_error(exc) from exc
 

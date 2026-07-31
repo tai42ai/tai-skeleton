@@ -2955,8 +2955,8 @@ name = "secretstorage"
 version = "3.5.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "cryptography" },
-    { name = "jeepney" },
+    { name = "cryptography", marker = "sys_platform != 'win32'" },
+    { name = "jeepney", marker = "sys_platform != 'win32'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/1c/03/e834bcd866f2f8a49a85eaff47340affa3bfa391ee9912a952a1faa68c7b/secretstorage-3.5.0.tar.gz", hash = "sha256:f04b8e4689cbce351744d5537bf6b1329c6fc68f91fa666f60a380edddcd11be", size = 19884, upload-time = "2025-11-23T19:02:53.191Z" }
 wheels = [
@@ -3088,32 +3088,51 @@ wheels = [
 [[package]]
 name = "tai42-contract"
 version = "0.3.0"
-source = { registry = "https://pypi.org/simple" }
+source = { editable = "../tai-contract" }
 dependencies = [
     { name = "pydantic" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/fb/35/faf5887fcf4ec89e9a656023e7afa42fe5db4f8e6cc3684153b9a6cee3fa/tai42_contract-0.3.0.tar.gz", hash = "sha256:f1c9daad5f27a09f82b85eea7f88848c89d4cbbbc4c9c026a8511e96bedc3c17", size = 98284, upload-time = "2026-07-30T15:31:14.801Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/7c/27/87a486da8989d3a65b624782ae00a45b61b191f17d12622c7bebcd09afc8/tai42_contract-0.3.0-py3-none-any.whl", hash = "sha256:1ca93c2b7cdedb675a75b5a768f6816bd124c81896616c1415c75af109f14b5e", size = 125072, upload-time = "2026-07-30T15:31:13.812Z" },
+
+[package.metadata]
+requires-dist = [
+    { name = "fastmcp", marker = "extra == 'dev'", specifier = ">=3" },
+    { name = "langchain-core", marker = "extra == 'dev'", specifier = ">=1" },
+    { name = "mcp", marker = "extra == 'dev'", specifier = ">=1" },
+    { name = "pydantic", specifier = ">=2.12" },
+    { name = "pyright", marker = "extra == 'dev'", specifier = ">=1.1.389" },
+    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8" },
+    { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=5" },
+    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.6" },
+    { name = "starlette", marker = "extra == 'dev'", specifier = ">=0.40" },
 ]
+provides-extras = ["dev"]
 
 [[package]]
 name = "tai42-identity-redis"
 version = "0.2.1"
-source = { registry = "https://pypi.org/simple" }
+source = { editable = "../tai-identity-redis" }
 dependencies = [
     { name = "tai42-contract" },
     { name = "tai42-kit", extra = ["redis"] },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/37/8c/81458f56dc4cecd0169d857e59a360cc1369c64ad5ad45e9317d322fd66c/tai42_identity_redis-0.2.1.tar.gz", hash = "sha256:1c44c2b43e3305067d788f0e6bf7c4ef4fc0eb5630ea8d0beeebdccce1e6f4c0", size = 13027, upload-time = "2026-07-30T16:41:11.405Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/9c/68/70274ed860aeddb98824e314206f5acd5ae4a4c1dd6a23707e8610322ec2/tai42_identity_redis-0.2.1-py3-none-any.whl", hash = "sha256:da3f144fae5c37e5e1fbcf2a7914dff75017926a1cc8380f94363bc740d52000", size = 11943, upload-time = "2026-07-30T16:41:10.5Z" },
+
+[package.metadata]
+requires-dist = [
+    { name = "pyright", marker = "extra == 'dev'", specifier = ">=1.1.389" },
+    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8" },
+    { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=1.3" },
+    { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=5" },
+    { name = "pyyaml", marker = "extra == 'dev'", specifier = ">=6" },
+    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.6" },
+    { name = "tai42-contract", editable = "../tai-contract" },
+    { name = "tai42-kit", extras = ["redis"], editable = "../tai-kit" },
 ]
+provides-extras = ["dev"]
 
 [[package]]
 name = "tai42-kit"
 version = "0.2.1"
-source = { registry = "https://pypi.org/simple" }
+source = { editable = "../tai-kit" }
 dependencies = [
     { name = "anyio" },
     { name = "fastmcp" },
@@ -3127,10 +3146,6 @@ dependencies = [
     { name = "pyyaml" },
     { name = "ruamel-yaml" },
     { name = "tai42-contract" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/9d/51/c4e6a5c89b79d8bcb17a078f4beb3385b8abc20f0771dad767f9aad575ce/tai42_kit-0.2.1.tar.gz", hash = "sha256:a6464d885132df7b2ecafd66bf93811ceebd4fef2fb3cab740d03a3cf15e1d5c", size = 75494, upload-time = "2026-07-30T16:40:51.079Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/a9/c9/0cdf7ec9ffeefc731978e0de432a317aad8cd7406f3b092b1eb392a16419/tai42_kit-0.2.1-py3-none-any.whl", hash = "sha256:b18ae70376f81c5d5806fda3ba655e02119756e507b45839bc7d7be2950524fc", size = 91886, upload-time = "2026-07-30T16:40:50.002Z" },
 ]
 
 [package.optional-dependencies]
@@ -3154,6 +3169,60 @@ redis = [
 uvicorn = [
     { name = "uvicorn" },
 ]
+
+[package.metadata]
+requires-dist = [
+    { name = "aiosqlite", marker = "extra == 'langgraph-checkpoint-sqlite'", specifier = ">=0.20" },
+    { name = "anyio", specifier = ">=4" },
+    { name = "curl-cffi", marker = "extra == 'curl'", specifier = ">=0.7" },
+    { name = "fastmcp", specifier = ">=3.2,<4" },
+    { name = "httpcore", specifier = ">=1" },
+    { name = "httpx", specifier = ">=0.28" },
+    { name = "joserfc", marker = "extra == 'dev'", specifier = ">=1.7" },
+    { name = "joserfc", marker = "extra == 'jwt'", specifier = ">=1.7" },
+    { name = "jq", marker = "extra == 'jq'", specifier = ">=1.10" },
+    { name = "jsonschema", specifier = ">=4" },
+    { name = "langchain", marker = "extra == 'llm'", specifier = ">=1.2,<2" },
+    { name = "langchain-anthropic", marker = "extra == 'anthropic'", specifier = ">=1.4" },
+    { name = "langchain-core", marker = "extra == 'llm'", specifier = ">=1.2,<2" },
+    { name = "langchain-google-genai", marker = "extra == 'google'", specifier = ">=4.2" },
+    { name = "langchain-huggingface", marker = "extra == 'huggingface'", specifier = ">=1.2" },
+    { name = "langchain-mistralai", marker = "extra == 'mistral'", specifier = ">=1.1" },
+    { name = "langchain-ollama", marker = "extra == 'ollama'", specifier = ">=1.0" },
+    { name = "langchain-openai", marker = "extra == 'llm'", specifier = ">=1.3" },
+    { name = "langchain-xai", marker = "extra == 'xai'", specifier = ">=1.2" },
+    { name = "langgraph", marker = "extra == 'llm'", specifier = ">=1.1,<2" },
+    { name = "langgraph-checkpoint", marker = "extra == 'llm'", specifier = ">=4.0" },
+    { name = "langgraph-checkpoint-postgres", marker = "extra == 'langgraph-checkpoint-postgres'", specifier = ">=3.0.5" },
+    { name = "langgraph-checkpoint-redis", marker = "extra == 'llm'", specifier = ">=0.5" },
+    { name = "langgraph-checkpoint-sqlite", marker = "extra == 'langgraph-checkpoint-sqlite'", specifier = ">=3.0.3" },
+    { name = "mcp", specifier = ">=1" },
+    { name = "psycopg", extras = ["binary", "pool"], marker = "extra == 'postgres'", specifier = ">=3.3.2" },
+    { name = "psycopg", extras = ["pool"], marker = "extra == 'langgraph-checkpoint-postgres'", specifier = ">=3.3.2" },
+    { name = "pydantic", specifier = ">=2.12" },
+    { name = "pydantic-settings", specifier = ">=2.11" },
+    { name = "pyright", marker = "extra == 'dev'", specifier = ">=1.1.389" },
+    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8" },
+    { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=1.3" },
+    { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=5" },
+    { name = "python-dotenv", specifier = ">=1.0" },
+    { name = "pyyaml", specifier = ">=6" },
+    { name = "redis", marker = "extra == 'redis'", specifier = ">=5" },
+    { name = "ruamel-yaml", specifier = ">=0.18" },
+    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.6" },
+    { name = "sentence-transformers", marker = "extra == 'huggingface'", specifier = ">=5.3" },
+    { name = "tai42-contract", editable = "../tai-contract" },
+    { name = "tai42-kit", extras = ["llm"], marker = "extra == 'anthropic'" },
+    { name = "tai42-kit", extras = ["llm"], marker = "extra == 'google'" },
+    { name = "tai42-kit", extras = ["llm"], marker = "extra == 'huggingface'" },
+    { name = "tai42-kit", extras = ["llm"], marker = "extra == 'langgraph-checkpoint-postgres'" },
+    { name = "tai42-kit", extras = ["llm"], marker = "extra == 'langgraph-checkpoint-sqlite'" },
+    { name = "tai42-kit", extras = ["llm"], marker = "extra == 'mistral'" },
+    { name = "tai42-kit", extras = ["llm"], marker = "extra == 'ollama'" },
+    { name = "tai42-kit", extras = ["llm"], marker = "extra == 'xai'" },
+    { name = "uvicorn", marker = "extra == 'uvicorn'", specifier = ">=0.43" },
+]
+provides-extras = ["llm", "jq", "uvicorn", "anthropic", "mistral", "google", "xai", "ollama", "huggingface", "langgraph-checkpoint-postgres", "langgraph-checkpoint-sqlite", "redis", "curl", "postgres", "jwt", "dev"]
 
 [[package]]
 name = "tai42-skeleton"
@@ -3284,11 +3353,11 @@ requires-dist = [
     { name = "starlette", specifier = ">=0.40" },
     { name = "striprtf", marker = "extra == 'files'", specifier = ">=0.0.26" },
     { name = "tabulate", marker = "extra == 'files'", specifier = ">=0.9" },
-    { name = "tai42-contract", specifier = ">=0.3,<0.4" },
-    { name = "tai42-identity-redis", marker = "extra == 'dev'", specifier = ">=0.2,<0.3" },
-    { name = "tai42-kit", extras = ["llm", "jq", "uvicorn", "redis", "postgres"], specifier = ">=0.2,<0.3" },
+    { name = "tai42-contract", editable = "../tai-contract" },
+    { name = "tai42-identity-redis", marker = "extra == 'dev'", editable = "../tai-identity-redis" },
+    { name = "tai42-kit", extras = ["llm", "jq", "uvicorn", "redis", "postgres"], editable = "../tai-kit" },
     { name = "tai42-skeleton", extras = ["toolbox", "files"], marker = "extra == 'dev'" },
-    { name = "tai42-toolbox", marker = "extra == 'toolbox'", specifier = ">=0.3,<0.4" },
+    { name = "tai42-toolbox", marker = "extra == 'toolbox'", editable = "../tai-toolbox" },
     { name = "typer", specifier = ">=0.12" },
     { name = "uvicorn", specifier = ">=0.43" },
     { name = "uvloop", marker = "sys_platform != 'win32'", specifier = ">=0.22" },
@@ -3299,8 +3368,8 @@ provides-extras = ["toolbox", "files", "dev"]
 
 [[package]]
 name = "tai42-toolbox"
-version = "0.3.1"
-source = { registry = "https://pypi.org/simple" }
+version = "0.3.2"
+source = { editable = "../tai-toolbox" }
 dependencies = [
     { name = "makefun" },
     { name = "pydantic" },
@@ -3308,9 +3377,33 @@ dependencies = [
     { name = "tai42-contract" },
     { name = "tai42-kit" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/90/f9/f2e19387002a66824afe6ce7f44094998c29703478c34d70708b0e727cc9/tai42_toolbox-0.3.1.tar.gz", hash = "sha256:1cec58fcc95f290913ff6ef3f42d824433f8dfde66dcc4cf00730c944b68fe4e", size = 38141, upload-time = "2026-07-30T16:41:18.147Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/0f/10/42904e3f9b7d36032be118022a19d467bcbdc792fe9ebf2bbbcb6ca4dde9/tai42_toolbox-0.3.1-py3-none-any.whl", hash = "sha256:7a3a59671714f73e8201d905493e834ffa5401895b9da0d8b33e1498accb74bd", size = 43830, upload-time = "2026-07-30T16:41:17.173Z" },
+
+[package.metadata]
+requires-dist = [
+    { name = "makefun", specifier = ">=1.15" },
+    { name = "prometheus-client", marker = "extra == 'prometheus'", specifier = ">=0.24" },
+    { name = "pydantic", specifier = ">=2.12" },
+    { name = "pydantic-settings", specifier = ">=2.11" },
+    { name = "pyright", marker = "extra == 'dev'", specifier = ">=1.1.389" },
+    { name = "pysocks", marker = "extra == 'proxy'", specifier = "~=1.7.1" },
+    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8" },
+    { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=5" },
+    { name = "pyyaml", marker = "extra == 'dev'", specifier = ">=6" },
+    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.6" },
+    { name = "tai42-contract", editable = "../tai-contract" },
+    { name = "tai42-kit", editable = "../tai-kit" },
+    { name = "tai42-kit", extras = ["curl"], marker = "extra == 'http'", editable = "../tai-kit" },
+    { name = "tai42-kit", extras = ["jq"], marker = "extra == 'chain'", editable = "../tai-kit" },
+    { name = "tai42-kit", extras = ["llm"], marker = "extra == 'embeddings'", editable = "../tai-kit" },
+    { name = "tai42-toolbox", extras = ["http", "prometheus", "chain", "embeddings", "proxy"], marker = "extra == 'dev'" },
+    { name = "trustme", marker = "extra == 'dev'", specifier = ">=1.1" },
+]
+provides-extras = ["http", "prometheus", "chain", "embeddings", "proxy", "dev"]
+
+[package.metadata.requires-dev]
+docs = [
+    { name = "mkdocs-material", specifier = ">=9.5" },
+    { name = "mkdocstrings", extras = ["python"], specifier = ">=0.27" },
 ]
 
 [[package]]

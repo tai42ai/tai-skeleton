@@ -4,8 +4,8 @@ Boots the app through the real ``app.app_context`` harness with an ``api_tools``
 manifest that loads no management tool modules and enables projection, then
 asserts the projected surface end-to-end (checklist items 1-6):
 
-1. the projected tool surface is exactly the expected op surface — the 93
-   default-projected ops (133 total - 36 tier-2 default-excluded - 4 tier-1
+1. the projected tool surface is exactly the expected op surface — the 101
+   default-projected ops (142 total - 37 tier-2 default-excluded - 4 tier-1
    hardcode-blocked);
 2. ``destructiveHint`` is present on destructive ops (a DELETE, a mutating POST)
    and absent on reads (a GET);
@@ -118,7 +118,7 @@ class _RecordingApp:
         self.tools = _RecordingTools()
 
 
-# -- checklist 1: the projected surface is exactly the 100 default ops ---------
+# -- checklist 1: the projected surface is exactly the 101 default ops ---------
 
 
 def test_d1_projected_surface_is_the_expected_op_count():
@@ -130,8 +130,8 @@ def test_d1_projected_surface_is_the_expected_op_count():
             tier1 = sorted(op.name for op in ops if is_tier1(op))
             tier2 = sorted(op.name for op in ops if is_tier2(op) and not is_tier1(op))
 
-            # The arithmetic: 141 total - 37 tier-2 default-excluded - 4 tier-1 hardcode-blocked = 100.
-            assert total == 141, total
+            # The arithmetic: 142 total - 37 tier-2 default-excluded - 4 tier-1 hardcode-blocked = 101.
+            assert total == 142, total
             # Tier-1 (never projectable): the three meta-executors, each running a
             # caller-named tool, plus ``get_me`` (``caller_context=True``).
             assert tier1 == ["create_schedule", "get_me", "run_tool", "submit_run"], tier1
@@ -184,17 +184,17 @@ def test_d1_projected_surface_is_the_expected_op_count():
                 "validate_condition",
             }, tier2
 
-            # The default-projected surface = 100, measured two ways.
+            # The default-projected surface = 101, measured two ways.
             recorder = _RecordingApp()
             projected = project_operations(recorder, ApiToolsConfig(), registry=reg)
-            assert len(projected) == 100, len(projected)
-            assert total - len(tier2) - len(tier1) == 100
+            assert len(projected) == 101, len(projected)
+            assert total - len(tier2) - len(tier1) == 101
 
-            # And the LIVE booted tool surface is exactly those 100 (no keep-set /
+            # And the LIVE booted tool surface is exactly those 101 (no keep-set /
             # plugin / toolbox tools are loaded in this projection-only stack).
             live = await app.tools.get_tools()
             assert set(live) == set(projected)
-            assert len(live) == 100
+            assert len(live) == 101
 
             # Tier-1 and default tier-2 never appear on the live surface.
             assert "run_tool" not in live
@@ -359,7 +359,7 @@ def test_d1_user_tools_curation_coexists_with_api_tools():
             live = await app.tools.get_tools()
             assert "remove_tool" in live
             assert "list_hooks" in live
-            assert len(live) == 100
+            assert len(live) == 101
 
             # user_tools curation is preserved and surfaced to the flow builder
             # (the read-time view over the registered set).
