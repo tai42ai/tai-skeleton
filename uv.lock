@@ -3157,7 +3157,7 @@ uvicorn = [
 
 [[package]]
 name = "tai42-skeleton"
-version = "0.4.0"
+version = "0.5.0"
 source = { editable = "." }
 dependencies = [
     { name = "async-lru" },
